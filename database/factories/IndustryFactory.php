@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Database\Factories;
+
+use App\Models\Industry;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
+
+/**
+ * @extends Factory<Industry>
+ */
+class IndustryFactory extends Factory
+{
+    protected $model = Industry::class;
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        $name = fake()->unique()->word().'-'.fake()->word();
+
+        return [
+            'code' => Str::slug($name),
+            'name' => Str::title($name),
+            'description' => fake()->sentence(),
+            'sort_order' => 0,
+            'is_active' => true,
+        ];
+    }
+}
