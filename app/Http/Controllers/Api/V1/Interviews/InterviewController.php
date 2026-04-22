@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Interviews;
 
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Interviews\CompleteInterviewRequest;
 use App\Http\Requests\Interviews\ScheduleInterviewRequest;
 use App\Http\Requests\Interviews\UpdateInterviewRequest;
 use App\Http\Resources\V1\Interviews\InterviewResource;
@@ -71,9 +72,12 @@ class InterviewController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+        $isStaff = $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value]);
+        $isCompany = $user->hasRole(UserRole::CompanyUser->value);
+
+        if (! $isStaff && ! $isCompany) {
             return $this->error(
-                'Solo reclutadores pueden proponer entrevistas.',
+                'No tienes permiso para proponer entrevistas.',
                 status: HttpStatus::HTTP_FORBIDDEN,
             );
         }
@@ -83,6 +87,19 @@ class InterviewController extends Controller
 
         $assignment = VacancyAssignment::with('vacancy')
             ->findOrFail((int) $data['vacancy_assignment_id']);
+
+        // Company_user sólo puede proponer entrevistas para asignaciones de su propia empresa.
+        if (! $isStaff && $isCompany) {
+            $companyId = $assignment->vacancy?->company_id;
+            $belongs = $companyId !== null
+                && $user->companyMemberships()->where('company_id', $companyId)->exists();
+            if (! $belongs) {
+                return $this->error(
+                    'No puedes proponer entrevistas para esta asignación.',
+                    status: HttpStatus::HTTP_FORBIDDEN,
+                );
+            }
+        }
 
         try {
             $interview = $this->service->schedule($assignment, $user, $data);
@@ -160,6 +177,25 @@ class InterviewController extends Controller
 
         return $this->success(
             message: 'Entrevista confirmada.',
+            data: InterviewResource::make($interview->fresh(['assignment.candidateProfile', 'assignment.vacancy'])),
+        );
+    }
+
+    public function complete(CompleteInterviewRequest $request, Interview $interview): JsonResponse
+    {
+        $this->authorizeRecruiter($request);
+
+        /** @var array{recruiter_feedback: string, recommendation: string, rating?: int|null} $data */
+        $data = $request->validated();
+
+        try {
+            $this->service->complete($interview, $data);
+        } catch (Throwable $e) {
+            return $this->error($e->getMessage(), status: HttpStatus::HTTP_CONFLICT);
+        }
+
+        return $this->success(
+            message: 'Entrevista marcada como realizada.',
             data: InterviewResource::make($interview->fresh(['assignment.candidateProfile', 'assignment.vacancy'])),
         );
     }

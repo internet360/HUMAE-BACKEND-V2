@@ -17,6 +17,10 @@ use RuntimeException;
 
 class PipelineService
 {
+    public function __construct(
+        private readonly HireService $hireService,
+    ) {}
+
     /**
      * Estados de la vacante que permiten aceptar nuevos assignments.
      *
@@ -77,6 +81,12 @@ class PipelineService
             throw new RuntimeException(
                 "Transición inválida: {$from->value} → {$to->value}",
             );
+        }
+
+        // El cierre de vacante (→ hired) es transaccional + notifica a todas
+        // las partes. Delegamos en HireService.
+        if ($to === AssignmentStage::Hired) {
+            return $this->hireService->hire($assignment);
         }
 
         $payload = ['stage' => $to->value];

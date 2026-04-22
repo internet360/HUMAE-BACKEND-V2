@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\V1\Psychometric;
 
+use App\Models\PsychometricAttempt;
 use App\Models\PsychometricTest;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -18,6 +19,9 @@ class TestResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        /** @var PsychometricAttempt|null $latestAttempt */
+        $latestAttempt = $this->resource->latest_attempt ?? null;
+
         return [
             'id' => $this->id,
             'code' => $this->code,
@@ -32,6 +36,12 @@ class TestResource extends JsonResource
                 'questions',
                 fn () => $this->questions->count(),
             ),
+            'latest_attempt' => $latestAttempt !== null ? [
+                'id' => $latestAttempt->id,
+                'status' => $latestAttempt->status?->value,
+                'started_at' => $latestAttempt->started_at?->toIso8601String(),
+                'submitted_at' => $latestAttempt->submitted_at?->toIso8601String(),
+            ] : null,
         ];
     }
 }

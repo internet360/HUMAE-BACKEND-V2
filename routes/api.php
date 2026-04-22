@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\Admin\Catalogs\DegreeLevelController as AdminDegreeLevelController;
+use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
+use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
+use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
+use App\Http\Controllers\Api\V1\Auth\InvitationController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\Candidate\AvatarController;
 use App\Http\Controllers\Api\V1\Candidate\CandidateProfileController;
@@ -22,6 +27,8 @@ use App\Http\Controllers\Api\V1\Candidate\PsychometricController;
 use App\Http\Controllers\Api\V1\Candidate\ReferenceController;
 use App\Http\Controllers\Api\V1\Candidate\SkillController;
 use App\Http\Controllers\Api\V1\Company\CompanyVacancyController;
+use App\Http\Controllers\Api\V1\Company\MyCompanyController;
+use App\Http\Controllers\Api\V1\Company\MyCompanyMemberController;
 use App\Http\Controllers\Api\V1\Interviews\InterviewController;
 use App\Http\Controllers\Api\V1\Recruiter\AssignmentController;
 use App\Http\Controllers\Api\V1\Recruiter\AssignmentNoteController;
@@ -29,6 +36,7 @@ use App\Http\Controllers\Api\V1\Recruiter\CompanyController;
 use App\Http\Controllers\Api\V1\Recruiter\CompanyMemberController;
 use App\Http\Controllers\Api\V1\Recruiter\DirectoryController;
 use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
+use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +51,19 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/health', HealthController::class)->name('health');
+
+/*
+|--------------------------------------------------------------------------
+| Catálogos maestros (lectura, auth requerida)
+|--------------------------------------------------------------------------
+| Los candidatos los consumen desde el editor de perfil (skills, languages,
+| degree levels); los recruiters los usan para construir filtros de vacantes.
+*/
+Route::middleware('auth:sanctum')->prefix('catalogs')->name('catalogs.')->group(function (): void {
+    Route::get('/skills', [CatalogController::class, 'skills'])->name('skills');
+    Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
+    Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
+});
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     // Público
@@ -62,9 +83,23 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->middleware('throttle:5,1')
         ->name('password.reset');
 
+    // Invitaciones (público)
+    Route::get('/invitation/{token}', [InvitationController::class, 'show'])
+        ->middleware('throttle:20,1')
+        ->name('invitation.show');
+    Route::post('/invitation/accept', [InvitationController::class, 'accept'])
+        ->middleware('throttle:10,1')
+        ->name('invitation.accept');
+
     Route::get('/verify-email/{id}/{hash}', [EmailVerificationController::class, 'verify'])
         ->middleware('throttle:10,1')
         ->name('verification.verify');
+
+    // Reenvío público (sin auth) — desde la página /verify-email sin callback.
+    // Rate-limit estricto para evitar spam de correos.
+    Route::post('/verify-email/resend', [EmailVerificationController::class, 'resendPublic'])
+        ->middleware('throttle:3,1')
+        ->name('verification.resend-public');
 
     // Autenticado
     Route::middleware('auth:sanctum')->group(function (): void {
@@ -238,6 +273,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ->name('interviews.confirm');
     Route::post('/interviews/{interview}/cancel', [InterviewController::class, 'cancel'])
         ->name('interviews.cancel');
+    Route::post('/interviews/{interview}/complete', [InterviewController::class, 'complete'])
+        ->name('interviews.complete');
 });
 
 /*
@@ -246,10 +283,30 @@ Route::middleware('auth:sanctum')->group(function (): void {
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->prefix('me/company')->name('me.company.')->group(function (): void {
+    Route::get('/', [MyCompanyController::class, 'show'])->name('show');
+    Route::patch('/', [MyCompanyController::class, 'update'])->name('update');
+
+    Route::get('/members', [MyCompanyMemberController::class, 'index'])
+        ->name('members.index');
+    Route::post('/members', [MyCompanyMemberController::class, 'store'])
+        ->name('members.store');
+    Route::patch('/members/{member}', [MyCompanyMemberController::class, 'update'])
+        ->name('members.update');
+    Route::delete('/members/{member}', [MyCompanyMemberController::class, 'destroy'])
+        ->name('members.destroy');
+
     Route::get('/vacancies', [CompanyVacancyController::class, 'index'])
         ->name('vacancies.index');
     Route::post('/vacancies', [CompanyVacancyController::class, 'store'])
         ->name('vacancies.store');
+    Route::get('/vacancies/{vacancy}', [CompanyVacancyController::class, 'show'])
+        ->name('vacancies.show');
+    Route::patch('/vacancies/{vacancy}', [CompanyVacancyController::class, 'update'])
+        ->name('vacancies.update');
+    Route::post('/vacancies/{vacancy}/transition', [CompanyVacancyController::class, 'transition'])
+        ->name('vacancies.transition');
+    Route::get('/vacancies/{vacancy}/assignments', [CompanyVacancyController::class, 'assignments'])
+        ->name('vacancies.assignments');
 });
 
 /*
@@ -274,6 +331,39 @@ Route::middleware('auth:sanctum')->prefix('admin/reports')->name('admin.reports.
     Route::get('/most-searched-profiles', [ReportsController::class, 'mostSearchedProfiles'])
         ->name('most-searched-profiles');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Admin: gestión de usuarios (recruiters, company_users, admins)
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth:sanctum')->prefix('admin/users')->name('admin.users.')->group(function (): void {
+    Route::get('/', [AdminUserController::class, 'index'])->name('index');
+    Route::post('/', [AdminUserController::class, 'store'])->name('store');
+    Route::post('/{user}/resend-invitation', [AdminUserController::class, 'resendInvitation'])
+        ->name('resend-invitation');
+    Route::delete('/{user}', [AdminUserController::class, 'destroy'])->name('destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admin: CRUD de catálogos (skills, languages, degree_levels)
+|--------------------------------------------------------------------------
+| Protegido por el permiso Spatie `catalogs.manage` (rol admin). Complementa
+| los endpoints públicos de lectura en /api/v1/catalogs/*.
+*/
+Route::middleware('auth:sanctum')
+    ->prefix('admin/catalogs')
+    ->name('admin.catalogs.')
+    ->group(function (): void {
+        Route::apiResource('skills', AdminSkillController::class)
+            ->except(['show']);
+        Route::apiResource('languages', AdminLanguageController::class)
+            ->except(['show']);
+        Route::apiResource('degree-levels', AdminDegreeLevelController::class)
+            ->except(['show'])
+            ->parameters(['degree-levels' => 'degreeLevel']);
+    });
 
 /*
 |--------------------------------------------------------------------------

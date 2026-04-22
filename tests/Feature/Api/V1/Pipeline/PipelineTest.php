@@ -283,3 +283,36 @@ it('rejects unauthenticated pipeline access', function (): void {
     $vacancy = pipelineMakeVacancy();
     $this->getJson("/api/v1/vacancies/{$vacancy->id}/assignments")->assertStatus(401);
 });
+
+it('rejects moving to rejected without a rejection_reason', function (): void {
+    actAsRecruiterP();
+    $vacancy = pipelineMakeVacancy();
+    $candidate = pipelineMakeCandidateWithMembership();
+    $assignment = VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => $candidate->id,
+        'stage' => AssignmentStage::Presented,
+    ]);
+
+    $this->patchJson("/api/v1/assignments/{$assignment->id}", [
+        'stage' => 'rejected',
+    ])->assertStatus(422);
+});
+
+it('accepts moving to rejected with a rejection_reason', function (): void {
+    actAsRecruiterP();
+    $vacancy = pipelineMakeVacancy();
+    $candidate = pipelineMakeCandidateWithMembership();
+    $assignment = VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => $candidate->id,
+        'stage' => AssignmentStage::Presented,
+    ]);
+
+    $this->patchJson("/api/v1/assignments/{$assignment->id}", [
+        'stage' => 'rejected',
+        'rejection_reason' => 'Perfil técnico no afín',
+    ])->assertOk();
+
+    expect($assignment->fresh()->rejection_reason)->toBe('Perfil técnico no afín');
+});

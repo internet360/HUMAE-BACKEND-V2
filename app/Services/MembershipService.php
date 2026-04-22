@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
 use App\Helpers\StripeClient;
+use App\Models\CandidateProfile;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
 use App\Models\Payment;
@@ -20,6 +22,7 @@ class MembershipService
 {
     public function __construct(
         private readonly StripeClient $stripe,
+        private readonly ProfileService $profiles,
     ) {}
 
     /**
@@ -144,6 +147,7 @@ class MembershipService
 
             $user = $payment->user;
             if ($user !== null) {
+                $this->promoteCandidateToActive($user);
                 $user->notify(new MembershipActivatedNotification($membership));
             }
 
@@ -154,12 +158,47 @@ class MembershipService
     }
 
     /**
+     * Cuando un candidato paga su membresía, su CandidateProfile.state pasa
+     * de `registro_incompleto` / `pendiente_pago` / `membresia_vencida` → `activo`.
+     * Si el candidato todavía no tiene un perfil (ej. pagó antes de abrir /me/profile),
+     * lo creamos aquí mismo para que aparezca en el directorio. No sobreescribe
+     * estados avanzados del pipeline (en_proceso, entrevistado, etc.).
+     */
+    private function promoteCandidateToActive(User $user): void
+    {
+        $profile = $this->profiles->findOrCreate($user);
+
+        $promotable = [
+            CandidateState::RegistroIncompleto->value,
+            CandidateState::PendientePago->value,
+            CandidateState::MembresiaVencida->value,
+            null,
+        ];
+
+        $current = $profile->state instanceof CandidateState
+            ? $profile->state->value
+            : $profile->state;
+
+        if (in_array($current, $promotable, true)) {
+            $profile->forceFill(['state' => CandidateState::Activo->value])->save();
+        }
+    }
+
+    /**
      * Marca como `expired` todas las membresías activas cuya fecha de expiración ya pasó.
      * Retorna la cantidad actualizada.
      */
     public function expireStale(): int
     {
-        return Membership::query()
+        $affectedUserIds = Membership::query()
+            ->where('status', MembershipStatus::Active->value)
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', now())
+            ->pluck('user_id')
+            ->unique()
+            ->all();
+
+        $count = Membership::query()
             ->where('status', MembershipStatus::Active->value)
             ->whereNotNull('expires_at')
             ->where('expires_at', '<=', now())
@@ -167,6 +206,21 @@ class MembershipService
                 'status' => MembershipStatus::Expired->value,
                 'updated_at' => now(),
             ]);
+
+        if ($count > 0 && $affectedUserIds !== []) {
+            // Solo demotamos candidatos que estaban en estado `activo`; los que
+            // ya estaban en pipeline avanzado (en_proceso, entrevistado...) se
+            // respetan para que la expiración no descarte trabajo en curso.
+            CandidateProfile::query()
+                ->whereIn('user_id', $affectedUserIds)
+                ->where('state', CandidateState::Activo->value)
+                ->update([
+                    'state' => CandidateState::MembresiaVencida->value,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        return $count;
     }
 
     public function cancel(Membership $membership, ?string $reason = null): Membership

@@ -46,6 +46,7 @@ class DirectoryCandidateResource extends JsonResource
             'expected_salary_max' => $this->expected_salary_max !== null
                 ? (float) $this->expected_salary_max
                 : null,
+            'expected_salary_period' => $this->expected_salary_period,
             'state' => $this->state?->value,
             'is_favorite' => in_array($this->id, $favoriteIds, true),
             'top_skills' => $this->skills

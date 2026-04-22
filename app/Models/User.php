@@ -28,6 +28,10 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $email_verified_at
  * @property Carbon|null $phone_verified_at
  * @property Carbon|null $last_login_at
+ * @property string|null $invitation_token
+ * @property Carbon|null $invitation_expires_at
+ * @property Carbon|null $invitation_accepted_at
+ * @property int|null $invited_by_user_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -52,6 +56,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar_url',
         'avatar_path',
         'status',
+        'invitation_token',
+        'invitation_expires_at',
+        'invitation_accepted_at',
+        'invited_by_user_id',
     ];
 
     /**
@@ -71,6 +79,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'phone_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'invitation_expires_at' => 'datetime',
+            'invitation_accepted_at' => 'datetime',
             'password' => 'hashed',
         ];
     }

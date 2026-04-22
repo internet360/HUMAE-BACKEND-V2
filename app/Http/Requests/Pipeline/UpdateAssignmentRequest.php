@@ -27,7 +27,7 @@ class UpdateAssignmentRequest extends FormRequest
             'priority' => ['sometimes', 'in:low,normal,high,urgent'],
             'score' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],
             'recruiter_notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
-            'rejection_reason' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'rejection_reason' => ['required_if:stage,rejected', 'nullable', 'string', 'min:3', 'max:2000'],
         ];
     }
 }

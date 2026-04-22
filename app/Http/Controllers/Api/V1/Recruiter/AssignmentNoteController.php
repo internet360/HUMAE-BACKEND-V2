@@ -21,11 +21,17 @@ class AssignmentNoteController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        if (! $this->canAccessAssignment($user, $assignment)) {
+            return $this->error(
+                'No tienes acceso a las notas de esta asignación.',
+                status: HttpStatus::HTTP_FORBIDDEN,
+            );
+        }
+
         $query = $assignment->notes()->with('author')->orderByDesc('created_at');
 
         // Company_user solo ve notas visibles para empresa
-        if ($user->hasRole(UserRole::CompanyUser->value)
-            && ! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+        if ($this->isCompanyOnly($user)) {
             $query->where('visibility', 'company');
         }
 
@@ -40,9 +46,9 @@ class AssignmentNoteController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+        if (! $this->canAccessAssignment($user, $assignment)) {
             return $this->error(
-                'Solo reclutadores pueden crear notas.',
+                'No puedes crear notas para esta asignación.',
                 status: HttpStatus::HTTP_FORBIDDEN,
             );
         }
@@ -50,9 +56,14 @@ class AssignmentNoteController extends Controller
         /** @var array<string, mixed> $data */
         $data = $request->validated();
 
+        // Company_user siempre crea con visibility=company (no puede forzar internal).
+        $visibility = $this->isCompanyOnly($user)
+            ? 'company'
+            : ($data['visibility'] ?? 'internal');
+
         $note = $assignment->notes()->create([
             'author_id' => $user->id,
-            'visibility' => $data['visibility'] ?? 'internal',
+            'visibility' => $visibility,
             'body' => $data['body'],
         ]);
 
@@ -63,5 +74,28 @@ class AssignmentNoteController extends Controller
             data: AssignmentNoteResource::make($note),
             status: HttpStatus::HTTP_CREATED,
         );
+    }
+
+    private function canAccessAssignment(User $user, VacancyAssignment $assignment): bool
+    {
+        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+            return true;
+        }
+
+        if ($user->hasRole(UserRole::CompanyUser->value)) {
+            $vacancy = $assignment->vacancy;
+            $company = $vacancy?->company;
+
+            return $company !== null
+                && $company->members()->where('user_id', $user->id)->exists();
+        }
+
+        return false;
+    }
+
+    private function isCompanyOnly(User $user): bool
+    {
+        return $user->hasRole(UserRole::CompanyUser->value)
+            && ! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value]);
     }
 }

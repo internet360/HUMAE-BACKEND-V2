@@ -9,6 +9,7 @@ use App\Helpers\StripeClient;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
@@ -51,7 +52,7 @@ class AppServiceProvider extends ServiceProvider
 
             $frontend = rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/');
 
-            return $frontend.'/auth/verify-email?callback='.urlencode($apiUrl);
+            return $frontend.'/verify-email?callback='.urlencode($apiUrl);
         });
     }
 
@@ -59,9 +60,15 @@ class AppServiceProvider extends ServiceProvider
     {
         ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
             $frontend = rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/');
-            $email = property_exists($notifiable, 'email') ? (string) $notifiable->email : '';
+            // Los atributos de Eloquent son dinámicos (__get) y property_exists()
+            // devuelve false, por lo que antes el email quedaba vacío.
+            // getEmailForPasswordReset() es el contrato oficial del trait
+            // CanResetPassword y siempre devuelve el email actual del modelo.
+            $email = $notifiable instanceof CanResetPassword
+                ? $notifiable->getEmailForPasswordReset()
+                : '';
 
-            return $frontend.'/auth/reset-password?token='.$token.'&email='.urlencode($email);
+            return $frontend.'/reset-password?token='.$token.'&email='.urlencode($email);
         });
     }
 }

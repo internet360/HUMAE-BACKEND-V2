@@ -53,4 +53,28 @@ class EmailVerificationController extends Controller
 
         return $this->success(message: 'Email de verificación reenviado.');
     }
+
+    /**
+     * Reenvío público (sin auth) desde /verify-email.
+     *
+     * Respuesta genérica para los tres casos (usuario existe + pendiente,
+     * usuario existe + verificado, usuario no existe) para no filtrar
+     * información sobre cuentas. El rate limit está en la ruta.
+     */
+    public function resendPublic(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email:rfc', 'max:255'],
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+
+        if ($user !== null && ! $user->hasVerifiedEmail()) {
+            $user->sendEmailVerificationNotification();
+        }
+
+        return $this->success(
+            message: 'Si existe una cuenta pendiente con ese correo, te enviamos un nuevo enlace de verificación.',
+        );
+    }
 }

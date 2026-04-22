@@ -35,6 +35,19 @@ class PsychometricController extends Controller
             ->orderBy('name')
             ->get();
 
+        $profile = $this->profile($request);
+
+        $latestAttempts = PsychometricAttempt::query()
+            ->where('candidate_profile_id', $profile->id)
+            ->whereIn('psychometric_test_id', $tests->pluck('id'))
+            ->orderByDesc('id')
+            ->get()
+            ->keyBy('psychometric_test_id');
+
+        $tests->each(function (PsychometricTest $test) use ($latestAttempts): void {
+            $test->setAttribute('latest_attempt', $latestAttempts->get($test->id));
+        });
+
         return $this->success(
             message: 'Tests disponibles.',
             data: TestResource::collection($tests),

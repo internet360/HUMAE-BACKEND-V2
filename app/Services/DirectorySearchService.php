@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Models\CandidateProfile;
+use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -47,6 +48,7 @@ class DirectorySearchService
         $this->applyFlagFilters($query, $request);
         $this->applySkillsFilter($query, $request);
         $this->applyLanguagesFilter($query, $request);
+        $this->applyFavoriteFilter($query, $request);
 
         $query->orderByDesc('updated_at');
 
@@ -206,6 +208,29 @@ class DirectorySearchService
                 $q->where('languages.id', $languageId);
             });
         }
+    }
+
+    /**
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyFavoriteFilter(Builder $query, Request $request): void
+    {
+        if (! $request->boolean('is_favorite')) {
+            return;
+        }
+
+        /** @var User|null $user */
+        $user = $request->user();
+        if ($user === null) {
+            return;
+        }
+
+        $query->whereIn(
+            'id',
+            fn ($q) => $q->select('candidate_profile_id')
+                ->from('directory_favorites')
+                ->where('recruiter_id', $user->id),
+        );
     }
 
     /**

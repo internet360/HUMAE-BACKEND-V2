@@ -143,6 +143,30 @@ class InterviewService
         return $interview->fresh() ?? $interview;
     }
 
+    /**
+     * Marca la entrevista como realizada y persiste feedback + recomendación.
+     *
+     * @param  array{recruiter_feedback: string, recommendation: string, rating?: int|null}  $data
+     */
+    public function complete(Interview $interview, array $data): Interview
+    {
+        $state = $interview->state ?? InterviewState::Propuesta;
+
+        if (! InterviewStateMachine::canTransition($state, InterviewState::Realizada)) {
+            throw new RuntimeException('La entrevista no puede marcarse como realizada en este estado.');
+        }
+
+        $interview->forceFill([
+            'state' => InterviewState::Realizada->value,
+            'recruiter_feedback' => $data['recruiter_feedback'],
+            'recommendation' => $data['recommendation'],
+            'rating' => $data['rating'] ?? null,
+            'ended_at' => now(),
+        ])->save();
+
+        return $interview->fresh() ?? $interview;
+    }
+
     public function cancel(Interview $interview, ?string $reason = null): Interview
     {
         $state = $interview->state ?? InterviewState::Propuesta;
@@ -169,7 +193,8 @@ class InterviewService
     }
 
     /**
-     * Notifica al candidato y a los owners/managers de la empresa.
+     * Notifica al candidato, owners/managers de la empresa, y al recruiter
+     * asignado a la vacante (si existe).
      */
     private function notifyParties(Interview $interview, mixed $notification): void
     {
@@ -193,7 +218,14 @@ class InterviewService
             ->pluck('user')
             ->filter() ?? collect();
 
-        $recipients = $recipients->merge($companyUsers)->unique('id')->filter()->values();
+        $recipients = $recipients->merge($companyUsers);
+
+        $assignedRecruiter = $assignment->vacancy?->recruiter;
+        if ($assignedRecruiter !== null) {
+            $recipients->push($assignedRecruiter);
+        }
+
+        $recipients = $recipients->unique('id')->filter()->values();
 
         if ($recipients->isEmpty()) {
             return;
