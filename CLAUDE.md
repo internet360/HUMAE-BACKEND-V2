@@ -77,6 +77,10 @@ app/
 - **Policies** en `app/Policies/` resuelven autorización fina que Spatie solo no cubre (ej. "este reclutador puede ver sólo las vacantes asignadas a él").
 - **Feature folders**: cuando un módulo crece, mueve su stack completo (Controller + Requests + Resources + Service + Policy + Tests) a una carpeta del módulo.
 
+### Localización (i18n)
+
+`APP_LOCALE=es` por default. Las traducciones de Laravel viven en **`lang/es/`** (publicadas manualmente — Laravel 12 ya no las publica con `lang:publish` por defecto). Si añades una regla de validación nueva con un mensaje custom, **agrégala también a `lang/es/validation.php`** (sección `attributes` para nombres de campos, raíz para mensajes). Si no, el frontend recibe la llave cruda (`validation.after`) y no se ve nada bonito en los toasts/forms.
+
 ### Convenciones de naming
 
 | Artefacto | Patrón |

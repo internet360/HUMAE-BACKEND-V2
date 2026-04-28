@@ -42,6 +42,13 @@ class VacancyController extends Controller
             $query->where('state', (string) $request->input('state'));
         }
 
+        if ($request->filled('excluding_assigned_candidate_id')) {
+            $candidateId = (int) $request->input('excluding_assigned_candidate_id');
+            $query->whereDoesntHave('assignments', function ($q) use ($candidateId) {
+                $q->where('candidate_profile_id', $candidateId);
+            });
+        }
+
         $vacancies = $query->orderByDesc('created_at')->paginate(20);
 
         return $this->success(

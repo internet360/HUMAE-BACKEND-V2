@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Resources\V1\Interviews;
 
 use App\Enums\InterviewState;
+use App\Enums\UserRole;
 use App\Models\Interview;
+use App\Models\User;
 use App\Services\InterviewStateMachine;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -21,6 +23,17 @@ class InterviewResource extends JsonResource
     public function toArray(Request $request): array
     {
         $state = $this->state ?? InterviewState::Propuesta;
+
+        /** @var User|null $user */
+        $user = $request->user();
+        // El feedback (recruiter + empresa) es información interna de evaluación.
+        // Los candidatos NO deben verla; recruiter, admin y company_user sí.
+        $canSeeFeedback = $user !== null
+            && $user->hasAnyRole([
+                UserRole::Recruiter->value,
+                UserRole::Admin->value,
+                UserRole::CompanyUser->value,
+            ]);
 
         return [
             'id' => $this->id,
@@ -38,8 +51,10 @@ class InterviewResource extends JsonResource
             'location' => $this->location,
             'started_at' => $this->started_at?->toIso8601String(),
             'ended_at' => $this->ended_at?->toIso8601String(),
-            'rating' => $this->rating,
-            'recommendation' => $this->recommendation,
+            'rating' => $this->when($canSeeFeedback, fn () => $this->rating),
+            'recommendation' => $this->when($canSeeFeedback, fn () => $this->recommendation),
+            'recruiter_feedback' => $this->when($canSeeFeedback, fn () => $this->recruiter_feedback),
+            'company_feedback' => $this->when($canSeeFeedback, fn () => $this->company_feedback),
             'allowed_transitions' => InterviewStateMachine::allowedValuesFrom($state),
             'assignment' => $this->whenLoaded('assignment', fn () => [
                 'id' => $this->assignment?->id,

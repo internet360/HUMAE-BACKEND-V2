@@ -57,8 +57,13 @@ class PipelineService
                 'presented_at' => null,
             ]);
 
-            // Si la vacante estaba en `en_busqueda`, avanza el estado global.
-            if ($vacancy->state === VacancyState::EnBusqueda) {
+            // Avanzar la vacante a `con_candidatos_asignados` apenas se crea
+            // la primera asignación. Acepta venir desde `activa` o `en_busqueda`
+            // (ambas son estados pre-pipeline donde aún no había candidatos).
+            if (
+                $vacancy->state === VacancyState::Activa
+                || $vacancy->state === VacancyState::EnBusqueda
+            ) {
                 $vacancy->forceFill([
                     'state' => VacancyState::ConCandidatosAsignados->value,
                 ])->save();

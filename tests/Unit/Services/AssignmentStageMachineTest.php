@@ -38,6 +38,18 @@ it('does not allow skipping stages', function (): void {
     expect(AssignmentStageMachine::canTransition(AssignmentStage::Sourced, AssignmentStage::Hired))->toBeFalse();
 });
 
+it('allows stepping back one stage to fix mistakes', function (): void {
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Presented, AssignmentStage::Sourced))->toBeTrue();
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Interviewing, AssignmentStage::Presented))->toBeTrue();
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Finalist, AssignmentStage::Interviewing))->toBeTrue();
+});
+
+it('does not allow stepping back more than one stage', function (): void {
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Interviewing, AssignmentStage::Sourced))->toBeFalse();
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Finalist, AssignmentStage::Presented))->toBeFalse();
+    expect(AssignmentStageMachine::canTransition(AssignmentStage::Finalist, AssignmentStage::Sourced))->toBeFalse();
+});
+
 it('does not allow exits from terminal stages', function (): void {
     expect(AssignmentStageMachine::allowedFrom(AssignmentStage::Hired))->toBe([]);
     expect(AssignmentStageMachine::allowedFrom(AssignmentStage::Rejected))->toBe([]);

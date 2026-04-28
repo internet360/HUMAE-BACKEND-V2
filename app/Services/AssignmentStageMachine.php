@@ -9,9 +9,13 @@ use App\Enums\AssignmentStage;
 /**
  * FSM de asignaciones de candidatos a vacantes.
  *
- * sourced → presented → interviewing → finalist → hired
+ * sourced ⇄ presented ⇄ interviewing ⇄ finalist → hired
  *                              ↓
  *                            rejected / withdrawn (terminales)
+ *
+ * Las flechas dobles permiten retroceder un paso para corregir movimientos
+ * erróneos. Terminales (hired/rejected/withdrawn) no permiten salida — para
+ * "revivir" un descarte, eliminar la asignación y crearla de nuevo.
  */
 class AssignmentStageMachine
 {
@@ -27,16 +31,19 @@ class AssignmentStageMachine
                 AssignmentStage::Withdrawn,
             ],
             AssignmentStage::Presented->value => [
+                AssignmentStage::Sourced,
                 AssignmentStage::Interviewing,
                 AssignmentStage::Rejected,
                 AssignmentStage::Withdrawn,
             ],
             AssignmentStage::Interviewing->value => [
+                AssignmentStage::Presented,
                 AssignmentStage::Finalist,
                 AssignmentStage::Rejected,
                 AssignmentStage::Withdrawn,
             ],
             AssignmentStage::Finalist->value => [
+                AssignmentStage::Interviewing,
                 AssignmentStage::Hired,
                 AssignmentStage::Rejected,
                 AssignmentStage::Withdrawn,
