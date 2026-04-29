@@ -81,6 +81,10 @@
             "@composer analyse",
             "@composer test"
         ],
+        "deploy:zip": [
+            "Composer\\Config::disableProcessTimeout",
+            "bash scripts/build-deploy-zip.sh"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
