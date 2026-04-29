@@ -35,7 +35,7 @@ class MembershipService
     {
         $frontend = rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/');
 
-        $successUrl = $frontend.'/membership/success?session_id={CHECKOUT_SESSION_ID}';
+        $successUrl = $frontend.'/membership/success?cs={CHECKOUT_SESSION_ID}';
         $cancelUrl = $frontend.'/membership/cancel';
 
         $currency = strtolower(
