@@ -247,6 +247,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/directory/candidates/{candidate}/cv.pdf', [DirectoryController::class, 'downloadCv'])
         ->middleware('throttle:30,1')
         ->name('directory.candidates.cv');
+    Route::get('/directory/candidates/{candidate}/documents/{document}/download', [DirectoryController::class, 'downloadDocument'])
+        ->middleware('throttle:60,1')
+        ->name('directory.candidates.documents.download');
 
     // Pipeline: assignments
     Route::get('/vacancies/{vacancy}/assignments', [AssignmentController::class, 'index'])
