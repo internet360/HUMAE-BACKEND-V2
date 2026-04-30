@@ -36,6 +36,7 @@ class DirectoryCandidateResource extends JsonResource
             'career_level_id' => $this->career_level_id,
             'functional_area_id' => $this->functional_area_id,
             'position_id' => $this->position_id,
+            'candidate_kind' => $this->candidate_kind?->value,
             'years_of_experience' => $this->years_of_experience,
             'availability' => $this->availability,
             'open_to_remote' => (bool) $this->open_to_remote,

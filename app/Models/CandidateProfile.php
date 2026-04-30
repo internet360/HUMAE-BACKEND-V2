@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\CandidateKind;
 use App\Enums\CandidateState;
 use Database\Factories\CandidateProfileFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $gender
  * @property string|null $contact_email
  * @property string|null $contact_phone
+ * @property CandidateKind|null $candidate_kind
  * @property int|null $years_of_experience
  * @property int|null $salary_currency_id
  * @property string|null $expected_salary_min
@@ -70,6 +72,8 @@ class CandidateProfile extends Model
         'career_level_id',
         'functional_area_id',
         'position_id',
+        'candidate_kind',
+        'other_area_text',
         'years_of_experience',
         'salary_currency_id',
         'expected_salary_min',
@@ -96,6 +100,7 @@ class CandidateProfile extends Model
             'expected_salary_min' => 'decimal:2',
             'expected_salary_max' => 'decimal:2',
             'state' => CandidateState::class,
+            'candidate_kind' => CandidateKind::class,
         ];
     }
 
@@ -159,6 +164,17 @@ class CandidateProfile extends Model
         return $this->hasMany(CandidateExperience::class);
     }
 
+    /**
+     * Asignaciones del candidato a vacantes (pipeline). Útil para el matching:
+     * permite excluir candidatos que ya estén asignados a una vacante dada.
+     *
+     * @return HasMany<VacancyAssignment, $this>
+     */
+    public function assignmentsForVacancy(): HasMany
+    {
+        return $this->hasMany(VacancyAssignment::class);
+    }
+
     /** @return HasMany<CandidateEducation, $this> */
     public function educations(): HasMany
     {
@@ -195,6 +211,15 @@ class CandidateProfile extends Model
         return $this->belongsToMany(Skill::class, 'candidate_skills')
             ->withPivot('level', 'years_of_experience')
             ->withTimestamps();
+    }
+
+    /** @return BelongsToMany<FunctionalArea, $this> */
+    public function functionalAreas(): BelongsToMany
+    {
+        return $this->belongsToMany(FunctionalArea::class, 'candidate_functional_areas')
+            ->withPivot('is_primary', 'sort_order')
+            ->withTimestamps()
+            ->orderByPivot('sort_order');
     }
 
     /** @return BelongsToMany<Language, $this> */

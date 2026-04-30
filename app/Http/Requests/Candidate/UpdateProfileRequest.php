@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Candidate;
 
+use App\Enums\CandidateKind;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateProfileRequest extends FormRequest
 {
@@ -18,6 +20,8 @@ class UpdateProfileRequest extends FormRequest
      */
     public function rules(): array
     {
+        $candidateKinds = array_map(fn (CandidateKind $k) => $k->value, CandidateKind::cases());
+
         return [
             // Identidad
             'first_name' => ['sometimes', 'required', 'string', 'min:1', 'max:120'],
@@ -48,6 +52,11 @@ class UpdateProfileRequest extends FormRequest
             'career_level_id' => ['sometimes', 'nullable', 'integer', 'exists:career_levels,id'],
             'functional_area_id' => ['sometimes', 'nullable', 'integer', 'exists:functional_areas,id'],
             'position_id' => ['sometimes', 'nullable', 'integer', 'exists:positions,id'],
+            'candidate_kind' => ['sometimes', 'nullable', Rule::in($candidateKinds)],
+            'other_area_text' => ['sometimes', 'nullable', 'string', 'max:200'],
+            'functional_areas' => ['sometimes', 'array', 'max:10'],
+            'functional_areas.*.id' => ['required_with:functional_areas', 'integer', 'exists:functional_areas,id'],
+            'functional_areas.*.is_primary' => ['sometimes', 'boolean'],
             'years_of_experience' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:70'],
 
             // Salario

@@ -34,6 +34,7 @@ class CandidateProfileController extends Controller
             'documents',
             'skills',
             'languages',
+            'functionalAreas',
         ]);
 
         return $this->success(
@@ -52,6 +53,7 @@ class CandidateProfileController extends Controller
         /** @var array<string, mixed> $data */
         $data = $request->validated();
         $updated = $this->service->update($profile, $data);
+        $updated->load('functionalAreas');
 
         return $this->success(
             message: 'Perfil actualizado.',

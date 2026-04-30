@@ -6,6 +6,7 @@ namespace App\Http\Requests\Companies;
 
 use App\Enums\Priority;
 use App\Enums\SalaryPeriod;
+use App\Enums\VacancyTargetKind;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,6 +27,7 @@ class VacancyRequest extends FormRequest
 
         $priorities = array_map(fn (Priority $p) => $p->value, Priority::cases());
         $periods = array_map(fn (SalaryPeriod $p) => $p->value, SalaryPeriod::cases());
+        $targetKinds = array_map(fn (VacancyTargetKind $k) => $k->value, VacancyTargetKind::cases());
 
         return [
             'company_id' => [$required, 'integer', 'exists:companies,id'],
@@ -38,6 +40,7 @@ class VacancyRequest extends FormRequest
             'position_id' => ['sometimes', 'nullable', 'integer', 'exists:positions,id'],
             'functional_area_id' => ['sometimes', 'nullable', 'integer', 'exists:functional_areas,id'],
             'vacancy_category_id' => ['sometimes', 'nullable', 'integer', 'exists:vacancy_categories,id'],
+            'target_candidate_kind' => ['sometimes', Rule::in($targetKinds)],
             'vacancy_type_id' => ['sometimes', 'nullable', 'integer', 'exists:vacancy_types,id'],
             'vacancy_shift_id' => ['sometimes', 'nullable', 'integer', 'exists:vacancy_shifts,id'],
             'career_level_id' => ['sometimes', 'nullable', 'integer', 'exists:career_levels,id'],

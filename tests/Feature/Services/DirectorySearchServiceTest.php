@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Enums\CandidateKind;
 use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Models\CandidateProfile;
+use App\Models\FunctionalArea;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
 use App\Models\SalaryCurrency;
@@ -131,4 +133,53 @@ it('visibleStates() returns every CandidateState value', function (): void {
     foreach (CandidateState::cases() as $case) {
         expect($states)->toContain($case->value);
     }
+});
+
+it('filters candidates by candidate_kind', function (): void {
+    directoryServiceMakeCandidate(['candidate_kind' => CandidateKind::Employee]);
+    directoryServiceMakeCandidate(['candidate_kind' => CandidateKind::Intern]);
+    directoryServiceMakeCandidate(['candidate_kind' => CandidateKind::Intern]);
+
+    $employeeOnly = $this->service->search(new Request(['candidate_kind' => 'employee']));
+    $internOnly = $this->service->search(new Request(['candidate_kind' => 'intern']));
+
+    expect($employeeOnly->total())->toBe(1)
+        ->and($internOnly->total())->toBe(2);
+});
+
+it('filters candidates by functional_area_ids[] using OR semantics', function (): void {
+    $produccion = FunctionalArea::factory()->create(['code' => 'manufacturing']);
+    $calidad = FunctionalArea::factory()->create(['code' => 'quality']);
+    $ventas = FunctionalArea::factory()->create(['code' => 'sales']);
+
+    $candA = directoryServiceMakeCandidate();
+    $candA->functionalAreas()->attach([
+        $produccion->id => ['is_primary' => true, 'sort_order' => 0],
+        $calidad->id => ['is_primary' => false, 'sort_order' => 1],
+    ]);
+
+    $candB = directoryServiceMakeCandidate();
+    $candB->functionalAreas()->attach([
+        $ventas->id => ['is_primary' => true, 'sort_order' => 0],
+    ]);
+
+    directoryServiceMakeCandidate(); // sin áreas
+
+    // OR: cualquier candidato que tenga producción O calidad pasa.
+    $result = $this->service->search(new Request([
+        'functional_area_ids' => [$produccion->id, $calidad->id],
+    ]));
+    expect($result->total())->toBe(1);
+
+    // Filtro por área principal: candA tiene producción como primary.
+    $primary = $this->service->search(new Request([
+        'primary_functional_area_id' => $produccion->id,
+    ]));
+    expect($primary->total())->toBe(1);
+
+    // Si pido producción como primary pero solo lo tiene como secundaria, no pasa.
+    $primaryCalidad = $this->service->search(new Request([
+        'primary_functional_area_id' => $calidad->id,
+    ]));
+    expect($primaryCalidad->total())->toBe(0);
 });

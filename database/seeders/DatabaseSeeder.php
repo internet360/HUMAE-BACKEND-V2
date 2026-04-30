@@ -25,5 +25,13 @@ class DatabaseSeeder extends Seeder
             PsychometricBigFiveSeeder::class,
             AdminUserSeeder::class,
         ]);
+
+        // Demo data del PDF cosasfaltanteshumae (5 candidatos + 5 vacantes).
+        // Solo en dev/staging; el seeder hace short-circuit en producción.
+        if (! app()->environment('production')) {
+            $this->call([
+                PdfDemoSeeder::class,
+            ]);
+        }
     }
 }

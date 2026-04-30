@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\Admin\Catalogs\DegreeLevelController as AdminDegreeLevelController;
+use App\Http\Controllers\Api\V1\Admin\Catalogs\FunctionalAreaController as AdminFunctionalAreaController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
@@ -63,6 +64,7 @@ Route::middleware('auth:sanctum')->prefix('catalogs')->name('catalogs.')->group(
     Route::get('/skills', [CatalogController::class, 'skills'])->name('skills');
     Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
     Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
+    Route::get('/functional-areas', [CatalogController::class, 'functionalAreas'])->name('functional-areas');
 });
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
@@ -232,6 +234,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
     Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
         ->name('vacancies.transition');
+    Route::get('/vacancies/{vacancy}/suggested-candidates', [VacancyController::class, 'suggestedCandidates'])
+        ->name('vacancies.suggested-candidates');
 
     // Directorio de candidatos (recruiter/admin)
     Route::get('/directory/candidates', [DirectoryController::class, 'index'])
@@ -363,6 +367,9 @@ Route::middleware('auth:sanctum')
         Route::apiResource('degree-levels', AdminDegreeLevelController::class)
             ->except(['show'])
             ->parameters(['degree-levels' => 'degreeLevel']);
+        Route::apiResource('functional-areas', AdminFunctionalAreaController::class)
+            ->except(['show'])
+            ->parameters(['functional-areas' => 'functionalArea']);
     });
 
 /*

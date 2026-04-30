@@ -44,6 +44,7 @@ class VacancyResource extends JsonResource
             'position_id' => $this->position_id,
             'functional_area_id' => $this->functional_area_id,
             'vacancy_category_id' => $this->vacancy_category_id,
+            'target_candidate_kind' => $this->target_candidate_kind->value,
             'vacancy_type_id' => $this->vacancy_type_id,
             'vacancy_shift_id' => $this->vacancy_shift_id,
             'career_level_id' => $this->career_level_id,

@@ -36,9 +36,60 @@ class ProfileService
      */
     public function update(CandidateProfile $profile, array $data): CandidateProfile
     {
+        $functionalAreas = $data['functional_areas'] ?? null;
+        unset($data['functional_areas']);
+
         $profile->fill($data)->save();
 
+        if (is_array($functionalAreas)) {
+            $this->syncFunctionalAreas($profile, $functionalAreas);
+        }
+
         return $profile->fresh() ?? $profile;
+    }
+
+    /**
+     * Sincroniza las áreas de interés del candidato (PDF cosasfaltanteshumae,
+     * punto 1: selección múltiple con marca de "principal"). Además mantiene
+     * en sync el campo legacy `functional_area_id` con el área marcada como
+     * primaria para compatibilidad con búsquedas existentes.
+     *
+     * @param  array<int, array{id: int, is_primary?: bool}>  $items
+     */
+    public function syncFunctionalAreas(CandidateProfile $profile, array $items): void
+    {
+        $sync = [];
+        $primaryId = null;
+        $sort = 0;
+
+        foreach ($items as $item) {
+            $id = (int) ($item['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $isPrimary = (bool) ($item['is_primary'] ?? false);
+
+            // Solo respetamos la primera marca de primary; el resto se ignoran
+            // como primarias (validación de UI: máximo una principal).
+            $resolvedPrimary = $isPrimary && $primaryId === null;
+            if ($resolvedPrimary) {
+                $primaryId = $id;
+            }
+
+            $sync[$id] = [
+                'is_primary' => $resolvedPrimary,
+                'sort_order' => $sort++,
+            ];
+        }
+
+        $profile->functionalAreas()->sync($sync);
+
+        // Mantener el campo legacy `functional_area_id` apuntando a la primary
+        // (o a la primera si no hay primary explícita).
+        $legacyId = $primaryId ?? array_key_first($sync) ?? null;
+        if ($profile->functional_area_id !== $legacyId) {
+            $profile->forceFill(['functional_area_id' => $legacyId])->save();
+        }
     }
 
     private function firstName(User $user): string

@@ -32,12 +32,49 @@ it('recruiter creates a vacancy in borrador with auto code + slug', function ():
 
     $response->assertCreated()
         ->assertJsonPath('data.state', 'borrador')
-        ->assertJsonPath('data.company_id', $company->id);
+        ->assertJsonPath('data.company_id', $company->id)
+        ->assertJsonPath('data.target_candidate_kind', 'any');
 
     $vacancy = Vacancy::first();
     expect($vacancy->code)->toStartWith('HUM-')
         ->and($vacancy->slug)->toStartWith('senior-ux-designer')
         ->and($vacancy->created_by)->toBe($recruiter->id);
+});
+
+it('recruiter persists target_candidate_kind when creating a vacancy', function (): void {
+    $recruiter = User::factory()->create();
+    $recruiter->assignRole(UserRole::Recruiter->value);
+    Sanctum::actingAs($recruiter);
+
+    $company = Company::factory()->create();
+
+    $this->postJson('/api/v1/vacancies', [
+        'company_id' => $company->id,
+        'title' => 'Practicante Ingeniería Industrial',
+        'description' => 'Apoyo al área de mejora continua en planta.',
+        'vacancies_count' => 1,
+        'target_candidate_kind' => 'intern',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.target_candidate_kind', 'intern');
+
+    expect(Vacancy::first()->target_candidate_kind->value)->toBe('intern');
+});
+
+it('rejects invalid target_candidate_kind value', function (): void {
+    $recruiter = User::factory()->create();
+    $recruiter->assignRole(UserRole::Recruiter->value);
+    Sanctum::actingAs($recruiter);
+
+    $company = Company::factory()->create();
+
+    $this->postJson('/api/v1/vacancies', [
+        'company_id' => $company->id,
+        'title' => 'Foo',
+        'description' => 'Bar',
+        'vacancies_count' => 1,
+        'target_candidate_kind' => 'banana',
+    ])->assertStatus(422);
 });
 
 it('company_user sees only vacancies from their companies via /me/company', function (): void {

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Shared;
 
 use App\Http\Controllers\Controller;
 use App\Models\DegreeLevel;
+use App\Models\FunctionalArea;
 use App\Models\Language;
 use App\Models\Skill;
 use Illuminate\Http\JsonResponse;
@@ -48,5 +49,16 @@ class CatalogController extends Controller
             ->get(['id', 'code', 'name']);
 
         return $this->success(message: 'Catálogo de niveles académicos.', data: $levels);
+    }
+
+    public function functionalAreas(): JsonResponse
+    {
+        $areas = FunctionalArea::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
+
+        return $this->success(message: 'Catálogo de áreas funcionales.', data: $areas);
     }
 }

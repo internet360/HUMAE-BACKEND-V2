@@ -9,8 +9,10 @@ use App\Enums\VacancyState;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Companies\VacancyRequest;
 use App\Http\Resources\V1\Companies\VacancyResource;
+use App\Models\CandidateProfile;
 use App\Models\User;
 use App\Models\Vacancy;
+use App\Services\MatchingService;
 use App\Services\VacancyStateMachine;
 use Cocur\Slugify\Slugify;
 use Illuminate\Http\JsonResponse;
@@ -166,6 +168,58 @@ class VacancyController extends Controller
         return $this->success(
             message: "Estado actualizado a {$to->value}.",
             data: VacancyResource::make($vacancy->fresh('company')),
+        );
+    }
+
+    /**
+     * Devuelve candidatos sugeridos para una vacante con score de matching
+     * (PDF cosasfaltanteshumae, "Ajuste en la lógica de matching").
+     */
+    public function suggestedCandidates(
+        Request $request,
+        Vacancy $vacancy,
+        MatchingService $matching,
+    ): JsonResponse {
+        $this->authorize('view', $vacancy);
+
+        $minScore = (int) $request->input('min_score', 0);
+        $limit = min(50, max(1, (int) $request->input('limit', 20)));
+
+        // Eager-load para que el scoring sea barato y consistente.
+        $vacancy->loadMissing(['skills']);
+
+        $results = $matching->suggestForVacancy($vacancy, $minScore, $limit);
+
+        $payload = array_map(static function (array $row): array {
+            /** @var CandidateProfile $candidate */
+            $candidate = $row['candidate'];
+
+            return [
+                'candidate' => [
+                    'id' => $candidate->id,
+                    'user_id' => $candidate->user_id,
+                    'first_name' => $candidate->first_name,
+                    'last_name' => $candidate->last_name,
+                    'headline' => $candidate->headline,
+                    'avatar_url' => $candidate->user?->avatar_url,
+                    'candidate_kind' => $candidate->candidate_kind?->value,
+                    'years_of_experience' => $candidate->years_of_experience,
+                    'functional_areas' => $candidate->functionalAreas
+                        ->map(fn ($a) => [
+                            'id' => $a->id,
+                            'name' => $a->name,
+                            'is_primary' => (bool) $a->getRelation('pivot')?->getAttribute('is_primary'),
+                        ])
+                        ->values(),
+                ],
+                'score' => $row['total'],
+                'breakdown' => $row['breakdown'],
+            ];
+        }, $results);
+
+        return $this->success(
+            message: 'Candidatos sugeridos.',
+            data: $payload,
         );
     }
 

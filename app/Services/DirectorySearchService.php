@@ -48,6 +48,7 @@ class DirectorySearchService
         $this->applyFlagFilters($query, $request);
         $this->applySkillsFilter($query, $request);
         $this->applyLanguagesFilter($query, $request);
+        $this->applyFunctionalAreasFilter($query, $request);
         $this->applyFavoriteFilter($query, $request);
 
         $query->orderByDesc('updated_at');
@@ -121,6 +122,7 @@ class DirectorySearchService
             'functional_area_id',
             'position_id',
             'availability',
+            'candidate_kind',
         ] as $field) {
             if ($request->filled($field)) {
                 $query->where($field, $request->input($field));
@@ -206,6 +208,35 @@ class DirectorySearchService
         foreach ($languageIds as $languageId) {
             $query->whereHas('languages', function (Builder $q) use ($languageId): void {
                 $q->where('languages.id', $languageId);
+            });
+        }
+    }
+
+    /**
+     * Filtra por áreas de interés del candidato (PDF cosasfaltanteshumae,
+     * "Ajuste en el directorio interno": filtro por áreas de interés laboral
+     * y compatibilidad entre área de interés y vacante). Acepta:
+     *   - functional_area_ids[]=1&functional_area_ids[]=2 → OR semantics
+     *   - primary_functional_area_id=3 → solo si es el área principal
+     * El filtro legacy `functional_area_id` sigue funcionando vía
+     * applyScalarFilters() y matchea contra el campo single en el perfil.
+     *
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyFunctionalAreasFilter(Builder $query, Request $request): void
+    {
+        $areaIds = $this->arrayIds($request, 'functional_area_ids');
+        if ($areaIds !== []) {
+            $query->whereHas('functionalAreas', function (Builder $q) use ($areaIds): void {
+                $q->whereIn('functional_areas.id', $areaIds);
+            });
+        }
+
+        if ($request->filled('primary_functional_area_id')) {
+            $primaryId = (int) $request->input('primary_functional_area_id');
+            $query->whereHas('functionalAreas', function (Builder $q) use ($primaryId): void {
+                $q->where('functional_areas.id', $primaryId)
+                    ->where('candidate_functional_areas.is_primary', true);
             });
         }
     }

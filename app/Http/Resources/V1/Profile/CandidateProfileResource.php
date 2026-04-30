@@ -43,6 +43,15 @@ class CandidateProfileResource extends JsonResource
             'career_level_id' => $this->career_level_id,
             'functional_area_id' => $this->functional_area_id,
             'position_id' => $this->position_id,
+            'candidate_kind' => $this->candidate_kind?->value,
+            'other_area_text' => $this->other_area_text,
+            'functional_areas' => $this->whenLoaded('functionalAreas', fn () => $this->functionalAreas->map(fn ($a) => [
+                'id' => $a->id,
+                'code' => $a->code,
+                'name' => $a->name,
+                'is_primary' => (bool) $a->getRelation('pivot')?->getAttribute('is_primary'),
+                'sort_order' => (int) ($a->getRelation('pivot')?->getAttribute('sort_order') ?? 0),
+            ])->values()),
             'years_of_experience' => $this->years_of_experience,
             'salary_currency_id' => $this->salary_currency_id,
             'expected_salary_min' => $this->expected_salary_min !== null

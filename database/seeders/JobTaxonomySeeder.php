@@ -40,22 +40,33 @@ class JobTaxonomySeeder extends Seeder
             ['code' => 'phd', 'name' => 'Doctorado'],
         ]);
 
+        // Áreas del PDF cosasfaltanteshumae.pdf (orden y nombres canónicos del cliente).
+        // Las 15 primeras son del listado explícito; las restantes son áreas
+        // adicionales que ya existían en el sistema y se conservan para no romper
+        // perfiles/vacantes ya guardados.
         $this->seedList(FunctionalArea::class, [
-            ['code' => 'engineering', 'name' => 'Ingeniería / Desarrollo'],
+            ['code' => 'manufacturing', 'name' => 'Producción'],
+            ['code' => 'quality', 'name' => 'Calidad'],
+            ['code' => 'maintenance', 'name' => 'Mantenimiento'],
+            ['code' => 'logistics', 'name' => 'Logística'],
+            ['code' => 'hr', 'name' => 'Recursos Humanos'],
+            ['code' => 'admin', 'name' => 'Administración'],
+            ['code' => 'industrial_safety', 'name' => 'Seguridad Industrial'],
+            ['code' => 'warehouse', 'name' => 'Almacén'],
+            ['code' => 'sales', 'name' => 'Ventas'],
+            ['code' => 'engineering', 'name' => 'Ingeniería'],
+            ['code' => 'purchasing', 'name' => 'Compras'],
+            ['code' => 'it_systems', 'name' => 'Sistemas'],
+            ['code' => 'customer', 'name' => 'Atención al cliente'],
+            ['code' => 'operations', 'name' => 'Operación'],
+            ['code' => 'finance', 'name' => 'Finanzas'],
+            // Áreas auxiliares (no del PDF pero útiles para perfiles tech / corporativos)
             ['code' => 'product', 'name' => 'Producto'],
             ['code' => 'design', 'name' => 'Diseño'],
             ['code' => 'data', 'name' => 'Datos / Analítica'],
             ['code' => 'marketing', 'name' => 'Marketing'],
-            ['code' => 'sales', 'name' => 'Ventas'],
-            ['code' => 'customer', 'name' => 'Atención al cliente / Soporte'],
-            ['code' => 'operations', 'name' => 'Operaciones'],
-            ['code' => 'finance', 'name' => 'Finanzas / Contabilidad'],
-            ['code' => 'hr', 'name' => 'Recursos Humanos'],
             ['code' => 'legal', 'name' => 'Legal / Compliance'],
-            ['code' => 'admin', 'name' => 'Administración'],
-            ['code' => 'logistics', 'name' => 'Logística / Cadena de suministro'],
-            ['code' => 'manufacturing', 'name' => 'Producción / Manufactura'],
-            ['code' => 'other', 'name' => 'Otro'],
+            ['code' => 'other', 'name' => 'Otra'],
         ]);
 
         $this->seedList(VacancyCategory::class, [

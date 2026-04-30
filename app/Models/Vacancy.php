@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\Priority;
 use App\Enums\VacancyState;
+use App\Enums\VacancyTargetKind;
 use Database\Factories\VacancyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -30,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $position_id
  * @property int|null $functional_area_id
  * @property int|null $vacancy_category_id
+ * @property VacancyTargetKind $target_candidate_kind
  * @property int|null $vacancy_type_id
  * @property int|null $vacancy_shift_id
  * @property int|null $career_level_id
@@ -70,6 +72,16 @@ class Vacancy extends Model
 
     use SoftDeletes;
 
+    /**
+     * Defaults aplicados al instanciar — alineados con los defaults de DB
+     * para que el modelo en memoria refleje lo que la BD escribirá.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'target_candidate_kind' => 'any',
+    ];
+
     protected $fillable = [
         'company_id',
         'created_by',
@@ -84,6 +96,7 @@ class Vacancy extends Model
         'position_id',
         'functional_area_id',
         'vacancy_category_id',
+        'target_candidate_kind',
         'vacancy_type_id',
         'vacancy_shift_id',
         'career_level_id',
@@ -123,6 +136,7 @@ class Vacancy extends Model
         return [
             'state' => VacancyState::class,
             'priority' => Priority::class,
+            'target_candidate_kind' => VacancyTargetKind::class,
             'is_remote' => 'boolean',
             'is_hybrid' => 'boolean',
             'salary_is_public' => 'boolean',

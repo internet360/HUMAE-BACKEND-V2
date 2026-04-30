@@ -66,6 +66,7 @@ class DirectoryController extends Controller
             'documents' => fn ($q) => $q->where('is_internal', false),
             'skills',
             'languages',
+            'functionalAreas',
         ]);
 
         $this->attachFavoriteIds($request, [$candidate->id]);
