@@ -69,6 +69,14 @@ Route::middleware('auth:sanctum')->prefix('catalogs')->name('catalogs.')->group(
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
     // Público
+    Route::post('/register/recruiter', [AuthController::class, 'registerRecruiter'])
+        ->middleware('throttle:5,1')
+        ->name('register.recruiter');
+
+    Route::post('/register/company', [AuthController::class, 'registerCompany'])
+        ->middleware('throttle:5,1')
+        ->name('register.company');
+
     Route::post('/register', [AuthController::class, 'register'])
         ->middleware('throttle:10,1')
         ->name('register');
@@ -349,6 +357,10 @@ Route::middleware('auth:sanctum')->prefix('admin/users')->name('admin.users.')->
     Route::post('/', [AdminUserController::class, 'store'])->name('store');
     Route::post('/{user}/resend-invitation', [AdminUserController::class, 'resendInvitation'])
         ->name('resend-invitation');
+    Route::post('/{user}/approve', [AdminUserController::class, 'approve'])
+        ->name('approve');
+    Route::post('/{user}/reject', [AdminUserController::class, 'reject'])
+        ->name('reject');
     Route::delete('/{user}', [AdminUserController::class, 'destroy'])->name('destroy');
 });
 

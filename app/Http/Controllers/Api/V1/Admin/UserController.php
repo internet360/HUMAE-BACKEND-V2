@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\CompanyMemberRole;
 use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\Admin\AdminUserResource;
 use App\Models\Company;
 use App\Models\User;
+use App\Notifications\AccountApprovedNotification;
+use App\Notifications\AccountRejectedNotification;
 use App\Notifications\UserInvitationNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,10 +52,17 @@ class UserController extends Controller
                     $q->whereNotNull('invitation_token')
                         ->whereNull('invitation_accepted_at');
                 } elseif ($statusFilter === 'active') {
-                    $q->where(function ($inner): void {
-                        $inner->whereNull('invitation_token')
-                            ->orWhereNotNull('invitation_accepted_at');
-                    });
+                    $q->where('status', UserStatus::Active->value)
+                        ->where(function ($inner): void {
+                            $inner->whereNull('invitation_token')
+                                ->orWhereNotNull('invitation_accepted_at');
+                        });
+                } elseif ($statusFilter === UserStatus::PendingApproval->value) {
+                    $q->where('status', UserStatus::PendingApproval->value);
+                } elseif ($statusFilter === UserStatus::Suspended->value) {
+                    $q->where('status', UserStatus::Suspended->value);
+                } elseif ($statusFilter === UserStatus::Inactive->value) {
+                    $q->where('status', UserStatus::Inactive->value);
                 }
             })
             ->orderByDesc('id')
@@ -206,6 +216,64 @@ class UserController extends Controller
         ));
 
         return $this->success(message: 'Invitación reenviada.');
+    }
+
+    public function approve(Request $request, User $user): JsonResponse
+    {
+        $this->ensureAdmin($request);
+
+        if ($user->status !== UserStatus::PendingApproval->value) {
+            return $this->error(
+                'Esta cuenta no está pendiente de aprobación.',
+                status: HttpStatus::HTTP_CONFLICT,
+            );
+        }
+
+        $user->forceFill(['status' => UserStatus::Active->value])->save();
+
+        /** @var Role|null $firstRole */
+        $firstRole = $user->roles->first();
+        $roleName = $firstRole !== null ? $firstRole->name : UserRole::Candidate->value;
+
+        $user->notify(new AccountApprovedNotification(
+            roleLabel: $this->roleLabel($roleName),
+        ));
+
+        $user->load(['roles', 'companyMemberships.company']);
+
+        return $this->success(
+            message: 'Cuenta aprobada. Le avisamos al usuario por correo.',
+            data: AdminUserResource::make($user),
+        );
+    }
+
+    public function reject(Request $request, User $user): JsonResponse
+    {
+        $this->ensureAdmin($request);
+
+        if ($user->status !== UserStatus::PendingApproval->value) {
+            return $this->error(
+                'Esta cuenta no está pendiente de aprobación.',
+                status: HttpStatus::HTTP_CONFLICT,
+            );
+        }
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $user->forceFill(['status' => UserStatus::Inactive->value])->save();
+
+        $user->notify(new AccountRejectedNotification(
+            reason: isset($validated['reason']) ? (string) $validated['reason'] : null,
+        ));
+
+        $user->load(['roles', 'companyMemberships.company']);
+
+        return $this->success(
+            message: 'Cuenta rechazada. Le avisamos al usuario por correo.',
+            data: AdminUserResource::make($user),
+        );
     }
 
     public function destroy(Request $request, User $user): JsonResponse
