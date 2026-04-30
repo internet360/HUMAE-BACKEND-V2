@@ -36,6 +36,26 @@
         .header .logo { text-align: right; vertical-align: top; }
         .header .logo img { width: 80px; }
 
+        .header .avatar { width: 76px; vertical-align: top; padding-right: 14px; }
+        .header .avatar-frame {
+            width: 70px;
+            height: 70px;
+            border-radius: 35px;
+            background: #e5e7eb;
+            border: 2px solid #314259;
+            overflow: hidden;
+            text-align: center;
+            line-height: 66px;
+            color: #314259;
+            font-weight: bold;
+            font-size: 22px;
+        }
+        .header .avatar-frame img {
+            width: 70px;
+            height: 70px;
+            display: block;
+        }
+
         .section {
             margin-bottom: 14px;
             page-break-inside: avoid;
@@ -100,11 +120,27 @@
         $profile->linkedin_url,
         $profile->portfolio_url,
     ]);
+
+    $initials = '';
+    foreach (preg_split('/\s+/', trim($fullName !== '' ? $fullName : (string) $user->name)) ?: [] as $part) {
+        if ($part !== '' && mb_strlen($initials) < 2) {
+            $initials .= mb_strtoupper(mb_substr($part, 0, 1));
+        }
+    }
 @endphp
 
 <div class="header">
     <table>
         <tr>
+            <td class="avatar">
+                <div class="avatar-frame">
+                    @if (! empty($avatarSrc))
+                        <img src="{{ $avatarSrc }}" alt="" />
+                    @else
+                        {{ $initials !== '' ? $initials : '?' }}
+                    @endif
+                </div>
+            </td>
             <td>
                 <div class="name">{{ $fullName ?: $user->name }}</div>
                 @if ($profile->headline)

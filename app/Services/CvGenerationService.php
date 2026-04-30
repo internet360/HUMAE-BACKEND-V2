@@ -8,7 +8,9 @@ use App\Models\CandidateProfile;
 use App\Models\User;
 use Dompdf\Dompdf;
 use Dompdf\Options;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
+use Throwable;
 
 class CvGenerationService
 {
@@ -38,6 +40,7 @@ class CvGenerationService
             'user' => $user,
             'profile' => $profile,
             'logoPath' => resource_path('views/pdf/humae-logo.png'),
+            'avatarSrc' => $this->avatarDataUri($user),
             'generatedAt' => now(),
         ])->render();
 
@@ -57,6 +60,36 @@ class CvGenerationService
         $filename = 'cv-humae-'.$slug.'.pdf';
 
         return ['filename' => $filename, 'pdf' => $pdf];
+    }
+
+    /**
+     * Inlinea la foto del candidato como data URI para que DomPDF la
+     * renderice sin depender de URLs públicas ni del chroot.
+     */
+    private function avatarDataUri(User $user): ?string
+    {
+        $path = $user->avatar_path;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        try {
+            $disk = Storage::disk('public');
+            if (! $disk->exists($path)) {
+                return null;
+            }
+
+            $contents = $disk->get($path);
+            if (! is_string($contents) || $contents === '') {
+                return null;
+            }
+
+            $mime = $disk->mimeType($path) ?: 'image/webp';
+
+            return 'data:'.$mime.';base64,'.base64_encode($contents);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function filenameSlug(CandidateProfile $profile): string

@@ -205,7 +205,7 @@ class PdfDemoSeeder extends Seeder
             [
                 'title' => 'Practicante de Ingeniería Industrial',
                 'kind' => VacancyTargetKind::Intern,
-                'area' => $produccion,
+                'area' => $ingenieria,
                 'min_years' => 0,
                 'max_years' => 1,
                 'salary_max' => 8000,
@@ -244,8 +244,9 @@ class PdfDemoSeeder extends Seeder
             ],
         ];
 
+        $createdVacancies = [];
         foreach ($vacancies as $i => $v) {
-            Vacancy::updateOrCreate(
+            $vacancy = Vacancy::updateOrCreate(
                 ['code' => 'HUM-DEMO-'.str_pad((string) ($i + 1), 4, '0', STR_PAD_LEFT)],
                 [
                     'company_id' => $company->id,
@@ -262,14 +263,27 @@ class PdfDemoSeeder extends Seeder
                     'published_at' => now(),
                 ],
             );
+            $createdVacancies[] = $vacancy;
         }
 
         $this->command->info('PdfDemoSeeder: 5 candidatos + 5 vacantes demo creados.');
-        $this->command->info('  Login candidato (cualquiera): password "'.self::PASSWORD.'"');
+        $this->command->info('  Login candidato (password "'.self::PASSWORD.'"):');
         $this->command->info('    - pablo.intern@demo.humae       (Practicante · Ingeniería + Producción)');
         $this->command->info('    - maria.intern@demo.humae       (Practicante · Sistemas)');
         $this->command->info('    - juan.empleado@demo.humae      (Empleado · Producción/Calidad/Mantenimiento)');
         $this->command->info('    - sofia.empleado@demo.humae     (Empleado · Logística + Almacén)');
         $this->command->info('    - lucia.empleado@demo.humae     (Empleado · RH)');
+        $this->command->info('  Login reclutador (TestAccountsSeeder): recruiter@test.humae / Password123');
+        $this->command->info('  Vacantes demo (abrir pipeline en /recruiter/vacantes/{id}/pipeline):');
+        foreach ($createdVacancies as $v) {
+            $this->command->info(sprintf(
+                '    - id=%-4d code=%s · "%s" (kind=%s)',
+                $v->id,
+                $v->code,
+                $v->title,
+                $v->target_candidate_kind->value,
+            ));
+        }
+        $this->command->info('  Tip: en HUM-DEMO-0001 (Ingeniería Industrial · Practicante) Pablo aparece con score 100 al hacer clic en "Ver sugerencias".');
     }
 }
