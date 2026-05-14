@@ -165,6 +165,52 @@ class InterviewController extends Controller
         );
     }
 
+    public function selectSlot(Request $request, Interview $interview): JsonResponse
+    {
+        $this->authorizeSlotSelection($request, $interview);
+
+        $validated = $request->validate([
+            'slot' => ['required', 'integer', 'in:1,2'],
+        ]);
+
+        try {
+            $fresh = $this->service->selectSlot($interview, (int) $validated['slot']);
+        } catch (Throwable $e) {
+            return $this->error($e->getMessage(), status: HttpStatus::HTTP_CONFLICT);
+        }
+
+        $fresh->load('assignment.candidateProfile', 'assignment.vacancy');
+
+        return $this->success(
+            message: 'Horario seleccionado. El reclutador HUMAE agregará el enlace de la reunión.',
+            data: InterviewResource::make($fresh),
+        );
+    }
+
+    public function addMeetingDetails(Request $request, Interview $interview): JsonResponse
+    {
+        $this->authorizeRecruiter($request);
+
+        $validated = $request->validate([
+            'meeting_url' => ['required', 'url', 'max:600'],
+            'meeting_provider' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'meeting_id' => ['sometimes', 'nullable', 'string', 'max:120'],
+        ]);
+
+        try {
+            $fresh = $this->service->addMeetingDetails($interview, $validated);
+        } catch (Throwable $e) {
+            return $this->error($e->getMessage(), status: HttpStatus::HTTP_CONFLICT);
+        }
+
+        $fresh->load('assignment.candidateProfile', 'assignment.vacancy');
+
+        return $this->success(
+            message: 'Enlace de reunión agregado.',
+            data: InterviewResource::make($fresh),
+        );
+    }
+
     public function confirm(Request $request, Interview $interview): JsonResponse
     {
         $this->authorizeAccess($request, $interview);
@@ -290,6 +336,46 @@ class InterviewController extends Controller
         if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
             abort(HttpStatus::HTTP_FORBIDDEN);
         }
+    }
+
+    /**
+     * Quién puede escoger el slot de la entrevista:
+     * - El candidato dueño de la asignación (caso típico).
+     * - Recruiter / admin (por soporte / corrección).
+     * - Company owner/manager (por si la empresa decide en nombre de su flujo
+     *   interno; mantenemos consistencia con el resto de Policies).
+     */
+    private function authorizeSlotSelection(Request $request, Interview $interview): void
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+            return;
+        }
+
+        $assignment = $interview->assignment;
+        if ($assignment === null) {
+            abort(HttpStatus::HTTP_NOT_FOUND);
+        }
+
+        if ($user->hasRole(UserRole::Candidate->value)
+            && $assignment->candidateProfile?->user_id === $user->id) {
+            return;
+        }
+
+        if ($user->hasRole(UserRole::CompanyUser->value)) {
+            $companyId = $assignment->vacancy?->company_id;
+            if ($companyId !== null
+                && $user->companyMemberships()
+                    ->where('company_id', $companyId)
+                    ->whereIn('role', ['owner', 'manager'])
+                    ->exists()) {
+                return;
+            }
+        }
+
+        abort(HttpStatus::HTTP_FORBIDDEN);
     }
 
     private function authorizeReschedule(Request $request, Interview $interview): void

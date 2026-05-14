@@ -8,19 +8,22 @@ use App\Enums\AssignmentStage;
 use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Companies\AssignRecruiterRequest;
 use App\Http\Requests\Companies\VacancyRequest;
 use App\Http\Resources\V1\Companies\VacancyResource;
 use App\Http\Resources\V1\Pipeline\CompanyAssignmentResource;
+use App\Models\CandidateProfile;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Models\VacancyAssignment;
+use App\Services\PipelineService;
 use App\Services\VacancyStateMachine;
 use Cocur\Slugify\Slugify;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
+use Throwable;
 
 /**
  * Endpoints para usuarios tipo `company_user`. Solo operan sobre las vacantes
@@ -59,7 +62,7 @@ class CompanyVacancyController extends Controller
         );
     }
 
-    public function store(VacancyRequest $request): JsonResponse
+    public function store(VacancyRequest $request, PipelineService $pipeline): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
@@ -82,17 +85,54 @@ class CompanyVacancyController extends Controller
             );
         }
 
-        $vacancy = Vacancy::create([
-            ...$data,
-            'created_by' => $user->id,
-            'state' => VacancyState::Borrador->value,
-            'slug' => $this->uniqueSlug((string) $data['title']),
-            'code' => $this->nextVacancyCode(),
-        ]);
+        // Las empresas no eligen al reclutador responsable; se descarta si vino.
+        unset($data['assigned_recruiter_id']);
+
+        // Si la empresa quiere asignar un candidato directamente al crear la
+        // vacante (flujo "encontré candidato, necesito vacante"), creamos la
+        // vacante en estado `activa` y asignamos en una sola transacción.
+        $autoAssignCandidateId = isset($data['auto_assign_candidate_profile_id'])
+            ? (int) $data['auto_assign_candidate_profile_id']
+            : null;
+        unset($data['auto_assign_candidate_profile_id']);
+
+        try {
+            $vacancy = DB::transaction(function () use ($data, $user, $autoAssignCandidateId, $pipeline): Vacancy {
+                $initialState = $autoAssignCandidateId !== null
+                    ? VacancyState::Activa
+                    : VacancyState::Borrador;
+
+                $vacancy = Vacancy::create([
+                    ...$data,
+                    'created_by' => $user->id,
+                    'state' => $initialState->value,
+                    'published_at' => $autoAssignCandidateId !== null ? now() : null,
+                    'slug' => $this->uniqueSlug((string) $data['title']),
+                    'code' => $this->nextVacancyCode(),
+                ]);
+
+                if ($autoAssignCandidateId !== null) {
+                    $candidate = CandidateProfile::findOrFail($autoAssignCandidateId);
+                    $freshVacancy = $vacancy->fresh() ?? $vacancy;
+                    // PipelineService::assign valida estado + membresía activa.
+                    $pipeline->assign($freshVacancy, $candidate, $user);
+                }
+
+                return $vacancy;
+            });
+        } catch (Throwable $e) {
+            return $this->error(
+                message: $e->getMessage(),
+                status: HttpStatus::HTTP_CONFLICT,
+            );
+        }
+
         $vacancy->load('company');
 
         return $this->success(
-            message: 'Vacante creada en borrador. HUMAE la revisará.',
+            message: $autoAssignCandidateId !== null
+                ? 'Vacante creada y candidato asignado.'
+                : 'Vacante creada en borrador. HUMAE la revisará.',
             data: VacancyResource::make($vacancy),
             status: HttpStatus::HTTP_CREATED,
         );
@@ -178,24 +218,6 @@ class CompanyVacancyController extends Controller
 
         return $this->success(
             message: "Estado actualizado a {$to->value}.",
-            data: VacancyResource::make($vacancy->fresh('company')),
-        );
-    }
-
-    public function assignRecruiter(AssignRecruiterRequest $request, Vacancy $vacancy): JsonResponse
-    {
-        $this->authorize('assignRecruiter', $vacancy);
-
-        /** @var array{recruiter_id: int|null} $data */
-        $data = $request->validated();
-
-        $vacancy->update(['assigned_recruiter_id' => $data['recruiter_id']]);
-        $vacancy->load('company');
-
-        return $this->success(
-            message: $data['recruiter_id'] === null
-                ? 'Reclutador responsable removido.'
-                : 'Reclutador responsable asignado.',
             data: VacancyResource::make($vacancy->fresh('company')),
         );
     }

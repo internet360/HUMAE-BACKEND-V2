@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property InterviewState|null $state
  * @property InterviewMode|null $mode
  * @property Carbon|null $scheduled_at
+ * @property Carbon|null $alternate_scheduled_at
  * @property int $duration_minutes
  * @property string $timezone
  * @property string|null $meeting_url
@@ -54,6 +55,7 @@ class Interview extends Model
         'state',
         'mode',
         'scheduled_at',
+        'alternate_scheduled_at',
         'duration_minutes',
         'timezone',
         'meeting_url',
@@ -76,6 +78,7 @@ class Interview extends Model
             'round' => 'integer',
             'duration_minutes' => 'integer',
             'scheduled_at' => 'datetime',
+            'alternate_scheduled_at' => 'datetime',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
             'rating' => 'integer',

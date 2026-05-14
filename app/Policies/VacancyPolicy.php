@@ -80,25 +80,6 @@ class VacancyPolicy
         return false;
     }
 
-    public function assignRecruiter(User $user, Vacancy $vacancy): bool
-    {
-        if ($user->hasRole(UserRole::Recruiter->value)) {
-            return true;
-        }
-
-        if ($user->hasRole(UserRole::CompanyUser->value)) {
-            $company = $vacancy->company;
-
-            return $company !== null
-                && $company->members()
-                    ->where('user_id', $user->id)
-                    ->whereIn('role', ['owner', 'manager'])
-                    ->exists();
-        }
-
-        return false;
-    }
-
     public function close(User $user, Vacancy $vacancy): bool
     {
         return $this->update($user, $vacancy);

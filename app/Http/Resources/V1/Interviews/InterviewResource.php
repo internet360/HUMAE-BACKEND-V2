@@ -43,6 +43,7 @@ class InterviewResource extends JsonResource
             'state' => $state->value,
             'mode' => $this->mode?->value,
             'scheduled_at' => $this->scheduled_at?->toIso8601String(),
+            'alternate_scheduled_at' => $this->alternate_scheduled_at?->toIso8601String(),
             'duration_minutes' => $this->duration_minutes,
             'timezone' => $this->timezone,
             'meeting_url' => $this->meeting_url,

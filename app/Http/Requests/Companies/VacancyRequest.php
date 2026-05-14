@@ -74,6 +74,13 @@ class VacancyRequest extends FormRequest
             'internal_notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
 
             'assigned_recruiter_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+
+            // Si se envía, el controller crea la vacante como `activa` (auto-publica)
+            // y asigna al candidato en una sola transacción. Útil para el flujo
+            // "encontré candidato → necesito vacante para asignarlo".
+            'auto_assign_candidate_profile_id' => [
+                'sometimes', 'nullable', 'integer', 'exists:candidate_profiles,id',
+            ],
         ];
     }
 }
