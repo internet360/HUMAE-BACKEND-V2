@@ -127,14 +127,37 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.view-own',
         ],
         'company_user' => [
+            // Empresa propia
             'companies.view-own',
             'companies.update-own',
+
+            // Vacantes (scoping por Policy)
             'vacancies.view-own',
             'vacancies.create',
             'vacancies.update-own',
+            'vacancies.publish',
+            'vacancies.close',
+
+            // Directorio de candidatos (acceso al pool global evaluado por HUMAE)
+            'directory.view',
+            'directory.view-full',
+            'directory.favorite',
+            'cv.download-any',
+
+            // Pipeline / asignaciones (scoping por Policy a sus vacantes)
             'assignments.view-own',
+            'assignments.create',
+            'assignments.update',
+            'assignments.notes.create',
+
+            // Entrevistas
             'interviews.confirm',
             'interviews.view-own',
+            'interviews.schedule',
+            'interviews.reschedule',
+            'interviews.cancel',
+
+            // Reportes
             'reports.view-own',
         ],
         'admin' => [

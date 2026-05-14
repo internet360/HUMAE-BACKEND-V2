@@ -129,7 +129,7 @@ class InterviewController extends Controller
 
     public function update(UpdateInterviewRequest $request, Interview $interview): JsonResponse
     {
-        $this->authorizeRecruiter($request);
+        $this->authorizeReschedule($request, $interview);
 
         /** @var array<string, mixed> $data */
         $data = $request->validated();
@@ -290,5 +290,28 @@ class InterviewController extends Controller
         if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
             abort(HttpStatus::HTTP_FORBIDDEN);
         }
+    }
+
+    private function authorizeReschedule(Request $request, Interview $interview): void
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+            return;
+        }
+
+        if ($user->hasRole(UserRole::CompanyUser->value)) {
+            $companyId = $interview->assignment?->vacancy?->company_id;
+            if ($companyId !== null
+                && $user->companyMemberships()
+                    ->where('company_id', $companyId)
+                    ->whereIn('role', ['owner', 'manager'])
+                    ->exists()) {
+                return;
+            }
+        }
+
+        abort(HttpStatus::HTTP_FORBIDDEN);
     }
 }

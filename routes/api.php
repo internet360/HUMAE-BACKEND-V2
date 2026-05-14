@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\V1\Recruiter\CompanyController;
 use App\Http\Controllers\Api\V1\Recruiter\CompanyMemberController;
 use App\Http\Controllers\Api\V1\Recruiter\DirectoryController;
 use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
+use App\Http\Controllers\Api\V1\Shared\AvailableRecruitersController;
 use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
@@ -222,6 +223,10 @@ Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function ():
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->group(function (): void {
+    // Recruiters disponibles (compartido: recruiter, company_user, admin)
+    Route::get('/recruiters/available', AvailableRecruitersController::class)
+        ->name('recruiters.available');
+
     // Companies
     Route::apiResource('companies', CompanyController::class)
         ->names('companies');
@@ -320,6 +325,8 @@ Route::middleware('auth:sanctum')->prefix('me/company')->name('me.company.')->gr
         ->name('vacancies.update');
     Route::post('/vacancies/{vacancy}/transition', [CompanyVacancyController::class, 'transition'])
         ->name('vacancies.transition');
+    Route::post('/vacancies/{vacancy}/assign-recruiter', [CompanyVacancyController::class, 'assignRecruiter'])
+        ->name('vacancies.assign-recruiter');
     Route::get('/vacancies/{vacancy}/assignments', [CompanyVacancyController::class, 'assignments'])
         ->name('vacancies.assignments');
 });

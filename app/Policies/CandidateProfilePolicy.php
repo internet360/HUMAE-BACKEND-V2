@@ -17,12 +17,16 @@ class CandidateProfilePolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value]);
+        return $user->hasAnyRole([
+            UserRole::Recruiter->value,
+            UserRole::CompanyUser->value,
+            UserRole::Admin->value,
+        ]);
     }
 
     public function view(User $user, CandidateProfile $profile): bool
     {
-        if ($user->hasRole(UserRole::Recruiter->value)) {
+        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::CompanyUser->value])) {
             return true;
         }
 

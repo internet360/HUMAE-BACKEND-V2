@@ -163,8 +163,12 @@ class DirectoryController extends Controller
             abort(HttpStatus::HTTP_UNAUTHORIZED);
         }
 
-        if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            abort(HttpStatus::HTTP_FORBIDDEN, 'Acceso restringido al equipo HUMAE.');
+        if (! $user->hasAnyRole([
+            UserRole::Recruiter->value,
+            UserRole::CompanyUser->value,
+            UserRole::Admin->value,
+        ])) {
+            abort(HttpStatus::HTTP_FORBIDDEN, 'Acceso restringido.');
         }
     }
 

@@ -174,7 +174,7 @@ it('returns candidate CV pdf', function (): void {
     expect(substr($response->getContent() ?: '', 0, 4))->toBe('%PDF');
 });
 
-it('blocks candidates and company_users', function (): void {
+it('blocks candidates from the directory', function (): void {
     makeCandidateWithActiveMembership();
 
     $candidate = User::factory()->create();
@@ -182,12 +182,16 @@ it('blocks candidates and company_users', function (): void {
     Sanctum::actingAs($candidate);
 
     $this->getJson('/api/v1/directory/candidates')->assertStatus(403);
+});
+
+it('allows company_users to access the directory', function (): void {
+    makeCandidateWithActiveMembership();
 
     $companyUser = User::factory()->create();
     $companyUser->assignRole(UserRole::CompanyUser->value);
     Sanctum::actingAs($companyUser);
 
-    $this->getJson('/api/v1/directory/candidates')->assertStatus(403);
+    $this->getJson('/api/v1/directory/candidates')->assertStatus(200);
 });
 
 it('rejects unauthenticated directory access', function (): void {

@@ -48,9 +48,20 @@ class AssignmentController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
+        $isRecruiterOrAdmin = $user->hasAnyRole([
+            UserRole::Recruiter->value,
+            UserRole::Admin->value,
+        ]);
+
+        $isCompanyOwner = $user->hasRole(UserRole::CompanyUser->value)
+            && $vacancy->company?->members()
+                ->where('user_id', $user->id)
+                ->whereIn('role', ['owner', 'manager'])
+                ->exists();
+
+        if (! $isRecruiterOrAdmin && ! $isCompanyOwner) {
             return $this->error(
-                'Solo reclutadores pueden asignar candidatos.',
+                'No tienes permisos para asignar candidatos a esta vacante.',
                 status: HttpStatus::HTTP_FORBIDDEN,
             );
         }
@@ -117,7 +128,7 @@ class AssignmentController extends Controller
 
     public function destroy(Request $request, VacancyAssignment $assignment): JsonResponse
     {
-        $this->authorizeRecruiter($request);
+        $this->authorizeAccess($request, $assignment);
         $assignment->delete();
 
         return $this->success(message: 'Asignación eliminada.', status: HttpStatus::HTTP_NO_CONTENT);
@@ -178,17 +189,5 @@ class AssignmentController extends Controller
         }
 
         $this->authorize('update', $vacancy);
-    }
-
-    private function authorizeRecruiter(Request $request): void
-    {
-        /** @var User|null $user */
-        $user = $request->user();
-        if ($user === null) {
-            abort(HttpStatus::HTTP_UNAUTHORIZED);
-        }
-        if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            abort(HttpStatus::HTTP_FORBIDDEN);
-        }
     }
 }

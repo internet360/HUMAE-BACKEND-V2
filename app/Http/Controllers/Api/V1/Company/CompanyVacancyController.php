@@ -8,6 +8,7 @@ use App\Enums\AssignmentStage;
 use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Companies\AssignRecruiterRequest;
 use App\Http\Requests\Companies\VacancyRequest;
 use App\Http\Resources\V1\Companies\VacancyResource;
 use App\Http\Resources\V1\Pipeline\CompanyAssignmentResource;
@@ -177,6 +178,24 @@ class CompanyVacancyController extends Controller
 
         return $this->success(
             message: "Estado actualizado a {$to->value}.",
+            data: VacancyResource::make($vacancy->fresh('company')),
+        );
+    }
+
+    public function assignRecruiter(AssignRecruiterRequest $request, Vacancy $vacancy): JsonResponse
+    {
+        $this->authorize('assignRecruiter', $vacancy);
+
+        /** @var array{recruiter_id: int|null} $data */
+        $data = $request->validated();
+
+        $vacancy->update(['assigned_recruiter_id' => $data['recruiter_id']]);
+        $vacancy->load('company');
+
+        return $this->success(
+            message: $data['recruiter_id'] === null
+                ? 'Reclutador responsable removido.'
+                : 'Reclutador responsable asignado.',
             data: VacancyResource::make($vacancy->fresh('company')),
         );
     }

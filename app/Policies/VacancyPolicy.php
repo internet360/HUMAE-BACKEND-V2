@@ -63,8 +63,40 @@ class VacancyPolicy
 
     public function publish(User $user, Vacancy $vacancy): bool
     {
-        return $user->hasRole(UserRole::Recruiter->value)
-            && $vacancy->assigned_recruiter_id === $user->id;
+        if ($user->hasRole(UserRole::Recruiter->value)) {
+            return $vacancy->assigned_recruiter_id === $user->id;
+        }
+
+        if ($user->hasRole(UserRole::CompanyUser->value)) {
+            $company = $vacancy->company;
+
+            return $company !== null
+                && $company->members()
+                    ->where('user_id', $user->id)
+                    ->whereIn('role', ['owner', 'manager'])
+                    ->exists();
+        }
+
+        return false;
+    }
+
+    public function assignRecruiter(User $user, Vacancy $vacancy): bool
+    {
+        if ($user->hasRole(UserRole::Recruiter->value)) {
+            return true;
+        }
+
+        if ($user->hasRole(UserRole::CompanyUser->value)) {
+            $company = $vacancy->company;
+
+            return $company !== null
+                && $company->members()
+                    ->where('user_id', $user->id)
+                    ->whereIn('role', ['owner', 'manager'])
+                    ->exists();
+        }
+
+        return false;
     }
 
     public function close(User $user, Vacancy $vacancy): bool
