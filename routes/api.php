@@ -65,6 +65,7 @@ Route::middleware('auth:sanctum')->prefix('catalogs')->name('catalogs.')->group(
     Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
     Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
     Route::get('/functional-areas', [CatalogController::class, 'functionalAreas'])->name('functional-areas');
+    Route::get('/vacancy-types', [CatalogController::class, 'vacancyTypes'])->name('vacancy-types');
 });
 
 Route::prefix('auth')->name('auth.')->group(function (): void {

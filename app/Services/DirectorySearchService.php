@@ -46,6 +46,8 @@ class DirectorySearchService
         $this->applyExperienceFilters($query, $request);
         $this->applySalaryFilter($query, $request);
         $this->applyFlagFilters($query, $request);
+        $this->applyModalityFilter($query, $request);
+        $this->applyWorkSchedulesFilter($query, $request);
         $this->applySkillsFilter($query, $request);
         $this->applyLanguagesFilter($query, $request);
         $this->applyFunctionalAreasFilter($query, $request);
@@ -175,6 +177,61 @@ class DirectorySearchService
         if ($request->has('open_to_relocation')) {
             $query->where('open_to_relocation', $request->boolean('open_to_relocation'));
         }
+    }
+
+    /**
+     * Filtra por modalidad de trabajo a la que el candidato está abierto:
+     * presencial, remoto, híbrido. Acepta uno o más en el array `modalities[]`
+     * y aplica OR-semantics (el candidato matchea si está abierto a CUALQUIERA
+     * de las modalidades pedidas). También sigue aceptando el flag legacy
+     * `open_to_remote` por compatibilidad.
+     *
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyModalityFilter(Builder $query, Request $request): void
+    {
+        $raw = $request->input('modalities', []);
+        if (! \is_array($raw)) {
+            return;
+        }
+
+        $allowed = ['onsite', 'remote', 'hybrid'];
+        $modalities = array_values(array_intersect($raw, $allowed));
+
+        if ($modalities === []) {
+            return;
+        }
+
+        $columnByModality = [
+            'onsite' => 'open_to_onsite',
+            'remote' => 'open_to_remote',
+            'hybrid' => 'open_to_hybrid',
+        ];
+
+        $query->where(function (Builder $q) use ($modalities, $columnByModality): void {
+            foreach ($modalities as $m) {
+                $q->orWhere($columnByModality[$m], true);
+            }
+        });
+    }
+
+    /**
+     * Filtra por jornada laboral. Acepta uno o más IDs del catálogo
+     * `vacancy_types` en `work_schedules[]` y aplica OR-semantics: el
+     * candidato matchea si está abierto a CUALQUIERA de las jornadas pedidas.
+     *
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyWorkSchedulesFilter(Builder $query, Request $request): void
+    {
+        $ids = $this->arrayIds($request, 'work_schedules');
+        if ($ids === []) {
+            return;
+        }
+
+        $query->whereHas('workSchedules', function (Builder $q) use ($ids): void {
+            $q->whereIn('vacancy_types.id', $ids);
+        });
     }
 
     /**

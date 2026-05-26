@@ -36,6 +36,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $available_from
  * @property bool $open_to_relocation
  * @property bool $open_to_remote
+ * @property bool $open_to_onsite
+ * @property bool $open_to_hybrid
  * @property CandidateState|null $state
  * @property Carbon|null $approved_at
  * @property Carbon|null $created_at
@@ -83,6 +85,8 @@ class CandidateProfile extends Model
         'available_from',
         'open_to_relocation',
         'open_to_remote',
+        'open_to_onsite',
+        'open_to_hybrid',
         'state',
         'approved_at',
         'approved_by',
@@ -96,6 +100,8 @@ class CandidateProfile extends Model
             'approved_at' => 'datetime',
             'open_to_relocation' => 'boolean',
             'open_to_remote' => 'boolean',
+            'open_to_onsite' => 'boolean',
+            'open_to_hybrid' => 'boolean',
             'years_of_experience' => 'integer',
             'expected_salary_min' => 'decimal:2',
             'expected_salary_max' => 'decimal:2',
@@ -228,5 +234,23 @@ class CandidateProfile extends Model
         return $this->belongsToMany(Language::class, 'candidate_languages')
             ->withPivot('level')
             ->withTimestamps();
+    }
+
+    /**
+     * Jornadas laborales a las que el candidato está abierto (tiempo completo,
+     * medio tiempo, freelance, contrato, becario, …). Reusa el catálogo
+     * `vacancy_types` para que sea consistente con el campo
+     * `vacancy_type_id` que se exige en una vacante.
+     *
+     * @return BelongsToMany<VacancyType, $this>
+     */
+    public function workSchedules(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            VacancyType::class,
+            'candidate_work_schedules',
+            'candidate_profile_id',
+            'vacancy_type_id',
+        )->withTimestamps();
     }
 }

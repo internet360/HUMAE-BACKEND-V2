@@ -9,6 +9,7 @@ use App\Models\DegreeLevel;
 use App\Models\FunctionalArea;
 use App\Models\Language;
 use App\Models\Skill;
+use App\Models\VacancyType;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -60,5 +61,16 @@ class CatalogController extends Controller
             ->get(['id', 'code', 'name']);
 
         return $this->success(message: 'Catálogo de áreas funcionales.', data: $areas);
+    }
+
+    public function vacancyTypes(): JsonResponse
+    {
+        $types = VacancyType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
+
+        return $this->success(message: 'Catálogo de tipos de jornada.', data: $types);
     }
 }
