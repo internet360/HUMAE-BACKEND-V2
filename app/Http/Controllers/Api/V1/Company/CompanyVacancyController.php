@@ -226,22 +226,25 @@ class CompanyVacancyController extends Controller
     {
         $this->authorize('view', $vacancy);
 
-        $visibleStages = [
-            AssignmentStage::Presented->value,
-            AssignmentStage::Interviewing->value,
-            AssignmentStage::Finalist->value,
-            AssignmentStage::Hired->value,
-        ];
+        $stages = array_map(fn (AssignmentStage $s) => $s->value, AssignmentStage::cases());
 
-        $assignments = VacancyAssignment::query()
+        $query = VacancyAssignment::query()
             ->where('vacancy_id', $vacancy->id)
-            ->whereIn('stage', $visibleStages)
-            ->with(['candidateProfile.user', 'candidateProfile.skills'])
-            ->orderByDesc('presented_at')
+            ->with(['candidateProfile.user', 'candidateProfile.skills']);
+
+        if ($request->filled('stage')) {
+            $requested = (string) $request->input('stage');
+            if (\in_array($requested, $stages, true)) {
+                $query->where('stage', $requested);
+            }
+        }
+
+        $assignments = $query
+            ->orderByDesc('created_at')
             ->get();
 
         return $this->success(
-            message: 'Candidatos presentados.',
+            message: 'Candidatos en el flujo de selección.',
             data: CompanyAssignmentResource::collection($assignments),
         );
     }

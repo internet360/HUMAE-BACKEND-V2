@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Vista reducida del pipeline para el `company_user`: omite `recruiter_notes`,
+ * Vista del flujo de selección para el `company_user`: incluye todos los stages
+ * (sourced..hired/rejected/withdrawn) pero omite `recruiter_notes`,
  * `rejection_reason`, y datos de contacto directo del candidato (PII).
  *
  * @mixin VacancyAssignment
@@ -22,7 +23,7 @@ class CompanyAssignmentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $stage = $this->stage ?? AssignmentStage::Presented;
+        $stage = $this->stage ?? AssignmentStage::Sourced;
         $profile = $this->candidateProfile;
 
         return [
@@ -51,6 +52,8 @@ class CompanyAssignmentResource extends JsonResource
             'presented_at' => $this->presented_at?->toIso8601String(),
             'interviewed_at' => $this->interviewed_at?->toIso8601String(),
             'hired_at' => $this->hired_at?->toIso8601String(),
+            'rejected_at' => $this->rejected_at?->toIso8601String(),
+            'withdrawn_at' => $this->withdrawn_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }
