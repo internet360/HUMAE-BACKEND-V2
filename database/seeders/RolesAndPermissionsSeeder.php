@@ -126,28 +126,45 @@ class RolesAndPermissionsSeeder extends Seeder
             'interviews.view-any',
             'reports.view-own',
         ],
+        /*
+         * La empresa cliente NO navega la base de talento de HUMAE.
+         *
+         * Spatie registra un `Gate::before` que auto-aprueba en cuanto el
+         * nombre de la habilidad coincide con un permiso del usuario. Hoy la
+         * autorización se resuelve por nombre de método de Policy, así que
+         * estos permisos no se consultan en ningún lado — pero el día que
+         * alguien escriba `$user->can('directory.view-full')` el permiso gana
+         * ANTES de que la Policy se ejecute. Un permiso de más aquí es una
+         * Policy desactivada en silencio.
+         *
+         * Las filas de ARCHITECTURE.md §6 que recortan este rol:
+         *   «Ver directorio de candidatos — Empresa cliente: ❌»
+         *   «Ver expediente completo de candidato — Empresa cliente: ❌»
+         *   «Descargar CV de cualquier candidato — Empresa cliente: ❌»
+         *   «Marcar favoritos — Empresa cliente: ❌»
+         *   «Aprobar / activar vacante — Empresa cliente: ❌»
+         *   «Asignar candidatos a vacante — Empresa cliente: ❌»
+         *
+         * `assignments.notes.create` se conserva: §6 le cierra a la empresa las
+         * notas INTERNAS, y el hilo `visibility=company` sí es suyo. El nombre
+         * del permiso no distingue las dos cosas; conviene partirlo en
+         * `assignments.notes.create-company` / `-internal` cuando se use.
+         */
         'company_user' => [
             // Empresa propia
             'companies.view-own',
             'companies.update-own',
 
-            // Vacantes (scoping por Policy)
+            // Vacantes propias. Crea la solicitud y propone el cierre; activar
+            // la vacante lo confirma HUMAE (§6).
             'vacancies.view-own',
             'vacancies.create',
             'vacancies.update-own',
-            'vacancies.publish',
             'vacancies.close',
 
-            // Directorio de candidatos (acceso al pool global evaluado por HUMAE)
-            'directory.view',
-            'directory.view-full',
-            'directory.favorite',
-            'cv.download-any',
-
-            // Pipeline / asignaciones (scoping por Policy a sus vacantes)
+            // Pipeline: sólo lectura de su short list y notas visibles para ella.
+            // Asignar y mover etapas es curación de HUMAE (§5.7).
             'assignments.view-own',
-            'assignments.create',
-            'assignments.update',
             'assignments.notes.create',
 
             // Entrevistas
@@ -157,7 +174,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'interviews.reschedule',
             'interviews.cancel',
 
-            // Reportes
+            // Reportes acotados a sus vacantes
             'reports.view-own',
         ],
         'admin' => [
