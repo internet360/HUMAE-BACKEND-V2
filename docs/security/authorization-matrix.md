@@ -10,10 +10,14 @@
 > `F-xx` y la sonda las reporta como *skipped* nombrando el hallazgo, de modo que un rojo en ese archivo
 > siempre significa un agujero **nuevo**.
 >
-> **Alcance de la auditoría**: 145 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 154 rutas totales
-> (`php artisan route:list`). Se sondearon las 145 de la API — cobertura verificada por el propio test, que
+> **Alcance de la auditoría**: 144 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 153 rutas totales
+> (`php artisan route:list`). Se sondearon las 144 de la API — cobertura verificada por el propio test, que
 > falla si alguien añade una ruta sin añadir su fila. Las 9 de infraestructura se documentan pero no se
 > sondean (§3, §7).
+>
+> **Estado tras el rediseño de la capa de autorización**: 15 de los 16 hallazgos cerrados. Queda abierto
+> **F-14** (middlewares muertos) por decisión explícita: se reporta, no se toca. Al analizarlo apareció un
+> agujero nuevo, **F-17**, que se documenta sin corregir por la misma razón. Ver §5.
 
 ---
 
@@ -438,7 +442,7 @@ funcionalidad ausente.
 | ~~**F-11**~~ | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | **Cerrado.** `ReportScope::forUser()` resuelve el corte por rol y `ReportsService` lo aplica en los cuatro informes con dimensión de vacante. La empresa entra a los tres de proceso, acotada a sus vacantes; los cinco de plataforma y el de desempeño se quedan en HUMAE porque no hay «sus vacantes» que acotar. Ver §2.13 | §6 «Ver reportes» |
 | ~~**F-12**~~ | Baja | `POST /auth/register/company` | Todos | **Cerrado retirando la ruta**, junto con `AuthController::registerCompany`, `RegisterCompanyRequest` y `AuthService::registerCompanyUser`. `pending_approval` la hacía segura, no correcta: cualquiera creaba una fila en `companies` y una cuenta `company_user`, y §5 no lista la ruta. El alta soportada es `POST /admin/users`, que emite el token que consume `/auth/invitation/accept`. **Cambio incompatible para el frontend** | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
-| **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
+| **F-14** | Media | Toda la API | Todos | **Abierto a propósito** — se pidió reportar, no tocar. `EnsureVerifiedEmail` y `EnsureActiveMembership` siguen registrados como alias en `bootstrap/app.php` y sin aplicarse a ninguna ruta. Análisis y recomendación por middleware en §5.5 | §1 (premisa de negocio); §5 no lo especifica |
 | ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
 | ~~**F-16**~~ | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | **Cerrado.** `RoleMiddleware:candidate` sobre la ruta. `GET /me/membership` y `GET /me/payments` siguen abiertos a cualquier autenticado, como dice §5.3 | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
 
@@ -492,6 +496,32 @@ Las Policies se descubren por convención de Laravel 12 (`App\Models\X` → `App
 `AppServiceProvider` no registra ninguna explícitamente. El descubrimiento funciona, pero cualquier Policy
 que no siga el naming quedaría silenciosamente desconectada.
 
+### 5.3 Permiso a nivel de campo: un solo mecanismo
+
+`App\Http\Requests\Concerns\RestrictsFieldsByRole` es el único sitio donde se declara qué campos puede
+enviar cada rol. Un Request que lo usa contesta dos preguntas:
+
+| Declaración | Significado | Respuesta si se incumple |
+|---|---|---|
+| `staffOnlyFields()` | Campos que sólo escribe HUMAE (recruiter/admin) | `403` nombrando los campos |
+| `companyScopedFields()` | Campos con un `company_id` que debe ser del llamante | `403` |
+
+**Por qué `403` y no `422`**: «este campo no es tuyo» es una decisión de autorización. Contestar `422`
+invita al llamante a corregir el payload cuando lo que está mal es su rol. Además el chequeo corre en
+`authorize()`, antes de las reglas, así que un campo prohibido se rechaza aunque el resto del payload sea
+inválido.
+
+Declaraciones actuales:
+
+| Request | `staffOnlyFields()` | `companyScopedFields()` |
+|---|---|---|
+| `VacancyRequest` | `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` | `company_id` |
+| `UpdateInterviewRequest` | `rating`, `recommendation`, `recruiter_feedback`, `meeting_url`, `meeting_provider`, `meeting_id`, `location` | — |
+| `ScheduleInterviewRequest` | `meeting_url`, `meeting_provider`, `meeting_id` | — |
+| `CompanyRequest` | `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | — |
+
+
+
 ### 5.4 Rastro de datos de F-09 — pendiente de verificar en producción
 
 El agujero de acceso venía con uno de integridad: cada llamada de un no-candidato a la superficie
@@ -533,30 +563,67 @@ Recomendación operativa: correr la detección, adjuntar el resultado al ticket 
 owner antes de escribir nada.
 
 
-### 5.3 Permiso a nivel de campo: un solo mecanismo
+### 5.5 F-14 — los dos middlewares muertos: qué hacer con cada uno
 
-`App\Http\Requests\Concerns\RestrictsFieldsByRole` es el único sitio donde se declara qué campos puede
-enviar cada rol. Un Request que lo usa contesta dos preguntas:
+No se cambió nada. El análisis:
 
-| Declaración | Significado | Respuesta si se incumple |
-|---|---|---|
-| `staffOnlyFields()` | Campos que sólo escribe HUMAE (recruiter/admin) | `403` nombrando los campos |
-| `companyScopedFields()` | Campos con un `company_id` que debe ser del llamante | `403` |
+#### `EnsureActiveMembership` → **recomendación: borrarlo**
 
-**Por qué `403` y no `422`**: «este campo no es tuyo» es una decisión de autorización. Contestar `422`
-invita al llamante a corregir el payload cuando lo que está mal es su rol. Además el chequeo corre en
-`authorize()`, antes de las reglas, así que un campo prohibido se rechaza aunque el resto del payload sea
-inválido.
+La regla de negocio que describe («sin membresía activa no hay acceso») ya está aplicada, y en el sitio
+correcto: `DirectorySearchService::applyMembershipFilter()` filtra el directorio a membresías activas **por
+defecto**. La membresía compra *visibilidad ante HUMAE*, no acceso al propio expediente.
 
-Declaraciones actuales:
+Engancharlo a `/me/profile/*` **rompería** §8.1, que ordena el flujo así:
 
-| Request | `staffOnlyFields()` | `companyScopedFields()` |
-|---|---|---|
-| `VacancyRequest` | `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` | `company_id` |
-| `UpdateInterviewRequest` | `rating`, `recommendation`, `recruiter_feedback`, `meeting_url`, `meeting_provider`, `meeting_id`, `location` | — |
-| `ScheduleInterviewRequest` | `meeting_url`, `meeting_provider`, `meeting_id` | — |
-| `CompanyRequest` | `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | — |
+```
+/auth/register → /auth/verify-email → /me/profile → /me/psychometrics → /me/membership/checkout
+```
 
+El pago va **después** de completar el perfil. Un middleware cuyo único uso correcto es «ninguno» es una
+trampa para quien lo lea después: parece disponible, y engancharlo rompe el producto.
+
+Matiz registrado: el filtro por defecto se puede desactivar con `?has_active_membership=0`, así que un
+reclutador sí puede ver candidatos sin membresía si lo pide explícitamente. Es una decisión de HUMAE sobre
+su propia base, no una fuga.
+
+#### `EnsureVerifiedEmail` → **recomendación: engancharlo** (no en este PR)
+
+Aquí la premisa de que «ya está aplicado en el login» resultó **incompleta**, y conviene decirlo claro.
+
+`AuthController::login()` sí rechaza con `403 email_unverified` cuando `email_verified_at` es `null`. Pero
+`POST /auth/register` **emite un token de Sanctum en la misma respuesta del alta**, antes de cualquier
+verificación. Ese token nunca pasa por el login, así que la puerta que lo vigila no lo ve.
+
+Comprobado ejecutando la secuencia:
+
+| Paso | Resultado |
+|---|---|
+| `POST /auth/register` | `201`, devuelve `data.token`, con `email_verified_at = null` |
+| `GET /me/profile` con ese token | **`200`** |
+| `GET /me/psychometrics/tests` con ese token | **`200`** |
+| `POST /auth/login` con las mismas credenciales | `403 email_unverified` |
+
+Es decir: `EnsureVerifiedEmail` **no** es código muerto que duplica una regla ya aplicada. Es la pared que
+falta en el único camino donde existe un usuario sin verificar. Se registra como **F-17** abajo.
+
+Engancharlo al grupo autenticado de `/me/*` cierra el hueco y coincide con el orden de §8.1. Requiere
+confirmación del product owner sobre el alcance exacto (¿sólo la superficie de candidato, o también
+membresía y notificaciones?), y por eso no se hizo aquí.
+
+### 5.6 F-17 (nuevo) — el token del registro salta la verificación de correo
+
+| Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
+|---|---|---|---|---|---|
+| **F-17** | Media | `POST /auth/register` → toda la superficie `/me/*` | `candidate` recién registrado | El alta devuelve un token de Sanctum utilizable antes de verificar el correo. El candado de `login` no lo alcanza porque el usuario nunca pasa por `login`. Basta un correo que no se posee para crear cuenta y usar perfil y psicométricos completos | §8.1, que pone `verify-email` antes de `/me/profile` |
+
+**No corregido en este PR** por instrucción explícita de no tocar el flujo de verificación de correo.
+Dos formas de cerrarlo, a elegir por el product owner:
+
+1. Enganchar `EnsureVerifiedEmail` al grupo autenticado de `/me/*` (§5.5).
+2. Dejar de emitir token en `POST /auth/register` y obligar a pasar por `login` tras verificar.
+
+La segunda es más limpia pero cambia el contrato con el frontend, que hoy autentica al usuario justo
+después del alta.
 
 ---
 
@@ -624,14 +691,15 @@ retiradas. Las celdas «—» quedan deliberadamente fuera: §6 las marca como n
 
 | Concepto | Cantidad |
 |---|---|
-| Rutas totales (`route:list`) | 154 |
-| Rutas `/api/v1/*` | 145 |
+| Rutas totales (`route:list`) | 153 |
+| Rutas `/api/v1/*` | 144 |
 | Rutas `/api/v1/*` sondeadas | 144 (100 %, verificado por test) |
 | Rutas de infraestructura documentadas, no sondeadas | 9 |
-| Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`) |
+| Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla) |
 | Peticiones HTTP por corrida | 1 078 (154 filas × 7 actores) |
 | Actores | 7 — anónimo, candidato dueño, candidato ajeno, reclutador, `company_user` dueño, `company_user` ajeno, admin |
-| Tests de apoyo en el mismo archivo | 5 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, middlewares aplicados |
+| Tests de apoyo en el mismo archivo | 6 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, derivación de las transiciones desde la máquina de estados, middlewares aplicados |
+| Sonda del primitivo de inquilino | `tests/Feature/Security/CompanyTenancyTest.php` — 9 casos |
 
 Cada petición denegada se contrasta contra una huella de contenido de 24 tablas de dominio, así que un `403`
 que aun así escribe se reporta como fallo. La huella se toma también en los `GET` denegados: fue así como se
@@ -641,18 +709,22 @@ detectó el efecto colateral de F-09.
 
 ## 8. Recomendaciones, por orden
 
-1. **Centralizar el aislamiento entre inquilinos.** F-01, F-02, F-04, F-05, F-06 y F-07 son la misma
-   omisión repetida: «pertenece a mi empresa» se comprueba en unos sitios sí y en otros no. Un
-   `scope`/trait único (`BelongsToCallerCompany`) aplicado en el query builder y en la validación de
-   `company_id` cierra los seis de una vez.
-2. **Separar «editar» de «transicionar».** Conectar `VacancyPolicy::publish/close` en ambos endpoints de
-   transición y mover la lista blanca de estados por rol a `VacancyStateMachine`, para que la restricción
-   viva en un solo sitio y no en cada controlador. Cierra F-03 y F-10.
-3. **Cerrar los Form Requests por rol.** `VacancyRequest` y `UpdateInterviewRequest` aceptan campos
-   internos de cualquier llamante. `ScheduleInterviewRequest` ya demuestra el patrón correcto
-   (`prohibited` condicionado al rol); replicarlo. Cierra F-04, F-05 y F-08.
-4. **Poner un `role:candidate` sobre `/me/profile/*` y `/me/psychometrics/*`**, y sacar la creación implícita
-   de `CandidateProfile` de la ruta de lectura. Cierra F-09.
-5. **Aplicar o retirar los middlewares muertos.** F-14: o se enganchan a las rutas que corresponde, o se
-   borran. Un middleware registrado que no protege nada es peor que ninguno.
-6. **Ratificar en §5/§6 las 20 rutas UNSPECIFIED**, empezando por las que tocan PII o pipeline.
+1. ✅ **Centralizar el aislamiento entre inquilinos.** Hecho: `App\Support\Tenancy\CompanyTenancy` +
+   `CompanyOwnedScope` (global sobre `Company`, `Vacancy`, `CompanyMember`) + `BelongsToCompany`. Cierra
+   F-01, F-02, F-04, F-05, F-06 y F-07.
+2. ✅ **Separar «editar» de «transicionar».** Hecho: `VacancyStateMachine::abilityFor()` mapea estado
+   destino → habilidad (`publish`, `close`, `cancel`, `advance`) y ambos endpoints derivan de ahí. Cierra
+   F-03 y F-10.
+3. ✅ **Cerrar los Form Requests por rol.** Hecho: `RestrictsFieldsByRole`, con `staffOnlyFields()` y
+   `companyScopedFields()`. Responde `403`, no `422`. Cierra F-02, F-05, F-06 y F-08.
+4. ✅ **`role:candidate` sobre `/me/profile/*` y `/me/psychometrics/*`** y creación implícita fuera de la
+   ruta de lectura. Cierra F-09. Queda pendiente el **rastro de datos** (§5.4).
+5. ⏳ **Aplicar o retirar los middlewares muertos.** F-14 sigue abierto por instrucción. Recomendación en
+   §5.5: **borrar** `EnsureActiveMembership`, **enganchar** `EnsureVerifiedEmail` — que no es redundante,
+   ver F-17 en §5.6.
+6. ⏳ **Ratificar en §5/§6 las 20 rutas UNSPECIFIED**, empezando por las que tocan PII o pipeline. Sin
+   cambios: se conservó el comportamiento actual en todas ellas.
+7. ⏳ **Ratificar la partición de la superficie de reportes** (§2.13). Es una interpretación de §6, no una
+   transcripción.
+8. ⏳ **Verificar el rastro de F-09 en producción** y decidir la limpieza (§5.4).
+9. ⏳ **Decidir F-17** (§5.6): el token del alta salta la verificación de correo.
