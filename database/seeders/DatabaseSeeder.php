@@ -26,11 +26,18 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
         ]);
 
-        // Demo data del PDF cosasfaltanteshumae (5 candidatos + 5 vacantes).
-        // Solo en dev/staging; el seeder hace short-circuit en producción.
+        // Demo data del PDF cosasfaltanteshumae (5 candidatos + 5 vacantes) +
+        // usuarios de prueba + datos relacionales (pipeline, entrevistas,
+        // psicométricos, notificaciones). Solo en dev/staging; cada seeder
+        // hace short-circuit en producción. Orden importa: TestAccountsSeeder
+        // crea el reclutador/usuario de empresa que DemoRelationalSeeder
+        // necesita, y debe correr después de PdfDemoSeeder (que crea las
+        // vacantes).
         if (! app()->environment('production')) {
             $this->call([
                 PdfDemoSeeder::class,
+                TestAccountsSeeder::class,
+                DemoRelationalSeeder::class,
             ]);
         }
     }
