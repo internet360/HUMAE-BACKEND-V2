@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\AssignmentStage;
 use App\Enums\CandidateState;
 use App\Enums\CompanyMemberRole;
 use App\Enums\MembershipStatus;
@@ -53,7 +52,15 @@ function makeActiveCandidateCwc(): CandidateProfile
     return $profile;
 }
 
-it('creates a vacancy in activa state and assigns candidate in one shot', function (): void {
+/**
+ * ARCHITECTURE.md §6: "Asignar candidatos a vacante — Empresa cliente: ❌".
+ * The endpoint used to accept `auto_assign_candidate_profile_id`, which let a
+ * company attach a candidate of her choosing to her own vacancy at creation
+ * time and auto-published the vacancy. That is HUMAE's curation step (§1), so
+ * the parameter is gone: the payload is ignored and the vacancy still lands in
+ * `borrador` for HUMAE to review.
+ */
+it('does not let a company assign a candidate while creating a vacancy', function (): void {
     [$owner, $company] = makeOwnerWithCompanyCwc();
     $candidate = makeActiveCandidateCwc();
     Sanctum::actingAs($owner);
@@ -65,17 +72,31 @@ it('creates a vacancy in activa state and assigns candidate in one shot', functi
         'auto_assign_candidate_profile_id' => $candidate->id,
     ]);
 
+    // The vacancy is still created — it is a legitimate request — but as a
+    // draft, and with nobody in the pipeline.
     $response->assertCreated()
-        ->assertJsonPath('data.state', VacancyState::Activa->value);
+        ->assertJsonPath('data.state', VacancyState::Borrador->value);
 
-    $vacancyId = $response->json('data.id');
+    expect(VacancyAssignment::where('candidate_profile_id', $candidate->id)->exists())
+        ->toBeFalse();
+    expect(VacancyAssignment::count())->toBe(0);
+});
 
-    $assignment = VacancyAssignment::where('vacancy_id', $vacancyId)
-        ->where('candidate_profile_id', $candidate->id)
-        ->first();
+it('keeps the pipeline assignment endpoint closed to a company', function (): void {
+    [$owner, $company] = makeOwnerWithCompanyCwc();
+    $candidate = makeActiveCandidateCwc();
+    $vacancy = Vacancy::factory()->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Activa->value,
+    ]);
+    Sanctum::actingAs($owner);
 
-    expect($assignment)->not->toBeNull();
-    expect($assignment->stage)->toBe(AssignmentStage::Sourced);
+    // Her own vacancy, her own company: still forbidden. Assigning is HUMAE's.
+    $this->postJson("/api/v1/vacancies/{$vacancy->id}/assignments", [
+        'candidate_profile_id' => $candidate->id,
+    ])->assertForbidden();
+
+    expect(VacancyAssignment::count())->toBe(0);
 });
 
 it('creates a vacancy in borrador when no auto-assign candidate is provided', function (): void {
@@ -91,30 +112,6 @@ it('creates a vacancy in borrador when no auto-assign candidate is provided', fu
     $response->assertCreated()
         ->assertJsonPath('data.state', VacancyState::Borrador->value);
 
-    expect(VacancyAssignment::count())->toBe(0);
-});
-
-it('rolls back the vacancy if the candidate has no active membership', function (): void {
-    [$owner, $company] = makeOwnerWithCompanyCwc();
-    $candidateUser = User::factory()->create();
-    $candidateUser->assignRole(UserRole::Candidate->value);
-    $profile = CandidateProfile::factory()->create([
-        'user_id' => $candidateUser->id,
-        'state' => CandidateState::Activo->value,
-    ]);
-    // No membership at all → assign fails → entire transaction rolls back.
-    Sanctum::actingAs($owner);
-
-    $before = Vacancy::count();
-
-    $this->postJson('/api/v1/me/company/vacancies', [
-        'company_id' => $company->id,
-        'title' => 'Con candidato sin membresía',
-        'description' => 'No debería crear nada',
-        'auto_assign_candidate_profile_id' => $profile->id,
-    ])->assertStatus(409);
-
-    expect(Vacancy::count())->toBe($before);
     expect(VacancyAssignment::count())->toBe(0);
 });
 
