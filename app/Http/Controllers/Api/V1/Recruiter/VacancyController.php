@@ -125,10 +125,15 @@ class VacancyController extends Controller
         return $this->success(message: 'Vacante archivada.', status: HttpStatus::HTTP_NO_CONTENT);
     }
 
+    /**
+     * Move a vacancy through its state machine.
+     *
+     * Authorizes on the ability the target state names, not on `update`:
+     * "may edit" and "may close" are different rights (F-03). The mapping lives
+     * in VacancyStateMachine so this endpoint and the company one cannot drift.
+     */
     public function transition(Request $request, Vacancy $vacancy): JsonResponse
     {
-        $this->authorize('update', $vacancy);
-
         $states = array_map(fn (VacancyState $s) => $s->value, VacancyState::cases());
 
         $validated = $request->validate([
@@ -138,6 +143,8 @@ class VacancyController extends Controller
 
         $from = $vacancy->state ?? VacancyState::Borrador;
         $to = VacancyState::from($validated['to']);
+
+        $this->authorize(VacancyStateMachine::abilityFor($to), $vacancy);
 
         if (! VacancyStateMachine::canTransition($from, $to)) {
             return $this->error(
@@ -235,7 +242,7 @@ class VacancyController extends Controller
         }
         $slug = $base;
         $i = 1;
-        while (Vacancy::where('slug', $slug)->exists()) {
+        while (Vacancy::acrossCompanies()->where('slug', $slug)->exists()) {
             $i++;
             $slug = $base.'-'.$i;
         }
@@ -248,7 +255,7 @@ class VacancyController extends Controller
         $year = (int) now()->format('Y');
         $prefix = "HUM-{$year}-";
 
-        $last = Vacancy::where('code', 'like', $prefix.'%')
+        $last = Vacancy::acrossCompanies()->where('code', 'like', $prefix.'%')
             ->orderByDesc('code')
             ->value('code');
 

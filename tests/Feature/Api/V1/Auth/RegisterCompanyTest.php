@@ -2,78 +2,66 @@
 
 declare(strict_types=1);
 
-use App\Enums\CompanyMemberRole;
 use App\Enums\UserRole;
-use App\Enums\UserStatus;
 use App\Models\Company;
-use App\Models\CompanyMember;
 use App\Models\User;
-use App\Notifications\PendingUserRegistrationNotification;
 use Database\Seeders\RolesAndPermissionsSeeder;
-use Illuminate\Support\Facades\Notification;
+
+/*
+|--------------------------------------------------------------------------
+| Company self-registration does not exist (F-12)
+|--------------------------------------------------------------------------
+|
+| This file used to assert the opposite: that `POST /auth/register/company`
+| created a company_user, a Company and an owner pivot in one public call. It
+| is inverted, and named for the rule that decides it.
+|
+| ARCHITECTURE.md §6, row "Registrarse": Candidato ✅, Empresa cliente
+| ❌ (invitación). A client company is onboarded by HUMAE, which is the whole
+| premise of §1 — HUMAE curates both sides of the marketplace. `pending_approval`
+| made the endpoint safe, not correct: it still let anyone mint a Company row
+| and a company_user account, and there is no §5 route for it.
+|
+| The supported path is POST /admin/users, which issues the invitation token
+| that /auth/invitation/accept consumes.
+|
+*/
 
 beforeEach(function (): void {
     $this->seed(RolesAndPermissionsSeeder::class);
-
-    $admin = User::factory()->create([
-        'email' => 'admin-test@humae.test',
-        'status' => 'active',
-        'email_verified_at' => now(),
-    ]);
-    $admin->assignRole(UserRole::Admin->value);
 });
 
-it('registers a company_user with company + owner pivot pending', function (): void {
-    Notification::fake();
-
+it('does not expose a public company registration endpoint', function (): void {
     $response = $this->postJson('/api/v1/auth/register/company', [
         'name' => 'Owner Empresa',
         'email' => 'owner@empresa.test',
         'password' => 'Password123',
         'password_confirmation' => 'Password123',
         'accept_terms' => true,
-        'company' => [
-            'legal_name' => 'Empresa Demo S.A. de C.V.',
-            'trade_name' => 'Empresa Demo',
-            'website' => 'https://empresa.test',
-            'contact_phone' => '+52 55 1234 5678',
-            'motivo' => 'Buscamos contratar talento HUMAE.',
-        ],
+        'company' => ['legal_name' => 'Empresa Demo S.A. de C.V.'],
     ]);
 
-    $response->assertCreated()->assertJsonPath('data.pending_approval', true);
+    $response->assertNotFound();
 
-    $user = User::where('email', 'owner@empresa.test')->firstOrFail();
-    expect($user->status)->toBe(UserStatus::PendingApproval->value)
-        ->and($user->hasRole(UserRole::CompanyUser->value))->toBeTrue();
-
-    $company = Company::where('legal_name', 'Empresa Demo S.A. de C.V.')->firstOrFail();
-    expect($company->status)->toBe('pending')
-        ->and($company->is_verified)->toBeFalse();
-
-    $member = CompanyMember::where('company_id', $company->id)
-        ->where('user_id', $user->id)
-        ->firstOrFail();
-
-    $memberRole = $member->role instanceof CompanyMemberRole
-        ? $member->role->value
-        : (string) $member->role;
-    expect($memberRole)->toBe(CompanyMemberRole::Owner->value)
-        ->and($member->is_primary_contact)->toBeTrue();
-
-    $admin = User::where('email', 'admin-test@humae.test')->firstOrFail();
-    Notification::assertSentTo($admin, PendingUserRegistrationNotification::class);
+    expect(User::where('email', 'owner@empresa.test')->exists())->toBeFalse()
+        ->and(Company::acrossCompanies()->count())->toBe(0);
 });
 
-it('requires company.legal_name when registering as company', function (): void {
-    $response = $this->postJson('/api/v1/auth/register/company', [
-        'name' => 'Owner',
-        'email' => 'owner2@empresa.test',
-        'password' => 'Password123',
-        'password_confirmation' => 'Password123',
-        'accept_terms' => true,
-        'company' => [],
-    ]);
+it('onboards a client company through the HUMAE invitation flow instead', function (): void {
+    $admin = User::factory()->create(['status' => 'active', 'email_verified_at' => now()]);
+    $admin->assignRole(UserRole::Admin->value);
+    $company = Company::factory()->create();
 
-    $response->assertStatus(422)->assertJsonValidationErrors(['company.legal_name']);
+    $this->actingAs($admin)->postJson('/api/v1/admin/users', [
+        'name' => 'Contacto de la empresa',
+        'email' => 'contacto@empresa.test',
+        'role' => UserRole::CompanyUser->value,
+        'company_id' => $company->id,
+        'company_member_role' => 'owner',
+    ])->assertCreated();
+
+    $invited = User::where('email', 'contacto@empresa.test')->firstOrFail();
+
+    expect($invited->hasRole(UserRole::CompanyUser->value))->toBeTrue()
+        ->and($invited->invitation_token)->not->toBeNull();
 });

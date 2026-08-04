@@ -100,7 +100,7 @@ class InterviewController extends Controller
 
     public function show(Request $request, Interview $interview): JsonResponse
     {
-        $this->authorizeAccess($request, $interview);
+        $this->authorize('view', $interview);
         $interview->load('assignment.candidateProfile', 'assignment.vacancy');
 
         return $this->success(
@@ -111,7 +111,7 @@ class InterviewController extends Controller
 
     public function update(UpdateInterviewRequest $request, Interview $interview): JsonResponse
     {
-        $this->authorizeReschedule($request, $interview);
+        $this->authorize('reschedule', $interview);
 
         /** @var array<string, mixed> $data */
         $data = $request->validated();
@@ -149,7 +149,7 @@ class InterviewController extends Controller
 
     public function selectSlot(Request $request, Interview $interview): JsonResponse
     {
-        $this->authorizeSlotSelection($request, $interview);
+        $this->authorize('selectSlot', $interview);
 
         $validated = $request->validate([
             'slot' => ['required', 'integer', 'in:1,2'],
@@ -195,7 +195,7 @@ class InterviewController extends Controller
 
     public function confirm(Request $request, Interview $interview): JsonResponse
     {
-        $this->authorizeAccess($request, $interview);
+        $this->authorize('confirm', $interview);
 
         try {
             $this->service->confirm($interview);
@@ -230,7 +230,7 @@ class InterviewController extends Controller
 
     public function cancel(Request $request, Interview $interview): JsonResponse
     {
-        $this->authorizeAccess($request, $interview);
+        $this->authorize('cancel', $interview);
 
         $validated = $request->validate([
             'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
@@ -284,11 +284,11 @@ class InterviewController extends Controller
         $query->whereRaw('1 = 0');
     }
 
-    private function authorizeAccess(Request $request, Interview $interview): void
-    {
-        $this->authorize('view', $interview);
-    }
-
+    /**
+     * Publishing the meeting link and closing the interview with an evaluation
+     * are HUMAE's, not a party's. Neither has a §5.8 row, so the inference is
+     * documented in docs/security/authorization-matrix.md §2.11.
+     */
     private function authorizeRecruiter(Request $request): void
     {
         /** @var User $user */
@@ -296,21 +296,5 @@ class InterviewController extends Controller
         if (! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
             abort(HttpStatus::HTTP_FORBIDDEN);
         }
-    }
-
-    /**
-     * Quién puede escoger el slot de la entrevista:
-     * - El candidato dueño de la asignación (caso típico).
-     * - Recruiter / admin (por soporte / corrección).
-     * - Company owner/manager, sólo sobre un candidato ya presentado.
-     */
-    private function authorizeSlotSelection(Request $request, Interview $interview): void
-    {
-        $this->authorize('selectSlot', $interview);
-    }
-
-    private function authorizeReschedule(Request $request, Interview $interview): void
-    {
-        $this->authorize('reschedule', $interview);
     }
 }

@@ -10,9 +10,15 @@ use App\Enums\InterviewState;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\VacancyState;
+use App\Support\Reports\ReportScope;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * The four process reports take a {@see ReportScope}; the platform ones do not.
+ * That asymmetry is the point: a report with a vacancy dimension can be
+ * narrowed to "sus procesos" / "sus vacantes" (§6), and one without cannot.
+ */
 class ReportsService
 {
     /**
@@ -152,10 +158,11 @@ class ReportsService
     /**
      * @return array<string, int>
      */
-    public function vacanciesByState(): array
+    public function vacanciesByState(ReportScope $scope): array
     {
         $counts = DB::table('vacancies')
             ->whereNull('deleted_at')
+            ->when($scope->vacancyIds !== null, fn ($q) => $q->whereIn('id', $scope->vacancyIds ?? []))
             ->groupBy('state')
             ->pluck(DB::raw('COUNT(*)'), 'state')
             ->map(fn ($v) => (int) $v)
@@ -171,9 +178,22 @@ class ReportsService
     /**
      * @return array{total: int, by_state: array<string, int>, by_day: list<array{date: string, count: int}>}
      */
-    public function interviews(Carbon $from, Carbon $to): array
+    public function interviews(Carbon $from, Carbon $to, ReportScope $scope): array
     {
-        $byState = DB::table('interviews')
+        $inScope = function ($query) use ($scope) {
+            if ($scope->vacancyIds === null) {
+                return $query;
+            }
+
+            return $query->whereIn(
+                'vacancy_assignment_id',
+                DB::table('vacancy_assignments')
+                    ->select('id')
+                    ->whereIn('vacancy_id', $scope->vacancyIds),
+            );
+        };
+
+        $byState = $inScope(DB::table('interviews'))
             ->whereBetween('scheduled_at', [$from, $to])
             ->groupBy('state')
             ->pluck(DB::raw('COUNT(*)'), 'state')
@@ -185,7 +205,7 @@ class ReportsService
         }
 
         /** @var list<array{date: string, count: int}> $byDay */
-        $byDay = array_values(DB::table('interviews')
+        $byDay = array_values($inScope(DB::table('interviews'))
             ->whereBetween('scheduled_at', [$from, $to])
             ->selectRaw('DATE(scheduled_at) as date, COUNT(*) as count')
             ->groupByRaw('DATE(scheduled_at)')
@@ -204,10 +224,14 @@ class ReportsService
     /**
      * @return list<array{recruiter_id: int, assignments: int, hired: int, rejected: int, hire_rate: float}>
      */
-    public function recruiterEffectiveness(): array
+    public function recruiterEffectiveness(ReportScope $scope): array
     {
         /** @var list<array{recruiter_id: int, assignments: int, hired: int, rejected: int, hire_rate: float}> $items */
         $items = array_values(DB::table('vacancy_assignments')
+            ->when(
+                $scope->recruiterIds !== null,
+                fn ($q) => $q->whereIn('assigned_by', $scope->recruiterIds ?? []),
+            )
             ->selectRaw('
                 assigned_by as recruiter_id,
                 COUNT(*) as assignments,
@@ -239,7 +263,7 @@ class ReportsService
     /**
      * @return array{count: int, average_days: float|null, median_days: float|null}
      */
-    public function timeToFill(): array
+    public function timeToFill(ReportScope $scope): array
     {
         $durationSql = DB::getDriverName() === 'sqlite'
             ? 'CAST(julianday(vacancy_assignments.hired_at) - julianday(vacancies.created_at) AS REAL) as days'
@@ -247,6 +271,10 @@ class ReportsService
 
         $durations = DB::table('vacancy_assignments')
             ->join('vacancies', 'vacancy_assignments.vacancy_id', '=', 'vacancies.id')
+            ->when(
+                $scope->vacancyIds !== null,
+                fn ($q) => $q->whereIn('vacancies.id', $scope->vacancyIds ?? []),
+            )
             ->where('vacancy_assignments.stage', AssignmentStage::Hired->value)
             ->whereNotNull('vacancy_assignments.hired_at')
             ->selectRaw($durationSql)

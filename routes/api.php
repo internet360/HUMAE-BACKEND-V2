@@ -76,9 +76,10 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->middleware('throttle:5,1')
         ->name('register.recruiter');
 
-    Route::post('/register/company', [AuthController::class, 'registerCompany'])
-        ->middleware('throttle:5,1')
-        ->name('register.company');
+    // No hay alta autoservicio de empresa cliente: §6 «Registrarse — Empresa
+    // cliente ❌ (invitación)». Las cuentas de empresa las crea HUMAE desde
+    // POST /admin/users, que emite el token de invitación que consume
+    // /auth/invitation/accept.
 
     Route::post('/register', [AuthController::class, 'register'])
         ->middleware('throttle:10,1')
@@ -130,85 +131,101 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function (): void {
-    // Membresía
+    // Membresía y pagos. §5.3 titula la sección «Membership (auth)» sin acotar
+    // rol y ambos GET se autoacotan al usuario autenticado, pero el checkout sí
+    // tiene fila propia: §6 «Pagar membresía — Candidato ✅», y «—» para todos
+    // los demás. La membresía de 499 MXN es del candidato (§1).
     Route::get('/membership', [MembershipController::class, 'show'])->name('membership.show');
     Route::post('/membership/checkout', [MembershipController::class, 'checkout'])
-        ->middleware('throttle:10,1')
+        ->middleware([RoleMiddleware::using([UserRole::Candidate]), 'throttle:10,1'])
         ->name('membership.checkout');
 
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
 
-    // Perfil
-    Route::get('/profile', [CandidateProfileController::class, 'show'])->name('profile.show');
-    Route::patch('/profile', [CandidateProfileController::class, 'update'])->name('profile.update');
-    Route::post('/profile/avatar', [AvatarController::class, 'store'])
-        ->middleware('throttle:10,1')
-        ->name('profile.avatar');
+    /*
+    |----------------------------------------------------------------------
+    | Autoservicio del candidato — §5.2 y §5.4
+    |----------------------------------------------------------------------
+    | Ambas secciones se encabezan «auth, role: candidate» y ninguna de las
+    | 30 rutas lo comprobaba (F-09). No era sólo superficie de más: abrir
+    | GET /me/profile daba de alta un candidate_profiles para quien llamara,
+    | así que un reclutador se inscribía en la base de talento con sólo
+    | mirar. El aislamiento entre candidatos ya funcionaba; lo que faltaba
+    | era el filtro de rol.
+    */
+    Route::middleware(RoleMiddleware::using([UserRole::Candidate]))->group(function (): void {
+        // Perfil
+        Route::get('/profile', [CandidateProfileController::class, 'show'])->name('profile.show');
+        Route::patch('/profile', [CandidateProfileController::class, 'update'])->name('profile.update');
+        Route::post('/profile/avatar', [AvatarController::class, 'store'])
+            ->middleware('throttle:10,1')
+            ->name('profile.avatar');
 
-    // CV PDF
-    Route::get('/profile/cv.pdf', [CvController::class, 'download'])
-        ->middleware('throttle:30,1')
-        ->name('profile.cv');
+        // CV PDF
+        Route::get('/profile/cv.pdf', [CvController::class, 'download'])
+            ->middleware('throttle:30,1')
+            ->name('profile.cv');
 
-    // Experiencia laboral
-    Route::apiResource('profile/experiences', ExperienceController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.experiences');
+        // Experiencia laboral
+        Route::apiResource('profile/experiences', ExperienceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.experiences');
 
-    // Educación formal
-    Route::apiResource('profile/educations', EducationController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.educations');
+        // Educación formal
+        Route::apiResource('profile/educations', EducationController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.educations');
 
-    // Cursos
-    Route::apiResource('profile/courses', CourseController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.courses');
+        // Cursos
+        Route::apiResource('profile/courses', CourseController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.courses');
 
-    // Certificaciones
-    Route::apiResource('profile/certifications', CertificationController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.certifications');
+        // Certificaciones
+        Route::apiResource('profile/certifications', CertificationController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.certifications');
 
-    // Referencias
-    Route::apiResource('profile/references', ReferenceController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.references');
+        // Referencias
+        Route::apiResource('profile/references', ReferenceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.references');
 
-    // Skills (pivot)
-    Route::get('/profile/skills', [SkillController::class, 'index'])->name('profile.skills.index');
-    Route::post('/profile/skills', [SkillController::class, 'store'])->name('profile.skills.store');
-    Route::delete('/profile/skills/{skill}', [SkillController::class, 'destroy'])->name('profile.skills.destroy');
+        // Skills (pivot)
+        Route::get('/profile/skills', [SkillController::class, 'index'])->name('profile.skills.index');
+        Route::post('/profile/skills', [SkillController::class, 'store'])->name('profile.skills.store');
+        Route::delete('/profile/skills/{skill}', [SkillController::class, 'destroy'])->name('profile.skills.destroy');
 
-    // Languages (pivot)
-    Route::get('/profile/languages', [LanguageController::class, 'index'])->name('profile.languages.index');
-    Route::post('/profile/languages', [LanguageController::class, 'store'])->name('profile.languages.store');
-    Route::delete('/profile/languages/{language}', [LanguageController::class, 'destroy'])->name('profile.languages.destroy');
+        // Languages (pivot)
+        Route::get('/profile/languages', [LanguageController::class, 'index'])->name('profile.languages.index');
+        Route::post('/profile/languages', [LanguageController::class, 'store'])->name('profile.languages.store');
+        Route::delete('/profile/languages/{language}', [LanguageController::class, 'destroy'])->name('profile.languages.destroy');
 
-    // Documents
-    Route::get('/profile/documents', [DocumentController::class, 'index'])->name('profile.documents.index');
-    Route::post('/profile/documents', [DocumentController::class, 'store'])
-        ->middleware('throttle:20,1')
-        ->name('profile.documents.store');
-    Route::get('/profile/documents/{document}/download', [DocumentController::class, 'download'])
-        ->middleware('throttle:60,1')
-        ->name('profile.documents.download');
-    Route::delete('/profile/documents/{document}', [DocumentController::class, 'destroy'])->name('profile.documents.destroy');
+        // Documents
+        Route::get('/profile/documents', [DocumentController::class, 'index'])->name('profile.documents.index');
+        Route::post('/profile/documents', [DocumentController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('profile.documents.store');
+        Route::get('/profile/documents/{document}/download', [DocumentController::class, 'download'])
+            ->middleware('throttle:60,1')
+            ->name('profile.documents.download');
+        Route::delete('/profile/documents/{document}', [DocumentController::class, 'destroy'])->name('profile.documents.destroy');
 
-    // Psicométricos
-    Route::get('/psychometrics/tests', [PsychometricController::class, 'listTests'])
-        ->name('psychometrics.tests');
-    Route::post('/psychometrics/attempts', [PsychometricController::class, 'startAttempt'])
-        ->middleware('throttle:30,1')
-        ->name('psychometrics.attempts.start');
-    Route::get('/psychometrics/attempts/{attempt}', [PsychometricController::class, 'showAttempt'])
-        ->name('psychometrics.attempts.show');
-    Route::patch('/psychometrics/attempts/{attempt}/answers', [PsychometricController::class, 'saveAnswers'])
-        ->name('psychometrics.attempts.answers');
-    Route::post('/psychometrics/attempts/{attempt}/submit', [PsychometricController::class, 'submitAttempt'])
-        ->name('psychometrics.attempts.submit');
-    Route::get('/psychometrics/results/{attempt}', [PsychometricController::class, 'showResult'])
-        ->name('psychometrics.results.show');
+        // Psicométricos
+        Route::get('/psychometrics/tests', [PsychometricController::class, 'listTests'])
+            ->name('psychometrics.tests');
+        Route::post('/psychometrics/attempts', [PsychometricController::class, 'startAttempt'])
+            ->middleware('throttle:30,1')
+            ->name('psychometrics.attempts.start');
+        Route::get('/psychometrics/attempts/{attempt}', [PsychometricController::class, 'showAttempt'])
+            ->name('psychometrics.attempts.show');
+        Route::patch('/psychometrics/attempts/{attempt}/answers', [PsychometricController::class, 'saveAnswers'])
+            ->name('psychometrics.attempts.answers');
+        Route::post('/psychometrics/attempts/{attempt}/submit', [PsychometricController::class, 'submitAttempt'])
+            ->name('psychometrics.attempts.submit');
+        Route::get('/psychometrics/results/{attempt}', [PsychometricController::class, 'showResult'])
+            ->name('psychometrics.results.show');
+    });
 
     // Notificaciones (disponibles para cualquier usuario autenticado)
     Route::get('/notifications', [NotificationController::class, 'index'])
@@ -237,14 +254,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('/companies/{company}/members/{userId}', [CompanyMemberController::class, 'destroy'])
         ->name('companies.members.destroy');
 
-    // Vacancies
+    // Vacancies. Lectura y alta las comparte la empresa cliente (§5.6, «GET,
+    // POST /jobs — recruiter / admin / company_user (propias)»); la edición
+    // administrativa y las transiciones son de HUMAE («PATCH /jobs/{id} —
+    // recruiter / admin», «POST /jobs/{id}/transition — recruiter / admin»).
+    // La empresa opera las suyas desde /me/company/vacancies/*.
     Route::get('/vacancies', [VacancyController::class, 'index'])->name('vacancies.index');
     Route::post('/vacancies', [VacancyController::class, 'store'])->name('vacancies.store');
     Route::get('/vacancies/{vacancy}', [VacancyController::class, 'show'])->name('vacancies.show');
-    Route::patch('/vacancies/{vacancy}', [VacancyController::class, 'update'])->name('vacancies.update');
-    Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
-    Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
-        ->name('vacancies.transition');
+    Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::patch('/vacancies/{vacancy}', [VacancyController::class, 'update'])->name('vacancies.update');
+        Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
+        Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
+            ->name('vacancies.transition');
+    });
     // El motor de matching entrega perfiles de candidatos que HUMAE todavía no
     // presentó: es el directorio con pasos extra. Sólo HUMAE
     // (ARCHITECTURE.md §6 «Ver directorio de candidatos — Empresa cliente: ❌»).

@@ -7,14 +7,52 @@ namespace App\Http\Requests\Companies;
 use App\Enums\Priority;
 use App\Enums\SalaryPeriod;
 use App\Enums\VacancyTargetKind;
+use App\Http\Requests\Concerns\RestrictsFieldsByRole;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+/**
+ * The one place that decides which vacancy fields each role may write.
+ *
+ * Serves three endpoints — `POST/PATCH /vacancies` (HUMAE) and
+ * `POST/PATCH /me/company/vacancies` (the client company) — which is exactly
+ * why the rule belongs here. When the controllers each passed
+ * `$request->validated()` straight through, the company wrote HUMAE's
+ * commercial terms and internal notes on both surfaces (F-04, F-05), and
+ * re-parented its vacancy into another client's account (F-02).
+ */
 class VacancyRequest extends FormRequest
 {
-    public function authorize(): bool
+    use RestrictsFieldsByRole;
+
+    /**
+     * HUMAE's side of the mandate: what it charges, what it commits to, who
+     * runs it, and what it writes down about the client.
+     *
+     * §6 — "Agregar notas internas: Empresa cliente ❌".
+     *
+     * @return list<string>
+     */
+    protected function staffOnlyFields(): array
     {
-        return true;
+        return [
+            'internal_notes',
+            'fee_amount',
+            'fee_percentage',
+            'sla_days',
+            'assigned_recruiter_id',
+        ];
+    }
+
+    /**
+     * §6 — "Crear vacante: Empresa cliente ✅ (propia)". The word that matters
+     * is "propia", and `exists:companies,id` never checked it.
+     *
+     * @return list<string>
+     */
+    protected function companyScopedFields(): array
+    {
+        return ['company_id'];
     }
 
     /**

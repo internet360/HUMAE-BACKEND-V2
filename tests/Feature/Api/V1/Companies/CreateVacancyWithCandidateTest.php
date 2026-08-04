@@ -115,19 +115,40 @@ it('creates a vacancy in borrador when no auto-assign candidate is provided', fu
     expect(VacancyAssignment::count())->toBe(0);
 });
 
-it('discards assigned_recruiter_id sent by company_user', function (): void {
+/*
+ * Inverted: the controller used to accept the payload and silently `unset()`
+ * the field. Silence is the wrong answer to "you may not write this" — the
+ * caller learns nothing and the rule lives in whichever controller remembered
+ * it. VacancyRequest now refuses the whole request with a 403, once, for every
+ * endpoint that takes a vacancy payload.
+ */
+it('refuses a company_user that tries to pick the assigned recruiter', function (): void {
     [$owner, $company] = makeOwnerWithCompanyCwc();
     $recruiter = User::factory()->create();
     $recruiter->assignRole(UserRole::Recruiter->value);
     Sanctum::actingAs($owner);
 
-    $response = $this->postJson('/api/v1/me/company/vacancies', [
+    $this->postJson('/api/v1/me/company/vacancies', [
         'company_id' => $company->id,
         'title' => 'Empresa intenta asignar recruiter',
         'description' => 'No debería persistirse',
         'assigned_recruiter_id' => $recruiter->id,
-    ])->assertCreated();
+    ])->assertForbidden();
 
-    $vacancy = Vacancy::find($response->json('data.id'));
-    expect($vacancy->assigned_recruiter_id)->toBeNull();
+    expect(Vacancy::where('title', 'Empresa intenta asignar recruiter')->exists())->toBeFalse();
+});
+
+it('refuses a company_user that files a vacancy for another company', function (): void {
+    [$owner] = makeOwnerWithCompanyCwc();
+    [, $foreignCompany] = makeOwnerWithCompanyCwc();
+    Sanctum::actingAs($owner);
+
+    // `exists:companies,id` was happy with this. Tenancy is not (F-02).
+    $this->postJson('/api/v1/me/company/vacancies', [
+        'company_id' => $foreignCompany->id,
+        'title' => 'Vacante en la cuenta de otro cliente',
+        'description' => 'No debería persistirse',
+    ])->assertForbidden();
+
+    expect(Vacancy::acrossCompanies()->where('company_id', $foreignCompany->id)->count())->toBe(0);
 });

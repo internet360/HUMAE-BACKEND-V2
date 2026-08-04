@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
+use App\Models\Contracts\CompanyOwned;
+use App\Models\Scopes\CompanyOwnedScope;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -48,8 +51,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-class Company extends Model
+class Company extends Model implements CompanyOwned
 {
+    use BelongsToCompany;
+
     /** @use HasFactory<CompanyFactory> */
     use HasFactory;
 
@@ -97,6 +102,15 @@ class Company extends Model
         ];
     }
 
+    /**
+     * A company is owned by itself: the tenancy scope compares its primary key
+     * against the caller's memberships.
+     */
+    public function companyOwnerKeyName(): string
+    {
+        return 'id';
+    }
+
     /** @return BelongsTo<Industry, $this> */
     public function industry(): BelongsTo
     {
@@ -139,10 +153,17 @@ class Company extends Model
         return $this->belongsTo(User::class, 'account_manager_id');
     }
 
-    /** @return HasMany<CompanyMember, $this> */
+    /**
+     * Exempt from the tenancy scope: reaching a Company instance already
+     * required passing it, and HUMAE resolves the members to notify while
+     * acting as the candidate (see InterviewService::notifyParties).
+     *
+     * @return HasMany<CompanyMember, $this>
+     */
     public function members(): HasMany
     {
-        return $this->hasMany(CompanyMember::class);
+        return $this->hasMany(CompanyMember::class)
+            ->withoutGlobalScope(CompanyOwnedScope::class);
     }
 
     /** @return BelongsToMany<User, $this> */

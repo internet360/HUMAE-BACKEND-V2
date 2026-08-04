@@ -106,7 +106,7 @@ class CompanyController extends Controller
     {
         $slug = $base;
         $i = 1;
-        while (Company::where('slug', $slug)->exists()) {
+        while (Company::acrossCompanies()->where('slug', $slug)->exists()) {
             $i++;
             $slug = $base.'-'.$i;
         }

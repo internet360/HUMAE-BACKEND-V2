@@ -23,10 +23,20 @@ trait ResolvesCandidateProfile
 
     /**
      * Verifica que el recurso pertenezca al perfil del usuario autenticado.
+     *
+     * Resolves without creating. The previous version went through
+     * `findOrCreate()`, so a request that was about to be refused with a 404
+     * minted a `candidate_profiles` row on the way out — a denied read that
+     * wrote (F-09).
      */
     protected function ensureOwned(Request $request, int $profileIdOnResource): void
     {
-        if ($profileIdOnResource !== $this->profile($request)->id) {
+        /** @var User $user */
+        $user = $request->user();
+
+        $profile = app(ProfileService::class)->find($user);
+
+        if ($profile === null || $profileIdOnResource !== $profile->id) {
             abort(HttpStatus::HTTP_NOT_FOUND);
         }
     }

@@ -52,6 +52,31 @@ class VacancyStateMachine
     }
 
     /**
+     * The policy ability that governs a transition into `$to`.
+     *
+     * "May edit my vacancy" and "may close my vacancy" are different rights
+     * (ARCHITECTURE.md §6 grants the client company the second and denies it
+     * the first), and collapsing both into `update` is what let a company drive
+     * its own vacancy to `cubierta` through the staff endpoint — F-03. Naming
+     * the ability after the purpose keeps them apart, and keeping the map here
+     * means neither transition endpoint gets to invent its own whitelist.
+     *
+     * - `publish`  — borrador → activa. §6 "Aprobar / activar vacante".
+     * - `close`    — → cubierta. §6 "Marcar vacante como cubierta".
+     * - `cancel`   — → cancelada. Not covered by §6; keeps current behaviour.
+     * - `advance`  — the internal pipeline states, which only HUMAE drives.
+     */
+    public static function abilityFor(VacancyState $to): string
+    {
+        return match ($to) {
+            VacancyState::Activa => 'publish',
+            VacancyState::Cubierta => 'close',
+            VacancyState::Cancelada => 'cancel',
+            default => 'advance',
+        };
+    }
+
+    /**
      * @return list<VacancyState>
      */
     public static function allowedFrom(VacancyState $from): array

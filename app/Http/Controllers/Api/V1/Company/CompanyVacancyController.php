@@ -74,22 +74,12 @@ class CompanyVacancyController extends Controller
             return $this->error('No tienes acceso a este recurso.', status: HttpStatus::HTTP_FORBIDDEN);
         }
 
+        // `company_id` is guarded in VacancyRequest against the caller's own
+        // memberships, and `assigned_recruiter_id` — along with the rest of
+        // HUMAE's commercial terms — is refused there too. The controller no
+        // longer re-states either rule.
         /** @var array<string, mixed> $data */
         $data = $request->validated();
-
-        $isMember = $user->companyMemberships()
-            ->where('company_id', (int) $data['company_id'])
-            ->exists();
-
-        if (! $isMember && ! $user->hasRole(UserRole::Admin->value)) {
-            return $this->error(
-                'No puedes crear vacantes para esta empresa.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
-
-        // Las empresas no eligen al reclutador responsable; se descarta si vino.
-        unset($data['assigned_recruiter_id']);
 
         $vacancy = Vacancy::create([
             ...$data,
@@ -141,10 +131,17 @@ class CompanyVacancyController extends Controller
         );
     }
 
+    /**
+     * Move one of the company's own vacancies through its state machine.
+     *
+     * The hand-rolled whitelist this replaced was inverted against §6 (F-10):
+     * it let the company activate its own vacancy — "Aprobar / activar vacante:
+     * Empresa ❌" — and blocked it from proposing `cubierta` — "Marcar vacante
+     * como cubierta: Empresa ✅ (propone)". Deriving the ability from the target
+     * state puts the rule in the policy, where §6 can be read off it.
+     */
     public function transition(Request $request, Vacancy $vacancy): JsonResponse
     {
-        $this->authorize('update', $vacancy);
-
         $states = array_map(fn (VacancyState $s) => $s->value, VacancyState::cases());
 
         $validated = $request->validate([
@@ -155,14 +152,7 @@ class CompanyVacancyController extends Controller
         $from = $vacancy->state ?? VacancyState::Borrador;
         $to = VacancyState::from($validated['to']);
 
-        // Company_user sólo puede disparar: publicar (borrador→activa) y cancelar.
-        $allowedForCompany = [VacancyState::Activa, VacancyState::Cancelada];
-        if (! in_array($to, $allowedForCompany, true)) {
-            return $this->error(
-                'Sólo puedes publicar o cancelar vacantes desde tu empresa.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
+        $this->authorize(VacancyStateMachine::abilityFor($to), $vacancy);
 
         if (! VacancyStateMachine::canTransition($from, $to)) {
             return $this->error(
@@ -178,6 +168,9 @@ class CompanyVacancyController extends Controller
 
         if ($to === VacancyState::Activa && $vacancy->published_at === null) {
             $payload['published_at'] = now();
+        }
+        if ($to === VacancyState::Cubierta) {
+            $payload['filled_at'] = now();
         }
         if ($to === VacancyState::Cancelada) {
             $payload['cancelled_at'] = now();
@@ -233,7 +226,10 @@ class CompanyVacancyController extends Controller
         $base = $slugify->slugify($title) ?: 'vacante';
         $slug = $base;
         $i = 1;
-        while (Vacancy::where('slug', $slug)->exists()) {
+        // Slugs and codes are unique platform-wide, so uniqueness has to be
+        // checked across every tenant — a tenant-scoped count would happily
+        // mint a duplicate.
+        while (Vacancy::acrossCompanies()->where('slug', $slug)->exists()) {
             $i++;
             $slug = $base.'-'.$i;
         }
@@ -246,7 +242,7 @@ class CompanyVacancyController extends Controller
         $year = (int) now()->format('Y');
         $prefix = "HUM-{$year}-";
 
-        $last = Vacancy::where('code', 'like', $prefix.'%')
+        $last = Vacancy::acrossCompanies()->where('code', 'like', $prefix.'%')
             ->orderByDesc('code')
             ->value('code');
 

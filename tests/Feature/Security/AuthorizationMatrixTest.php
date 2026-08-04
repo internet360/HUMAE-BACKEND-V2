@@ -140,57 +140,63 @@ const AUTHZ_GUARDED_TABLES = [
 ];
 
 /**
- * Every public policy ability, mapped to the controller that invokes it.
+ * Every public policy ability, mapped to the file that names it, relative to
+ * `app/`.
  *
  * `null` means nobody invokes it: a registered ability that enforces nothing.
  * That is what InterviewPolicy was before the third remediation pass, so the
  * inventory is pinned here instead of being rediscovered by incident.
+ *
+ * The four vacancy transition abilities are named in `VacancyStateMachine`
+ * rather than in a controller: both transition endpoints derive the ability
+ * from the target state through `abilityFor()`, so the mapping lives in one
+ * place and neither endpoint can grow its own whitelist. The test below pins
+ * that indirection so it cannot be quietly undone.
  */
 const AUTHZ_POLICY_INVENTORY = [
     'CandidateProfilePolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/DirectoryController.php',
-        'view' => 'Api/V1/Recruiter/DirectoryController.php',
-        'downloadCv' => 'Api/V1/Recruiter/DirectoryController.php',
-        'downloadDocument' => 'Api/V1/Recruiter/DirectoryController.php',
-        'favorite' => 'Api/V1/Recruiter/DirectoryController.php',
-        'update' => null,
-        'delete' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'downloadCv' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
     ],
     'CompanyPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/CompanyController.php',
-        'view' => 'Api/V1/Recruiter/CompanyController.php',
-        'create' => 'Api/V1/Recruiter/CompanyController.php',
-        'update' => 'Api/V1/Recruiter/CompanyController.php',
-        'delete' => 'Api/V1/Recruiter/CompanyController.php',
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
     ],
     'InterviewPolicy' => [
-        'view' => 'Api/V1/Interviews/InterviewController.php',
-        'selectSlot' => 'Api/V1/Interviews/InterviewController.php',
-        'reschedule' => 'Api/V1/Interviews/InterviewController.php',
-        'confirm' => null,
-        'cancel' => null,
+        'view' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'selectSlot' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'reschedule' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'confirm' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'cancel' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
     ],
     'VacancyAssignmentPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/AssignmentController.php',
-        'create' => 'Api/V1/Recruiter/AssignmentController.php',
-        'update' => 'Api/V1/Recruiter/AssignmentController.php',
-        'delete' => 'Api/V1/Recruiter/AssignmentController.php',
-        'selectFinalist' => 'Api/V1/Recruiter/AssignmentController.php',
-        'scheduleInterview' => 'Api/V1/Interviews/InterviewController.php',
-        'viewNotes' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'createNote' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'viewInternalNotes' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'view' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'selectFinalist' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'scheduleInterview' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'viewNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
+        'createNote' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
+        'viewInternalNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
     ],
     'VacancyPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/VacancyController.php',
-        'view' => 'Api/V1/Recruiter/VacancyController.php',
-        'viewSuggestedCandidates' => 'Api/V1/Recruiter/VacancyController.php',
-        'create' => 'Api/V1/Recruiter/VacancyController.php',
-        'update' => 'Api/V1/Recruiter/VacancyController.php',
-        'delete' => 'Api/V1/Recruiter/VacancyController.php',
-        'publish' => null,
-        'close' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'viewSuggestedCandidates' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'publish' => 'Services/VacancyStateMachine.php',
+        'close' => 'Services/VacancyStateMachine.php',
+        'cancel' => 'Services/VacancyStateMachine.php',
+        'advance' => 'Services/VacancyStateMachine.php',
     ],
 ];
 
@@ -730,17 +736,14 @@ function authzAccess(array $allow, array $findings = []): array
 }
 
 /**
- * §5.2 and §5.4 scope the candidate self-service surface to the candidate role.
- * Nothing in the code does, so F-09 covers every route in that surface.
+ * §5.2 and §5.4 scope the candidate self-service surface to the candidate role,
+ * and `role:candidate` now sits in front of all 30 routes.
  *
  * @return array{expect: array<string, string>, findings: array<string, string>}
  */
 function authzCandidateSelfService(bool $ownerOnly = false): array
 {
-    return authzAccess(
-        $ownerOnly ? ['candidate_owner'] : ['candidate_owner', 'candidate_other'],
-        ['recruiter' => 'F-09', 'company_owner' => 'F-09', 'company_other' => 'F-09', 'admin' => 'F-09'],
-    );
+    return authzAccess($ownerOnly ? ['candidate_owner'] : ['candidate_owner', 'candidate_other']);
 }
 
 function authzFutureDate(int $days): string
@@ -785,6 +788,8 @@ function authzMatrixRows(): array
         ...authzAccess($everyone),
     ]);
 
+    // The route is gone, so every actor gets a 404. The row stays so the matrix
+    // keeps stating the rule: §6 «Registrarse — Empresa cliente ❌ (invitación)».
     $add('POST /auth/register/company', [
         'method' => 'POST', 'uri' => '/api/v1/auth/register/company', 'spec' => '§6 Registrarse — Empresa ❌ (invitación)',
         'payload' => [
@@ -793,7 +798,7 @@ function authzMatrixRows(): array
             'accept_terms' => true,
             'company' => ['legal_name' => 'Empresa Nueva S.A. de C.V.'],
         ],
-        ...authzAccess([], array_fill_keys($everyone, 'F-12')),
+        ...authzAccess([]),
     ]);
 
     $add('POST /auth/login', [
@@ -947,9 +952,7 @@ function authzMatrixRows(): array
         // Both candidates already hold an active membership, so the controller
         // answers 409 before reaching Stripe. A 409 for a role §6 marks "—"
         // still proves there is no role gate in front of the endpoint.
-        ...authzAccess(['candidate_owner', 'candidate_other'], [
-            'recruiter' => 'F-16', 'company_owner' => 'F-16', 'company_other' => 'F-16', 'admin' => 'F-16',
-        ]),
+        ...authzAccess(['candidate_owner', 'candidate_other']),
     ]);
     $add('GET /me/payments', [
         'method' => 'GET', 'uri' => '/api/v1/me/payments', 'spec' => '§5.3 auth',
@@ -1023,7 +1026,7 @@ function authzMatrixRows(): array
     $add('GET /companies', [
         'method' => 'GET', 'uri' => '/api/v1/companies', 'spec' => '§5.6 admin/recruiter',
         'must_not_leak' => ['company_owner' => $companySentinels, 'company_other' => $companySentinels],
-        ...authzAccess($staff, ['company_owner' => 'F-01', 'company_other' => 'F-01']),
+        ...authzAccess($staff),
     ]);
     $add('POST /companies', [
         'method' => 'POST', 'uri' => '/api/v1/companies', 'spec' => '§5.6 admin/recruiter',
@@ -1032,12 +1035,12 @@ function authzMatrixRows(): array
     ]);
     $add('GET /companies/{company}', [
         'method' => 'GET', 'uri' => '/api/v1/companies/{company}', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-15']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /companies/{company}', [
         'method' => 'PATCH', 'uri' => '/api/v1/companies/{company}', 'spec' => '§5.6 admin/recruiter',
         'payload' => ['status' => 'archived', 'internal_notes' => 'reescrito por la empresa'],
-        ...authzAccess($staff, ['company_owner' => 'F-06']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /companies/{company}', [
         'method' => 'DELETE', 'uri' => '/api/v1/companies/{company}', 'spec' => 'UNSPECIFIED — inferido: admin (destructivo)',
@@ -1045,16 +1048,16 @@ function authzMatrixRows(): array
     ]);
     $add('GET /companies/{company}/members', [
         'method' => 'GET', 'uri' => '/api/v1/companies/{company}/members', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
     $add('POST /companies/{company}/members', [
         'method' => 'POST', 'uri' => '/api/v1/companies/{company}/members', 'spec' => '§5.6 admin/recruiter',
         'payload' => ['user_id' => '{user}', 'role' => 'viewer'],
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /companies/{company}/members/{userId}', [
         'method' => 'DELETE', 'uri' => '/api/v1/companies/{company}/members/{company_member_user}', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
 
     // -------------------------------------------------------- Vacantes (§5.6)
@@ -1069,7 +1072,7 @@ function authzMatrixRows(): array
     $add('POST /vacancies (company_id de la empresa A)', [
         'method' => 'POST', 'uri' => '/api/v1/vacancies', 'spec' => '§6 Crear vacante — Empresa ✅ (propia)',
         'payload' => ['company_id' => '{company}', 'title' => 'Vacante de sondeo', 'description' => 'Descripción de la vacante de sondeo.'],
-        ...authzAccess(['recruiter', 'company_owner', 'admin'], ['company_other' => 'F-02']),
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
     ]);
     $add('GET /vacancies/{vacancy}', [
         'method' => 'GET', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 recruiter/admin/company (propias)',
@@ -1079,12 +1082,12 @@ function authzMatrixRows(): array
     $add('PATCH /vacancies/{vacancy}', [
         'method' => 'PATCH', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 PATCH /jobs/{id} — recruiter/admin',
         'payload' => ['title' => 'Título reescrito', 'internal_notes' => 'reescrito', 'fee_amount' => 1],
-        ...authzAccess($staff, ['company_owner' => 'F-04']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /vacancies/{vacancy} (reasignar company_id)', [
         'method' => 'PATCH', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 + aislamiento entre inquilinos',
         'payload' => ['company_id' => '{company_b}'],
-        ...authzAccess($staff, ['company_owner' => 'F-04']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /vacancies/{vacancy}', [
         'method' => 'DELETE', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => 'UNSPECIFIED — inferido: admin (destructivo)',
@@ -1093,7 +1096,7 @@ function authzMatrixRows(): array
     $add('POST /vacancies/{vacancy}/transition (→ cubierta)', [
         'method' => 'POST', 'uri' => '/api/v1/vacancies/{vacancy}/transition', 'spec' => '§5.6 recruiter/admin',
         'payload' => ['to' => VacancyState::Cubierta->value],
-        ...authzAccess($staff, ['company_owner' => 'F-03']),
+        ...authzAccess($staff),
     ]);
     $add('GET /vacancies/{vacancy}/suggested-candidates', [
         'method' => 'GET', 'uri' => '/api/v1/vacancies/{vacancy}/suggested-candidates', 'spec' => 'UNSPECIFIED — inferido: §6 directorio ❌ para Empresa',
@@ -1190,7 +1193,7 @@ function authzMatrixRows(): array
             'recommendation' => 'reject',
             'meeting_url' => 'https://meet.example.com/sondeo',
         ],
-        ...authzAccess($staff, ['company_owner' => 'F-08']),
+        ...authzAccess($staff),
     ]);
     $add('POST /interviews/{interview}/select-slot', [
         'method' => 'POST', 'uri' => '/api/v1/interviews/{interview}/select-slot', 'spec' => 'UNSPECIFIED — inferido: candidato + HUMAE + decisor de la empresa',
@@ -1242,7 +1245,7 @@ function authzMatrixRows(): array
     $add('POST /me/company/members (adjuntar una cuenta de candidato ajena)', [
         'method' => 'POST', 'uri' => '/api/v1/me/company/members', 'spec' => 'UNSPECIFIED — inferido: no se puede enrolar una cuenta ajena sin su consentimiento',
         'payload' => ['email' => '{candidate_other_email}', 'role' => 'viewer'],
-        ...authzAccess([], ['company_owner' => 'F-13', 'company_other' => 'F-13']),
+        ...authzAccess([]),
     ]);
     $add('PATCH /me/company/members/{member}', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/members/{member}', 'spec' => 'UNSPECIFIED — inferido: owner de la propia empresa',
@@ -1272,7 +1275,7 @@ function authzMatrixRows(): array
             'company_id' => '{company}', 'title' => 'Solicitud de sondeo', 'description' => 'Solicitud de vacante de sondeo.',
             'internal_notes' => 'escrito por la empresa', 'fee_amount' => 1, 'sla_days' => 1,
         ],
-        ...authzAccess(['admin'], ['company_owner' => 'F-05']),
+        ...authzAccess(['admin']),
     ]);
     $add('GET /me/company/vacancies/{vacancy}', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§5.6 /me/company/jobs — company_user',
@@ -1282,22 +1285,27 @@ function authzMatrixRows(): array
     $add('PATCH /me/company/vacancies/{vacancy} (notas internas + honorarios)', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§6 Agregar notas internas — Empresa ❌',
         'payload' => ['internal_notes' => 'reescrito por la empresa', 'fee_amount' => 1],
-        ...authzAccess($staff, ['company_owner' => 'F-05']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /me/company/vacancies/{vacancy} (reasignar company_id)', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§5.6 + aislamiento entre inquilinos',
         'payload' => ['company_id' => '{company_b}'],
-        ...authzAccess($staff, ['company_owner' => 'F-05']),
+        ...authzAccess($staff),
     ]);
     $add('POST /me/company/vacancies/{vacancy}/transition (→ activa)', [
         'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy_draft}/transition', 'spec' => '§6 Aprobar / activar vacante — Empresa ❌',
         'payload' => ['to' => VacancyState::Activa->value],
-        ...authzAccess($staff, ['company_owner' => 'F-10']),
+        ...authzAccess($staff),
     ]);
+    // Row inverted for the recruiter: it used to expect a refusal because the
+    // controller's whitelist blocked `cubierta` for everybody, which
+    // contradicts §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)».
+    // The ability decides now, so both transition endpoints agree and HUMAE may
+    // confirm the close from either one.
     $add('POST /me/company/vacancies/{vacancy}/transition (→ cubierta)', [
-        'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/transition', 'spec' => '§6 Marcar vacante como cubierta — Empresa ✅ (propone)',
+        'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/transition', 'spec' => '§6 Marcar vacante como cubierta — Empresa ✅ (propone), Reclutador ✅ (confirma)',
         'payload' => ['to' => VacancyState::Cubierta->value],
-        ...authzAccess(['company_owner'], ['company_owner' => 'F-10']),
+        ...authzAccess(['company_owner', 'recruiter', 'admin']),
     ]);
     $add('GET /me/company/vacancies/{vacancy}/assignments', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/assignments', 'spec' => '§6 Ver candidatos asignados — Empresa ✅ (propia vacante)',
@@ -1314,25 +1322,51 @@ function authzMatrixRows(): array
     ]);
 
     // -------------------------------------------------------- Reportes (§5.10)
+    //
+    // §6 grants "Ver reportes" to three roles with three scopes. The nine
+    // reports do not all admit one: a payment has no vacancy, so "sus
+    // vacantes" cannot narrow it, and §6 closes the whole candidate axis to
+    // the client company. The surface therefore splits, and five rows are
+    // inverted against the original transcription, which expected the company
+    // to reach every report.
+    //
+    // Process reports — dimensioned by vacancy. Every granted role, scoped.
+    foreach ([
+        'vacancies-by-state',
+        'interviews',
+        'time-to-fill',
+    ] as $report) {
+        $add("GET /admin/reports/{$report}", [
+            'method' => 'GET', 'uri' => "/api/v1/admin/reports/{$report}",
+            'spec' => '§6 Ver reportes — Reclutador ✅ (sus procesos), Empresa ✅ (sus vacantes), Admin ✅',
+            ...authzAccess(['recruiter', 'company_owner', 'company_other', 'admin']),
+        ]);
+    }
+
+    // Platform metrics — HUMAE's own business view: registrations, memberships,
+    // payments, and the directory's most favourited profiles. No vacancy to
+    // scope by, and §6 «Ver directorio de candidatos — Empresa cliente ❌»
+    // covers the last one verbatim.
     foreach ([
         'candidates-registered',
         'active-memberships',
         'payments',
         'expiring-memberships',
-        'vacancies-by-state',
-        'interviews',
-        'recruiter-effectiveness',
-        'time-to-fill',
         'most-searched-profiles',
     ] as $report) {
         $add("GET /admin/reports/{$report}", [
             'method' => 'GET', 'uri' => "/api/v1/admin/reports/{$report}",
-            'spec' => '§6 Ver reportes — Reclutador ✅ (sus procesos), Empresa ✅ (sus vacantes), Admin ✅',
-            ...authzAccess(['recruiter', 'company_owner', 'company_other', 'admin'], [
-                'company_owner' => 'F-11', 'company_other' => 'F-11',
-            ]),
+            'spec' => '§6 Ver reportes + §6 «Ver directorio — Empresa ❌»; sin dimensión de vacante que acotar',
+            ...authzAccess($staff),
         ]);
     }
+
+    // Recruiter performance — vacancy-shaped, but it measures HUMAE's own team.
+    $add('GET /admin/reports/recruiter-effectiveness', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/reports/recruiter-effectiveness',
+        'spec' => '§6 Ver reportes — Reclutador ✅ (su propia fila), Admin ✅; la empresa no audita a su proveedor',
+        ...authzAccess($staff),
+    ]);
 
     // --------------------------------------------------- Admin usuarios (§5.10)
     $add('GET /admin/users', ['method' => 'GET', 'uri' => '/api/v1/admin/users', 'spec' => '§5.10 admin only', ...authzAccess(['admin'])]);
@@ -1491,15 +1525,15 @@ it('accounts for every policy ability', function (): void {
 
 it('keeps every ability the inventory calls invoked actually invoked', function (): void {
     foreach (AUTHZ_POLICY_INVENTORY as $policy => $abilities) {
-        foreach ($abilities as $ability => $controller) {
-            if ($controller === null) {
+        foreach ($abilities as $ability => $callSite) {
+            if ($callSite === null) {
                 continue;
             }
 
-            $source = (string) file_get_contents(app_path('Http/Controllers/'.$controller));
+            $source = (string) file_get_contents(app_path($callSite));
 
             // If this fails, `{$policy}::{$ability}` just became an orphan:
-            // the documented call site no longer authorizes on it.
+            // the documented call site no longer names it.
             expect($source)->toContain("'{$ability}'");
         }
     }
@@ -1509,25 +1543,36 @@ it('reports the abilities no controller invokes', function (): void {
     $orphans = [];
 
     foreach (AUTHZ_POLICY_INVENTORY as $policy => $abilities) {
-        foreach ($abilities as $ability => $controller) {
-            if ($controller === null) {
+        foreach ($abilities as $ability => $callSite) {
+            if ($callSite === null) {
                 $orphans[] = "{$policy}::{$ability}";
             }
         }
     }
 
-    // The transition endpoints authorize on `update`, not on the purpose-built
-    // `publish` / `close` abilities. That is the root cause of F-03: a client
-    // company that may edit its own vacancy inherits the right to close it.
-    expect($orphans)->toBe([
-        'CandidateProfilePolicy::update',
-        'CandidateProfilePolicy::delete',
-        'InterviewPolicy::confirm',
-        'InterviewPolicy::cancel',
-        'VacancyAssignmentPolicy::view',
-        'VacancyPolicy::publish',
-        'VacancyPolicy::close',
-    ]);
+    // A written-but-unwired ability is a hole waiting to open: it reads like
+    // protection in review and enforces nothing at runtime. The seven that
+    // existed at audit time are gone — `publish`, `close`, `confirm` and
+    // `cancel` are wired, and `CandidateProfilePolicy::update/delete` plus
+    // `VacancyAssignmentPolicy::view` were deleted because the ownership they
+    // expressed is structural: those controllers resolve the record from the
+    // authenticated user, never from a caller-supplied id.
+    expect($orphans)->toBe([]);
+});
+
+it('derives both vacancy transition abilities from the state machine', function (): void {
+    // The purpose-named abilities are only worth anything if neither endpoint
+    // re-invents the mapping. `abilityFor()` is the single source; a controller
+    // that stops calling it has grown its own whitelist again — which is
+    // exactly how F-10 shipped inverted against §6.
+    foreach ([
+        'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'Http/Controllers/Api/V1/Company/CompanyVacancyController.php',
+    ] as $controller) {
+        $source = (string) file_get_contents(app_path($controller));
+
+        expect($source)->toContain('VacancyStateMachine::abilityFor');
+    }
 });
 
 it('applies every registered authorization middleware to at least one route', function (): void {

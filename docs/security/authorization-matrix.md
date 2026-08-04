@@ -10,10 +10,14 @@
 > `F-xx` y la sonda las reporta como *skipped* nombrando el hallazgo, de modo que un rojo en ese archivo
 > siempre significa un agujero **nuevo**.
 >
-> **Alcance de la auditoría**: 145 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 154 rutas totales
-> (`php artisan route:list`). Se sondearon las 145 de la API — cobertura verificada por el propio test, que
+> **Alcance de la auditoría**: 144 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 153 rutas totales
+> (`php artisan route:list`). Se sondearon las 144 de la API — cobertura verificada por el propio test, que
 > falla si alguien añade una ruta sin añadir su fila. Las 9 de infraestructura se documentan pero no se
 > sondean (§3, §7).
+>
+> **Estado tras el rediseño de la capa de autorización**: 15 de los 16 hallazgos cerrados. Queda abierto
+> **F-14** (middlewares muertos) por decisión explícita: se reporta, no se toca. Al analizarlo apareció un
+> agujero nuevo, **F-17**, que se documenta sin corregir por la misma razón. Ver §5.
 
 ---
 
@@ -42,7 +46,7 @@
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | POST | `/auth/register` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/register/recruiter` | ✅ | ✅ | ✅ | ✅ | ✅ | **UNSPECIFIED** | ✔ |
-| POST | `/auth/register/company` | ❌ | ❌ | ❌ | ❌ | ❌ | §6 «Registrarse — Empresa cliente ❌ (invitación)» | **F-12** |
+| POST | `/auth/register/company` | ❌ | ❌ | ❌ | ❌ | ❌ | §6 «Registrarse — Empresa cliente ❌ (invitación)» | ✔ (ruta retirada) |
 | POST | `/auth/login` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/forgot-password` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/reset-password` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
@@ -85,43 +89,43 @@ comercial.
 
 ### 2.3 Perfil del candidato — §5.2 (`role: candidate`)
 
-§5.2 encabeza la sección con «auth, role: candidate». **Ninguna de estas 30 rutas comprueba el rol**
-(hallazgo **F-09**). Las columnas reflejan la intención de §5.2, no el comportamiento actual.
+§5.2 encabeza la sección con «auth, role: candidate». Las 30 rutas de esta superficie y la de §5.4 quedan
+tras `RoleMiddleware:candidate` (**F-09 cerrado**).
 
 | Método | Ruta | anón | cand | recr | emp | admin | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
-| GET | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| POST | `/me/profile/avatar` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/profile/cv.pdf` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/experiences` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/experiences/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/educations` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/educations/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/courses` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/courses/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/certifications` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/certifications/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/references` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/references/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/skills` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| DELETE | `/me/profile/skills/{skill}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/languages` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| DELETE | `/me/profile/languages/{language}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/documents` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/profile/documents/{document}/download` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| DELETE | `/me/profile/documents/{document}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
+| GET | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/profile/avatar` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/profile/cv.pdf` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/experiences` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/experiences/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/educations` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/educations/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/courses` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/courses/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/certifications` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/certifications/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/references` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/references/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/skills` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/skills/{skill}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/languages` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/languages/{language}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/documents` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/profile/documents/{document}/download` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/documents/{document}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
 
-«**F-09** (parcial)» = el aislamiento **entre candidatos** sí funciona: `ResolvesCandidateProfile::ensureOwned()`
-responde `404` a cualquiera que no sea el dueño del recurso. Lo que falla es el filtro de rol, y el efecto
-colateral que produce (ver §5, F-09).
+El aislamiento **entre candidatos** ya funcionaba: `ResolvesCandidateProfile::ensureOwned()` responde `404`
+a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efecto colateral que producía
+(ver §5.4).
 
 ### 2.4 Membresía y pagos — §5.3
 
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | GET | `/me/membership` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
-| POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | **F-16** |
+| POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | ✔ |
 | GET | `/me/payments` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
 
 §5.3 titula la sección «Membership (auth)» sin acotar rol, y ambos `GET` se autoacotan al usuario
@@ -132,12 +136,12 @@ autenticado (devuelven vacío para quien no tiene membresías ni pagos). `POST /
 
 | Método | Ruta | anón | cand | recr | emp | admin | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
-| GET | `/me/psychometrics/tests` | ❌ | ✅ | ❌ | ❌ | ❌ | **F-09** |
-| POST | `/me/psychometrics/attempts` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/psychometrics/attempts/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| PATCH | `/me/psychometrics/attempts/{attempt}/answers` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| POST | `/me/psychometrics/attempts/{attempt}/submit` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET | `/me/psychometrics/results/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
+| GET | `/me/psychometrics/tests` | ❌ | ✅ | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/psychometrics/attempts` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/psychometrics/attempts/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH | `/me/psychometrics/attempts/{attempt}/answers` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/psychometrics/attempts/{attempt}/submit` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/psychometrics/results/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
 
 ### 2.6 Notificaciones — §5.9
 
@@ -174,14 +178,14 @@ Las cinco rutas responden `403` a `company_user` y a `candidate`.
 
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
-| GET | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-01** |
+| GET | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 | POST | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
-| GET | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-15** |
-| PATCH | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-06** |
+| GET | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| PATCH | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 | DELETE | `/companies/{company}` | ❌ | ❌ | ❌ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
-| GET | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
-| POST | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
-| DELETE | `/companies/{company}/members/{userId}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
+| GET | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| POST | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| DELETE | `/companies/{company}/members/{userId}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 
 **Inferencia (`DELETE /companies/{company}`)**: §5.6 lista «GET, POST /companies, /companies/{id}, PATCH,
 DELETE — admin / recruiter» en una sola fila. Se infiere **sólo admin** para el `DELETE`: es la única acción
@@ -194,11 +198,11 @@ reclutador archive empresas, hay que cambiar la Policy, no la ruta.
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | GET | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 recruiter/admin/company (propias) | ✔ |
-| POST | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Crear vacante — Empresa ✅ (propia)» | **F-02** |
+| POST | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Crear vacante — Empresa ✅ (propia)» | ✔ |
 | GET | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
-| PATCH | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «PATCH /jobs/{id} — recruiter / admin» | **F-04** |
+| PATCH | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «PATCH /jobs/{id} — recruiter / admin» | ✔ |
 | DELETE | `/vacancies/{vacancy}` | ❌ | ❌ | ❌ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
-| POST | `/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «POST /jobs/{id}/transition — recruiter / admin» | **F-03** |
+| POST | `/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «POST /jobs/{id}/transition — recruiter / admin» | ✔ |
 | GET | `/vacancies/{vacancy}/suggested-candidates` | ❌ | ❌ | ✅ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
 
 **Inferencias**
@@ -234,7 +238,7 @@ una etapa `AssignmentStage::visibleToCompany()`. La sonda comprueba las dos mita
 | GET | `/interviews` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §5.8 | ✔ |
 | POST | `/interviews` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Programar entrevista — Candidato ❌, Empresa: propuesta» | ✔ |
 | GET | `/interviews/{interview}` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §5.8 | ✔ |
-| PATCH | `/interviews/{interview}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.8 «reprograma, cambia estado» | **F-08** |
+| PATCH | `/interviews/{interview}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.8 «reprograma, cambia estado» | ✔ |
 | POST | `/interviews/{interview}/select-slot` | ❌ | 🔒 | ✅ | 🔒 | ✅ | **UNSPECIFIED** | ✔ |
 | POST | `/interviews/{interview}/meeting-details` | ❌ | ❌ | ✅ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
 | POST | `/interviews/{interview}/confirm` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §6 «Confirmar entrevista» | ✔ |
@@ -262,14 +266,14 @@ candidato. Verificado por sonda con centinela.
 | GET | `/me/company` | ❌ | ❌ | ❌ | 🔒 | ✅ | §6 «Ver/editar su propio perfil — Empresa ✅ (propia)» | ✔ |
 | PATCH | `/me/company` | ❌ | ❌ | ❌ | 🔒 | ✅ | §6 ídem (owner/manager) | ✔ |
 | GET | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
-| POST | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | **F-13** |
+| POST | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | PATCH | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | DELETE | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | GET | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «GET /me/company/jobs — company_user» | ✔ |
-| POST | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «POST /me/company/jobs — queda borrador» | **F-05** |
+| POST | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «POST /me/company/jobs — queda borrador» | ✔ |
 | GET | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
-| PATCH | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | **F-05** |
-| POST | `/me/company/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Aprobar/activar ❌», «Marcar cubierta ✅ (propone)» | **F-10** |
+| PATCH | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
+| POST | `/me/company/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Aprobar/activar ❌», «Marcar cubierta ✅ (propone)» | ✔ |
 | GET | `/me/company/vacancies/{vacancy}/assignments` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Ver candidatos asignados — Empresa ✅ (propia vacante)» | ✔ |
 
 **Inferencia (`/me/company/members/*`)**: §5.6 lista `/companies/{id}/members` como admin/recruiter pero no
@@ -284,23 +288,49 @@ candidato `sourced` ni ninguna clave de PII aparecen en el payload.
 
 ### 2.13 Reportes — §5.10 / §6
 
-| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
-|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
-| GET | `/admin/reports/candidates-registered` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 «Ver reportes» | **F-11** |
-| GET | `/admin/reports/active-memberships` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/payments` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/expiring-memberships` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/vacancies-by-state` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/interviews` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/recruiter-effectiveness` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/time-to-fill` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/most-searched-profiles` | ❌ | ❌ | 🔒 | ❌ | ✅ | §6 + §5.5 | **F-11** |
-
 **Conflicto interno del documento maestro**: §5.10 titula la sección «Admin (admin only)», mientras §6
 concede «Ver reportes — Reclutador ✅ (sus procesos), Empresa cliente ✅ (sus vacantes)». Se resuelve a favor
-de §6 por indicación del product owner. Excepción documentada: `most-searched-profiles` devuelve nombres de
-candidatos, y §6 cierra el directorio a la empresa (❌), así que ese informe concreto se mantiene en
-recruiter/admin.
+de §6 por indicación del product owner.
+
+Los nueve informes no admiten todos el mismo acotado, así que la superficie se parte en tres familias.
+`ReportScope::forUser()` resuelve a cuál pertenece cada llamante y `ReportsService` recibe el corte.
+
+**Familia 1 — de proceso.** Tienen dimensión de vacante, que es justo a lo que se refieren «sus procesos» y
+«sus vacantes». Las lee todo rol concedido, acotadas.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/vacancies-by-state` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 «Ver reportes» | ✔ |
+| GET | `/admin/reports/interviews` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | ✔ |
+| GET | `/admin/reports/time-to-fill` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | ✔ |
+
+**Familia 2 — desempeño del reclutador.** También tiene forma de vacante, pero mide al equipo de HUMAE. El
+cliente lee su embudo, no la evaluación de su proveedor.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/recruiter-effectiveness` | ❌ | ❌ | 🔒 | ❌ | ✅ | §6 ídem | ✔ |
+
+**Familia 3 — métricas de plataforma.** Registros, membresías, pagos y demanda del directorio: negocio de
+HUMAE. Un pago no tiene vacante, así que «sus vacantes» no puede acotarlo, y §6 cierra a la empresa todo el
+eje del candidato — el directorio de forma explícita.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/candidates-registered` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/active-memberships` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/payments` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/expiring-memberships` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/most-searched-profiles` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 «Ver directorio — Empresa ❌» + §5.5 | ✔ |
+
+**Definición de «sus procesos»** (reclutador): las vacantes con `assigned_recruiter_id = él`. Es la lectura
+más estrecha que el documento sostiene sin inventar; si el product owner quiere una más amplia (por ejemplo
+también las asignaciones que él creó en vacantes de otros), el cambio es una consulta en `ReportScope` y
+nada más.
+
+**Pendiente de ratificación**: la partición en familias es una interpretación de §6, no una transcripción.
+Las cinco filas de la familia 3 y la de la familia 2 se cerraron a la empresa por criterio; conviene que el
+product owner las confirme.
 
 ### 2.14 Admin — usuarios y catálogos — §5.10 (admin only)
 
@@ -399,29 +429,41 @@ funcionalidad ausente.
 
 | Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
 |---|---|---|---|---|---|
-| **F-01** | Crítica | `GET /companies` | `company_user` (cualquiera) | Devuelve `200` con el padrón completo de empresas cliente de HUMAE: `rfc`, `contact.email`, `contact.phone`, `address_line`, `account_manager_id`. Cualquier cliente enumera a los demás | §5.6 «GET /companies — admin / recruiter» |
-| **F-02** | Crítica | `POST /vacancies` | `company_user` ajeno | `VacancyPolicy::create()` sólo comprueba el rol y `VacancyRequest` valida `company_id` con `exists:companies,id`. Un cliente crea vacantes dentro de la empresa de otro cliente | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
-| **F-03** | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | El endpoint del reclutador autoriza con `update`, que la Policy concede al dueño de la vacante, y no aplica ninguna lista blanca de estados. La empresa lleva su vacante a `cubierta`, saltándose la restricción `[activa, cancelada]` de su propio endpoint | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
-| **F-04** | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | Escribe `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` y **reasigna `company_id`** a otra empresa | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
-| **F-05** | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | El endpoint propio pasa `$request->validated()` completo al modelo. La empresa escribe `internal_notes`, `fee_amount`, `sla_days` y reasigna `company_id`. `store()` sólo descarta `assigned_recruiter_id` | §6 «Agregar notas internas — Empresa cliente ❌» |
-| **F-06** | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | Escribe sobre su propio registro campos que el endpoint `/me/company` excluye a propósito: `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
-| **F-07** | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | `CompanyMemberController` autoriza con `CompanyPolicy::view/update`. `AttachMemberRequest` acepta cualquier `user_id` existente, así que el cliente adjunta a su empresa una cuenta arbitraria de la plataforma | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
-| **F-08** | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | `UpdateInterviewRequest` no replica las prohibiciones de `ScheduleInterviewRequest`: la empresa escribe `recruiter_feedback`, `recommendation`, `rating`, `meeting_url` y `location`, campos que el endpoint de creación le prohíbe explícitamente | §6 «Agregar notas internas — Empresa cliente ❌» |
-| **F-09** | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | Ninguna comprueba el rol. Peor: `ProfileService::findOrCreate()` **crea un `candidate_profiles`** para el llamante. Un reclutador que abre `GET /me/profile` se da de alta como candidato y entra al directorio; el efecto se dispara incluso en las rutas que responden `404`, porque `ensureOwned()` resuelve el perfil antes de comparar | §5.2 y §5.4 «auth, role: candidate» |
-| **F-10** | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | La lista blanca está **invertida** respecto de §6: permite `activa` (§6: Empresa ❌) y bloquea `cubierta` (§6: Empresa ✅ propone) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
-| **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
-| **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
-| **F-13** | Media | `POST /me/company/members` | `company_user` owner | El owner adjunta a su equipo cualquier cuenta existente indicando su correo, y el controlador le **asigna el rol Spatie `company_user`** si no lo tenía. Sin consentimiento del titular | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
-| **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
-| **F-15** | Baja | `GET /companies/{id}` | `company_user` miembro | Lee el registro completo de su propia empresa por el endpoint de staff, incluido `internal_notes` | §5.6 «GET /companies/{id} — admin / recruiter» |
-| **F-16** | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | Sin filtro de rol: cualquier autenticado inicia una sesión de pago de membresía de candidato | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
+| ~~**F-01**~~ | Crítica | `GET /companies` | `company_user` (cualquiera) | **Cerrado.** `CompanyPolicy::viewAny()` es sólo recruiter (admin vía `before`). Segundo candado: el scope de inquilino deja el padrón en la propia empresa aunque alguien reabra la Policy | §5.6 «GET /companies — admin / recruiter» |
+| ~~**F-02**~~ | Crítica | `POST /vacancies` | `company_user` ajeno | **Cerrado.** `VacancyRequest` declara `company_id` como campo acotado por inquilino y `CompanyTenancy::assertBelongsTo()` responde `403` si el llamante no pertenece a esa empresa | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
+| ~~**F-03**~~ | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | **Cerrado.** El endpoint de staff queda tras `RoleMiddleware:recruiter|admin` (§5.6) y autoriza con la habilidad que nombra el estado destino (`VacancyStateMachine::abilityFor()`), no con `update` | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
+| ~~**F-04**~~ | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | **Cerrado.** `PATCH`, `DELETE` y `/transition` de `/vacancies/{id}` quedan tras `RoleMiddleware:recruiter|admin`: son la superficie de staff que §5.6 describe. La empresa opera las suyas en `/me/company/vacancies/*` | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
+| ~~**F-05**~~ | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | **Cerrado.** `VacancyRequest::staffOnlyFields()` rechaza con `403` `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days` y `assigned_recruiter_id`; `company_id` pasa por el candado de inquilino. El `unset()` silencioso del controlador se borró | §6 «Agregar notas internas — Empresa cliente ❌» |
+| ~~**F-06**~~ | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | **Cerrado.** `CompanyPolicy::update()` es sólo recruiter. Además `MyCompanyController` dejó de llevar su propia lista de campos: ambos endpoints comparten `CompanyRequest`, que declara esos cinco como `staffOnlyFields()` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
+| ~~**F-07**~~ | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | **Cerrado** para el cliente: el controlador sigue autorizando con `CompanyPolicy::view/update`, que ahora son de staff. Queda abierto que `AttachMemberRequest` acepte cualquier `user_id` — para HUMAE es el alta de equipo que §5.6 le concede; ver F-13 para la variante de autoservicio | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
+| ~~**F-08**~~ | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | **Cerrado.** Ambos Requests declaran la misma regla por el mismo mecanismo (`RestrictsFieldsByRole`). `company_feedback` sigue abierto a la empresa: es su propia opinión | §6 «Agregar notas internas — Empresa cliente ❌» |
+| ~~**F-09**~~ | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | **Cerrado.** Las 30 rutas quedan tras `RoleMiddleware:candidate`. Además `ProfileService` se partió en `find()` (no crea) y `findOrCreate()` (crea, y **rechaza** si la cuenta no es de candidato); `ensureOwned()` usa `find()`, así que una lectura denegada ya no escribe. El rastro de datos preexistente queda pendiente de verificar — ver §5.4 | §5.2 y §5.4 «auth, role: candidate» |
+| ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
+| ~~**F-11**~~ | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | **Cerrado.** `ReportScope::forUser()` resuelve el corte por rol y `ReportsService` lo aplica en los cuatro informes con dimensión de vacante. La empresa entra a los tres de proceso, acotada a sus vacantes; los cinco de plataforma y el de desempeño se quedan en HUMAE porque no hay «sus vacantes» que acotar. Ver §2.13 | §6 «Ver reportes» |
+| ~~**F-12**~~ | Baja | `POST /auth/register/company` | Todos | **Cerrado retirando la ruta**, junto con `AuthController::registerCompany`, `RegisterCompanyRequest` y `AuthService::registerCompanyUser`. `pending_approval` la hacía segura, no correcta: cualquiera creaba una fila en `companies` y una cuenta `company_user`, y §5 no lista la ruta. El alta soportada es `POST /admin/users`, que emite el token que consume `/auth/invitation/accept`. **Cambio incompatible para el frontend** | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
+| ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
+| **F-14** | Media | Toda la API | Todos | **Abierto a propósito** — se pidió reportar, no tocar. `EnsureVerifiedEmail` y `EnsureActiveMembership` siguen registrados como alias en `bootstrap/app.php` y sin aplicarse a ninguna ruta. Análisis y recomendación por middleware en §5.5 | §1 (premisa de negocio); §5 no lo especifica |
+| ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
+| ~~**F-16**~~ | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | **Cerrado.** `RoleMiddleware:candidate` sobre la ruta. `GET /me/membership` y `GET /me/payments` siguen abiertos a cualquier autenticado, como dice §5.3 | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
 
-### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas
+### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas — resuelta
 
-`VacancyPolicy` define `publish()` y `close()` con reglas propias (`publish` exige que el reclutador sea el
-`assigned_recruiter_id`). **Ningún controlador las invoca.** Los dos endpoints de transición autorizan con
-`update`, que la Policy concede al `owner`/`manager` de la empresa dueña. «Puedo editar mi vacante» y «puedo
-cerrar mi vacante» quedaron colapsadas en la misma habilidad.
+`VacancyPolicy` definía `publish()` y `close()` con reglas propias y **ningún controlador las invocaba**. Los
+dos endpoints de transición autorizaban con `update`, que la Policy concede al `owner`/`manager` de la
+empresa dueña: «puedo editar mi vacante» y «puedo cerrar mi vacante» colapsadas en la misma habilidad.
+
+Ahora la habilidad la nombra el estado destino, en un solo sitio
+(`VacancyStateMachine::abilityFor()`), y ambos endpoints la derivan de ahí:
+
+| Estado destino | Habilidad | Quién, según §6 |
+|---|---|---|
+| `activa` | `publish` | Reclutador / admin — «Aprobar / activar vacante: Empresa ❌» |
+| `cubierta` | `close` | Reclutador (confirma) + owner/manager de la empresa (propone) |
+| `cancelada` | `cancel` | Ídem `close` — §6 no tiene fila; se conserva el comportamiento previo |
+| resto (`en_busqueda`, `con_candidatos_asignados`, `entrevistas_en_curso`, `finalista_seleccionado`) | `advance` | Reclutador / admin — es el avance interno de HUMAE (§5.7) |
+
+`publish` dejó de exigir que el reclutador sea el `assigned_recruiter_id`: §6 no pone esa condición y el
+mismo reclutador podía editar la fila de todos modos. Se documenta como relajación deliberada.
 
 ### 5.2 Inventario de habilidades de Policy
 
@@ -430,20 +472,158 @@ habilidad sin clasificarla.
 
 | Policy | Invocadas | Huérfanas |
 |---|---|---|
-| `CandidateProfilePolicy` | `viewAny`, `view`, `downloadCv`, `downloadDocument`, `favorite` | `update`, `delete` |
+| `CandidateProfilePolicy` | `viewAny`, `view`, `downloadCv`, `downloadDocument`, `favorite` | — |
 | `CompanyPolicy` | `viewAny`, `view`, `create`, `update`, `delete` | — |
-| `InterviewPolicy` | `view`, `selectSlot`, `reschedule` | `confirm`, `cancel` |
-| `VacancyAssignmentPolicy` | `viewAny`, `create`, `update`, `delete`, `selectFinalist`, `scheduleInterview`, `viewNotes`, `createNote`, `viewInternalNotes` | `view` |
-| `VacancyPolicy` | `viewAny`, `view`, `viewSuggestedCandidates`, `create`, `update`, `delete` | `publish`, `close` |
+| `InterviewPolicy` | `view`, `selectSlot`, `reschedule`, `confirm`, `cancel` | — |
+| `VacancyAssignmentPolicy` | `viewAny`, `create`, `update`, `delete`, `selectFinalist`, `scheduleInterview`, `viewNotes`, `createNote`, `viewInternalNotes` | — |
+| `VacancyPolicy` | `viewAny`, `view`, `viewSuggestedCandidates`, `create`, `update`, `publish`, `close`, `cancel`, `advance`, `delete` | — |
 
-**Ninguna clase de Policy está muerta hoy** — `InterviewPolicy` ya se invoca desde el tercer parche. Quedan
-**7 habilidades huérfanas** de 36. `VacancyPolicy::publish/close` son las peligrosas (§5.1). Las de
-`CandidateProfilePolicy` y `VacancyAssignmentPolicy::view` son inertes: los controladores resuelven ese
-alcance por pertenencia directa.
+**Cero habilidades huérfanas.** Las 7 que había se resolvieron una por una:
+
+| Habilidad | Resolución |
+|---|---|
+| `VacancyPolicy::publish` | **Conectada** — transición a `activa` en ambos endpoints |
+| `VacancyPolicy::close` | **Conectada** — transición a `cubierta` en ambos endpoints |
+| `InterviewPolicy::confirm` | **Conectada** — `POST /interviews/{id}/confirm` |
+| `InterviewPolicy::cancel` | **Conectada** — `POST /interviews/{id}/cancel`. Al conectarla salió a la luz que le faltaba la rama del candidato: el controlador autorizaba con `view`, que sí la tiene, así que la habilidad escrita era más estricta que el comportamiento real. Se añadió la rama |
+| `CandidateProfilePolicy::update` | **Borrada** — el controlador resuelve el perfil desde el usuario autenticado; la pertenencia es estructural, no una decisión de política |
+| `CandidateProfilePolicy::delete` | **Borrada** — no existe endpoint que borre un expediente |
+| `VacancyAssignmentPolicy::view` | **Borrada** — no existe endpoint que lea una asignación suelta |
+
+Se añadieron dos habilidades nuevas para completar el vocabulario de transiciones: `cancel` y `advance`.
 
 Las Policies se descubren por convención de Laravel 12 (`App\Models\X` → `App\Policies\XPolicy`);
 `AppServiceProvider` no registra ninguna explícitamente. El descubrimiento funciona, pero cualquier Policy
 que no siga el naming quedaría silenciosamente desconectada.
+
+### 5.3 Permiso a nivel de campo: un solo mecanismo
+
+`App\Http\Requests\Concerns\RestrictsFieldsByRole` es el único sitio donde se declara qué campos puede
+enviar cada rol. Un Request que lo usa contesta dos preguntas:
+
+| Declaración | Significado | Respuesta si se incumple |
+|---|---|---|
+| `staffOnlyFields()` | Campos que sólo escribe HUMAE (recruiter/admin) | `403` nombrando los campos |
+| `companyScopedFields()` | Campos con un `company_id` que debe ser del llamante | `403` |
+
+**Por qué `403` y no `422`**: «este campo no es tuyo» es una decisión de autorización. Contestar `422`
+invita al llamante a corregir el payload cuando lo que está mal es su rol. Además el chequeo corre en
+`authorize()`, antes de las reglas, así que un campo prohibido se rechaza aunque el resto del payload sea
+inválido.
+
+Declaraciones actuales:
+
+| Request | `staffOnlyFields()` | `companyScopedFields()` |
+|---|---|---|
+| `VacancyRequest` | `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` | `company_id` |
+| `UpdateInterviewRequest` | `rating`, `recommendation`, `recruiter_feedback`, `meeting_url`, `meeting_provider`, `meeting_id`, `location` | — |
+| `ScheduleInterviewRequest` | `meeting_url`, `meeting_provider`, `meeting_id` | — |
+| `CompanyRequest` | `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | — |
+
+
+
+### 5.4 Rastro de datos de F-09 — pendiente de verificar en producción
+
+El agujero de acceso venía con uno de integridad: cada llamada de un no-candidato a la superficie
+`/me/profile/*` **creaba** su fila en `candidate_profiles`, es decir lo inscribía en la base de talento.
+El código ya no lo hace; las filas creadas antes siguen ahí.
+
+**No se pudo comprobar**: la base MySQL no es alcanzable desde el entorno de trabajo (`Connection
+refused`) y la suite corre sobre SQLite en memoria. La verificación queda pendiente contra la base real.
+
+Consulta de detección (sólo lectura):
+
+```sql
+SELECT cp.id, cp.user_id, u.email, cp.state, cp.created_at,
+       GROUP_CONCAT(r.name) AS roles
+FROM candidate_profiles cp
+JOIN users u ON u.id = cp.user_id
+LEFT JOIN model_has_roles mhr
+       ON mhr.model_id = u.id AND mhr.model_type = 'App\\Models\\User'
+LEFT JOIN roles r ON r.id = mhr.role_id
+WHERE cp.deleted_at IS NULL
+GROUP BY cp.id, cp.user_id, u.email, cp.state, cp.created_at
+HAVING COALESCE(SUM(r.name = 'candidate'), 0) = 0;
+```
+
+**Limpieza propuesta — no ejecutada.** Un perfil huérfano sólo es seguro de retirar si nunca se usó. Antes
+de tocar nada hay que confirmar, fila por fila, que no tiene dependientes en `vacancy_assignments`,
+`psychometric_attempts`, `candidate_documents`, `directory_favorites`, `candidate_skills`,
+`candidate_languages`, `candidate_functional_areas`, `candidate_work_schedules` ni en las tablas de
+historial (`candidate_experiences`, `candidate_educations`, `candidate_courses`,
+`candidate_certifications`, `candidate_references`).
+
+- Perfil **sin dependientes y en estado `registro_incompleto`**: es el efecto colateral puro. Se propone
+  soft delete — `candidate_profiles` ya usa `SoftDeletes` —, que lo saca del directorio y conserva la
+  evidencia.
+- Perfil **con dependientes**: no se toca. Significa que alguien lo usó de verdad; revisar caso por caso
+  con el product owner.
+
+Recomendación operativa: correr la detección, adjuntar el resultado al ticket y decidir con el product
+owner antes de escribir nada.
+
+
+### 5.5 F-14 — los dos middlewares muertos: qué hacer con cada uno
+
+No se cambió nada. El análisis:
+
+#### `EnsureActiveMembership` → **recomendación: borrarlo**
+
+La regla de negocio que describe («sin membresía activa no hay acceso») ya está aplicada, y en el sitio
+correcto: `DirectorySearchService::applyMembershipFilter()` filtra el directorio a membresías activas **por
+defecto**. La membresía compra *visibilidad ante HUMAE*, no acceso al propio expediente.
+
+Engancharlo a `/me/profile/*` **rompería** §8.1, que ordena el flujo así:
+
+```
+/auth/register → /auth/verify-email → /me/profile → /me/psychometrics → /me/membership/checkout
+```
+
+El pago va **después** de completar el perfil. Un middleware cuyo único uso correcto es «ninguno» es una
+trampa para quien lo lea después: parece disponible, y engancharlo rompe el producto.
+
+Matiz registrado: el filtro por defecto se puede desactivar con `?has_active_membership=0`, así que un
+reclutador sí puede ver candidatos sin membresía si lo pide explícitamente. Es una decisión de HUMAE sobre
+su propia base, no una fuga.
+
+#### `EnsureVerifiedEmail` → **recomendación: engancharlo** (no en este PR)
+
+Aquí la premisa de que «ya está aplicado en el login» resultó **incompleta**, y conviene decirlo claro.
+
+`AuthController::login()` sí rechaza con `403 email_unverified` cuando `email_verified_at` es `null`. Pero
+`POST /auth/register` **emite un token de Sanctum en la misma respuesta del alta**, antes de cualquier
+verificación. Ese token nunca pasa por el login, así que la puerta que lo vigila no lo ve.
+
+Comprobado ejecutando la secuencia:
+
+| Paso | Resultado |
+|---|---|
+| `POST /auth/register` | `201`, devuelve `data.token`, con `email_verified_at = null` |
+| `GET /me/profile` con ese token | **`200`** |
+| `GET /me/psychometrics/tests` con ese token | **`200`** |
+| `POST /auth/login` con las mismas credenciales | `403 email_unverified` |
+
+Es decir: `EnsureVerifiedEmail` **no** es código muerto que duplica una regla ya aplicada. Es la pared que
+falta en el único camino donde existe un usuario sin verificar. Se registra como **F-17** abajo.
+
+Engancharlo al grupo autenticado de `/me/*` cierra el hueco y coincide con el orden de §8.1. Requiere
+confirmación del product owner sobre el alcance exacto (¿sólo la superficie de candidato, o también
+membresía y notificaciones?), y por eso no se hizo aquí.
+
+### 5.6 F-17 (nuevo) — el token del registro salta la verificación de correo
+
+| Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
+|---|---|---|---|---|---|
+| **F-17** | Media | `POST /auth/register` → toda la superficie `/me/*` | `candidate` recién registrado | El alta devuelve un token de Sanctum utilizable antes de verificar el correo. El candado de `login` no lo alcanza porque el usuario nunca pasa por `login`. Basta un correo que no se posee para crear cuenta y usar perfil y psicométricos completos | §8.1, que pone `verify-email` antes de `/me/profile` |
+
+**No corregido en este PR** por instrucción explícita de no tocar el flujo de verificación de correo.
+Dos formas de cerrarlo, a elegir por el product owner:
+
+1. Enganchar `EnsureVerifiedEmail` al grupo autenticado de `/me/*` (§5.5).
+2. Dejar de emitir token en `POST /auth/register` y obligar a pasar por `login` tras verificar.
+
+La segunda es más limpia pero cambia el contrato con el frontend, que hoy autentica al usuario justo
+después del alta.
 
 ---
 
@@ -511,14 +691,15 @@ retiradas. Las celdas «—» quedan deliberadamente fuera: §6 las marca como n
 
 | Concepto | Cantidad |
 |---|---|
-| Rutas totales (`route:list`) | 154 |
-| Rutas `/api/v1/*` | 145 |
-| Rutas `/api/v1/*` sondeadas | 145 (100 %, verificado por test) |
+| Rutas totales (`route:list`) | 153 |
+| Rutas `/api/v1/*` | 144 |
+| Rutas `/api/v1/*` sondeadas | 144 (100 %, verificado por test) |
 | Rutas de infraestructura documentadas, no sondeadas | 9 |
-| Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`) |
+| Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla) |
 | Peticiones HTTP por corrida | 1 078 (154 filas × 7 actores) |
 | Actores | 7 — anónimo, candidato dueño, candidato ajeno, reclutador, `company_user` dueño, `company_user` ajeno, admin |
-| Tests de apoyo en el mismo archivo | 5 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, middlewares aplicados |
+| Tests de apoyo en el mismo archivo | 6 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, derivación de las transiciones desde la máquina de estados, middlewares aplicados |
+| Sonda del primitivo de inquilino | `tests/Feature/Security/CompanyTenancyTest.php` — 9 casos |
 
 Cada petición denegada se contrasta contra una huella de contenido de 24 tablas de dominio, así que un `403`
 que aun así escribe se reporta como fallo. La huella se toma también en los `GET` denegados: fue así como se
@@ -528,18 +709,22 @@ detectó el efecto colateral de F-09.
 
 ## 8. Recomendaciones, por orden
 
-1. **Centralizar el aislamiento entre inquilinos.** F-01, F-02, F-04, F-05, F-06 y F-07 son la misma
-   omisión repetida: «pertenece a mi empresa» se comprueba en unos sitios sí y en otros no. Un
-   `scope`/trait único (`BelongsToCallerCompany`) aplicado en el query builder y en la validación de
-   `company_id` cierra los seis de una vez.
-2. **Separar «editar» de «transicionar».** Conectar `VacancyPolicy::publish/close` en ambos endpoints de
-   transición y mover la lista blanca de estados por rol a `VacancyStateMachine`, para que la restricción
-   viva en un solo sitio y no en cada controlador. Cierra F-03 y F-10.
-3. **Cerrar los Form Requests por rol.** `VacancyRequest` y `UpdateInterviewRequest` aceptan campos
-   internos de cualquier llamante. `ScheduleInterviewRequest` ya demuestra el patrón correcto
-   (`prohibited` condicionado al rol); replicarlo. Cierra F-04, F-05 y F-08.
-4. **Poner un `role:candidate` sobre `/me/profile/*` y `/me/psychometrics/*`**, y sacar la creación implícita
-   de `CandidateProfile` de la ruta de lectura. Cierra F-09.
-5. **Aplicar o retirar los middlewares muertos.** F-14: o se enganchan a las rutas que corresponde, o se
-   borran. Un middleware registrado que no protege nada es peor que ninguno.
-6. **Ratificar en §5/§6 las 20 rutas UNSPECIFIED**, empezando por las que tocan PII o pipeline.
+1. ✅ **Centralizar el aislamiento entre inquilinos.** Hecho: `App\Support\Tenancy\CompanyTenancy` +
+   `CompanyOwnedScope` (global sobre `Company`, `Vacancy`, `CompanyMember`) + `BelongsToCompany`. Cierra
+   F-01, F-02, F-04, F-05, F-06 y F-07.
+2. ✅ **Separar «editar» de «transicionar».** Hecho: `VacancyStateMachine::abilityFor()` mapea estado
+   destino → habilidad (`publish`, `close`, `cancel`, `advance`) y ambos endpoints derivan de ahí. Cierra
+   F-03 y F-10.
+3. ✅ **Cerrar los Form Requests por rol.** Hecho: `RestrictsFieldsByRole`, con `staffOnlyFields()` y
+   `companyScopedFields()`. Responde `403`, no `422`. Cierra F-02, F-05, F-06 y F-08.
+4. ✅ **`role:candidate` sobre `/me/profile/*` y `/me/psychometrics/*`** y creación implícita fuera de la
+   ruta de lectura. Cierra F-09. Queda pendiente el **rastro de datos** (§5.4).
+5. ⏳ **Aplicar o retirar los middlewares muertos.** F-14 sigue abierto por instrucción. Recomendación en
+   §5.5: **borrar** `EnsureActiveMembership`, **enganchar** `EnsureVerifiedEmail` — que no es redundante,
+   ver F-17 en §5.6.
+6. ⏳ **Ratificar en §5/§6 las 20 rutas UNSPECIFIED**, empezando por las que tocan PII o pipeline. Sin
+   cambios: se conservó el comportamiento actual en todas ellas.
+7. ⏳ **Ratificar la partición de la superficie de reportes** (§2.13). Es una interpretación de §6, no una
+   transcripción.
+8. ⏳ **Verificar el rastro de F-09 en producción** y decidir la limpieza (§5.4).
+9. ⏳ **Decidir F-17** (§5.6): el token del alta salta la verificación de correo.

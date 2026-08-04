@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Api\V1\Auth;
 use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Http\Requests\Auth\RegisterCompanyRequest;
 use App\Http\Requests\Auth\RegisterRecruiterRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\V1\UserResource;
@@ -51,48 +50,6 @@ class AuthController extends Controller
 
         return $this->success(
             message: 'Recibimos tu solicitud. Te enviamos un correo para verificar tu email; un administrador de HUMAE revisará tu cuenta y te avisará cuando esté aprobada.',
-            data: [
-                'user' => new UserResource($user->load('roles', 'permissions')),
-                'pending_approval' => true,
-            ],
-            status: HttpStatus::HTTP_CREATED,
-        );
-    }
-
-    public function registerCompany(RegisterCompanyRequest $request): JsonResponse
-    {
-        /** @var array<string, mixed> $payload */
-        $payload = $request->validated();
-
-        /** @var array{name: string, email: string, password: string, phone?: string|null} $userData */
-        $userData = [
-            'name' => (string) $payload['name'],
-            'email' => (string) $payload['email'],
-            'password' => (string) $payload['password'],
-            'phone' => $payload['phone'] ?? null,
-        ];
-
-        /** @var array<string, mixed> $rawCompany */
-        $rawCompany = $payload['company'] ?? [];
-
-        /** @var array{legal_name: string, trade_name?: string|null, rfc?: string|null, website?: string|null, contact_name?: string|null, contact_email?: string|null, contact_phone?: string|null, industry_id?: int|null, company_size_id?: int|null, motivo?: string|null} $companyData */
-        $companyData = [
-            'legal_name' => (string) $rawCompany['legal_name'],
-            'trade_name' => isset($rawCompany['trade_name']) ? (string) $rawCompany['trade_name'] : null,
-            'rfc' => isset($rawCompany['rfc']) ? (string) $rawCompany['rfc'] : null,
-            'website' => isset($rawCompany['website']) ? (string) $rawCompany['website'] : null,
-            'contact_name' => isset($rawCompany['contact_name']) ? (string) $rawCompany['contact_name'] : null,
-            'contact_email' => isset($rawCompany['contact_email']) ? (string) $rawCompany['contact_email'] : null,
-            'contact_phone' => isset($rawCompany['contact_phone']) ? (string) $rawCompany['contact_phone'] : null,
-            'industry_id' => isset($rawCompany['industry_id']) ? (int) $rawCompany['industry_id'] : null,
-            'company_size_id' => isset($rawCompany['company_size_id']) ? (int) $rawCompany['company_size_id'] : null,
-            'motivo' => isset($rawCompany['motivo']) ? (string) $rawCompany['motivo'] : null,
-        ];
-
-        $user = $this->auth->registerCompanyUser($userData, $companyData);
-
-        return $this->success(
-            message: 'Recibimos el registro de tu empresa. Te enviamos un correo para verificar tu email; un administrador de HUMAE revisará la cuenta y te avisará cuando esté aprobada.',
             data: [
                 'user' => new UserResource($user->load('roles', 'permissions')),
                 'pending_approval' => true,

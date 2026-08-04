@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\AssignmentStage;
 use App\Enums\Priority;
+use App\Models\Scopes\CompanyOwnedScope;
 use Database\Factories\VacancyAssignmentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -82,7 +83,11 @@ class VacancyAssignment extends Model
     /** @return BelongsTo<Vacancy, $this> */
     public function vacancy(): BelongsTo
     {
-        return $this->belongsTo(Vacancy::class);
+        // Exempt from the tenancy scope. Access to an assignment is decided by
+        // VacancyAssignmentPolicy (stage + membership), and the candidate side
+        // of the pipeline legitimately reads the vacancy of its own interview.
+        return $this->belongsTo(Vacancy::class)
+            ->withoutGlobalScope(CompanyOwnedScope::class);
     }
 
     /** @return BelongsTo<CandidateProfile, $this> */

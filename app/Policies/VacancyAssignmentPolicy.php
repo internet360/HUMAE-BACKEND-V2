@@ -49,11 +49,6 @@ class VacancyAssignmentPolicy
         return $this->isInternalStaff($user);
     }
 
-    public function view(User $user, VacancyAssignment $assignment): bool
-    {
-        return $this->isInternalStaff($user);
-    }
-
     /**
      * Move a candidate between pipeline stages or edit pipeline metadata.
      * Internal staff only.

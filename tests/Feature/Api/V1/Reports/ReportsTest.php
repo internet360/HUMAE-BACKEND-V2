@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\AssignmentStage;
 use App\Enums\CandidateState;
+use App\Enums\CompanyMemberRole;
 use App\Enums\InterviewState;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
@@ -11,6 +12,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyMember;
 use App\Models\DirectoryFavorite;
 use App\Models\Interview;
 use App\Models\Membership;
@@ -116,12 +118,32 @@ it('returns payments aggregates', function (): void {
         ->assertJsonPath('data.total_paid', 499);
 });
 
-it('lists vacancies grouped by state with all states present', function (): void {
-    actAsReportStaff();
+it('lists a recruiter its own vacancies grouped by state, with all states present', function (): void {
+    // §6 — "Ver reportes: Reclutador ✅ (sus procesos)". A recruiter used to
+    // receive the whole platform's aggregates (F-11); "sus procesos" is read as
+    // the vacancies HUMAE put him in charge of.
+    $recruiter = actAsReportStaff();
 
     $company = Company::factory()->create();
-    Vacancy::factory()->create(['company_id' => $company->id, 'state' => VacancyState::Borrador]);
-    Vacancy::factory()->count(2)->create(['company_id' => $company->id, 'state' => VacancyState::Activa]);
+    Vacancy::factory()->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Borrador,
+        'assigned_recruiter_id' => $recruiter->id,
+    ]);
+    Vacancy::factory()->count(2)->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Activa,
+        'assigned_recruiter_id' => $recruiter->id,
+    ]);
+
+    // Another recruiter's mandate. Must not appear.
+    $other = User::factory()->create();
+    $other->assignRole(UserRole::Recruiter->value);
+    Vacancy::factory()->count(4)->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Activa,
+        'assigned_recruiter_id' => $other->id,
+    ]);
 
     $response = $this->getJson('/api/v1/admin/reports/vacancies-by-state');
 
@@ -133,10 +155,34 @@ it('lists vacancies grouped by state with all states present', function (): void
         ->and($data['cubierta'])->toBe(0);
 });
 
-it('lists interviews grouped by state and day', function (): void {
-    actAsReportStaff();
+it('still shows an admin every vacancy', function (): void {
+    $admin = User::factory()->create();
+    $admin->assignRole(UserRole::Admin->value);
+    Sanctum::actingAs($admin);
 
-    $assignment = VacancyAssignment::factory()->create();
+    $company = Company::factory()->create();
+    Vacancy::factory()->count(3)->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Activa,
+        'assigned_recruiter_id' => null,
+    ]);
+
+    expect($this->getJson('/api/v1/admin/reports/vacancies-by-state')->assertOk()->json('data.activa'))
+        ->toBe(3);
+});
+
+it('lists interviews grouped by state and day, scoped to the caller processes', function (): void {
+    $recruiter = actAsReportStaff();
+
+    $vacancy = Vacancy::factory()->create(['assigned_recruiter_id' => $recruiter->id]);
+    $assignment = VacancyAssignment::factory()->create(['vacancy_id' => $vacancy->id]);
+
+    // An interview on somebody else's mandate. Must not be counted.
+    Interview::factory()->create([
+        'vacancy_assignment_id' => VacancyAssignment::factory()->create()->id,
+        'state' => InterviewState::Propuesta,
+        'scheduled_at' => now()->addDays(2),
+    ]);
     Interview::factory()->count(2)->create([
         'vacancy_assignment_id' => $assignment->id,
         'state' => InterviewState::Propuesta,
@@ -220,4 +266,67 @@ it('blocks candidate from reports', function (): void {
 
 it('rejects unauthenticated reports access', function (): void {
     $this->getJson('/api/v1/admin/reports/active-memberships')->assertStatus(401);
+});
+
+/*
+|--------------------------------------------------------------------------
+| The report surface splits by what can actually be scoped (F-11)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * @return array{0: User, 1: Vacancy}
+ */
+function actAsReportCompany(): array
+{
+    $user = User::factory()->create();
+    $user->assignRole(UserRole::CompanyUser->value);
+    $company = Company::factory()->create();
+    CompanyMember::factory()->create([
+        'company_id' => $company->id,
+        'user_id' => $user->id,
+        'role' => CompanyMemberRole::Owner->value,
+    ]);
+    $vacancy = Vacancy::factory()->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Activa,
+    ]);
+    Sanctum::actingAs($user);
+
+    return [$user, $vacancy];
+}
+
+it('gives a client company its own vacancies and nobody else\'s', function (): void {
+    [, $ownVacancy] = actAsReportCompany();
+
+    // Another client's search, same platform.
+    Vacancy::factory()->count(5)->create([
+        'company_id' => Company::factory()->create()->id,
+        'state' => VacancyState::Activa,
+    ]);
+
+    $data = $this->getJson('/api/v1/admin/reports/vacancies-by-state')->assertOk()->json('data');
+
+    expect($data['activa'])->toBe(1)
+        ->and($ownVacancy->state)->toBe(VacancyState::Activa);
+
+    $this->getJson('/api/v1/admin/reports/time-to-fill')->assertOk();
+    $this->getJson('/api/v1/admin/reports/interviews')->assertOk();
+});
+
+it('keeps HUMAE business metrics away from the client company', function (): void {
+    // No vacancy dimension to narrow by, and §6 closes the candidate axis to
+    // the client — the directory report explicitly.
+    actAsReportCompany();
+
+    foreach ([
+        'candidates-registered',
+        'active-memberships',
+        'payments',
+        'expiring-memberships',
+        'most-searched-profiles',
+        'recruiter-effectiveness',
+    ] as $report) {
+        $this->getJson("/api/v1/admin/reports/{$report}")->assertForbidden();
+    }
 });

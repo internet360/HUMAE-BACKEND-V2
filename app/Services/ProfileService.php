@@ -5,22 +5,48 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\CandidateState;
+use App\Enums\UserRole;
 use App\Models\CandidateProfile;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 
 class ProfileService
 {
     /**
-     * Devuelve el perfil del candidato autenticado, creándolo vacío si aún no existe.
-     * Consulta sin usar la relación cacheada en memoria para evitar stale reads
-     * entre requests sucesivos en tests o dentro del mismo ciclo de vida.
+     * Read the profile of a user without creating one.
+     *
+     * Queries instead of using the cached relation, to avoid stale reads
+     * between successive requests or within the same lifecycle.
+     */
+    public function find(User $user): ?CandidateProfile
+    {
+        return CandidateProfile::where('user_id', $user->id)->first();
+    }
+
+    /**
+     * Read the profile of a candidate, minting an empty one the first time.
+     *
+     * A `candidate_profiles` row is not an empty container: it is enrolment in
+     * the talent directory, the asset HUMAE curates and sells. This method used
+     * to create one for whoever called it, so a recruiter who merely opened
+     * `GET /me/profile` listed himself among the candidates (F-09). The route
+     * gate stops non-candidates from reaching it; this check makes the rule
+     * true of the service itself, so the next caller cannot reintroduce it.
+     *
+     * @throws AuthorizationException when the user is not a candidate.
      */
     public function findOrCreate(User $user): CandidateProfile
     {
-        $profile = CandidateProfile::where('user_id', $user->id)->first();
+        $profile = $this->find($user);
 
         if ($profile !== null) {
             return $profile;
+        }
+
+        if (! $user->hasRole(UserRole::Candidate->value)) {
+            throw new AuthorizationException(
+                'Solo las cuentas de candidato tienen expediente en la base de talento.'
+            );
         }
 
         return CandidateProfile::create([

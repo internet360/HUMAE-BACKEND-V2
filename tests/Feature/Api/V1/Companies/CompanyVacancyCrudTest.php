@@ -50,8 +50,10 @@ it('company_user cannot show vacancy from another company', function (): void {
     $vacancy = Vacancy::factory()->create(['company_id' => $companyB->id]);
     Sanctum::actingAs($userA);
 
+    // Another tenant's vacancy is scoped out of route model binding, so the
+    // request dies at resolution with a 404 instead of reaching the policy.
     $this->getJson("/api/v1/me/company/vacancies/{$vacancy->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 });
 
 it('company_user can update vacancy in non-terminal state', function (): void {
@@ -84,7 +86,14 @@ it('company_user cannot edit vacancy in terminal state (cubierta)', function ():
     ])->assertStatus(422);
 });
 
-it('company_user publishes vacancy (borrador → activa)', function (): void {
+/*
+ * Inverted against the previous expectation, and named for the rule that
+ * decides it. ARCHITECTURE.md §6 reads "Aprobar / activar vacante — Empresa
+ * cliente: ❌": the company files a request and HUMAE decides it goes live.
+ * The controller used to allow exactly this and block the transition §6 does
+ * grant the company (`cubierta`) — the whitelist was inverted (F-10).
+ */
+it('company_user cannot activate its own vacancy — approving is HUMAE\'s (§6)', function (): void {
     [$user, $company] = makeCompanyOwner();
     $vacancy = Vacancy::factory()->create([
         'company_id' => $company->id,
@@ -95,11 +104,46 @@ it('company_user publishes vacancy (borrador → activa)', function (): void {
 
     $this->postJson("/api/v1/me/company/vacancies/{$vacancy->id}/transition", [
         'to' => 'activa',
-    ])
+    ])->assertForbidden();
+
+    expect($vacancy->fresh()->state)->toBe(VacancyState::Borrador)
+        ->and($vacancy->fresh()->published_at)->toBeNull();
+});
+
+it('recruiter activates a company vacancy (§6 «Aprobar / activar vacante — Reclutador ✅»)', function (): void {
+    [, $company] = makeCompanyOwner();
+    $vacancy = Vacancy::factory()->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::Borrador,
+        'published_at' => null,
+    ]);
+
+    $recruiter = User::factory()->create();
+    $recruiter->assignRole(UserRole::Recruiter->value);
+    Sanctum::actingAs($recruiter);
+
+    $this->postJson("/api/v1/vacancies/{$vacancy->id}/transition", ['to' => 'activa'])
         ->assertOk()
         ->assertJsonPath('data.state', 'activa');
 
     expect($vacancy->fresh()->published_at)->not->toBeNull();
+});
+
+it('company_user proposes the close (§6 «Marcar vacante como cubierta — Empresa ✅ (propone)»)', function (): void {
+    [$user, $company] = makeCompanyOwner();
+    $vacancy = Vacancy::factory()->create([
+        'company_id' => $company->id,
+        'state' => VacancyState::FinalistaSeleccionado,
+    ]);
+    Sanctum::actingAs($user);
+
+    $this->postJson("/api/v1/me/company/vacancies/{$vacancy->id}/transition", [
+        'to' => 'cubierta',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.state', 'cubierta');
+
+    expect($vacancy->fresh()->filled_at)->not->toBeNull();
 });
 
 it('company_user cancels vacancy with reason', function (): void {
@@ -120,7 +164,7 @@ it('company_user cancels vacancy with reason', function (): void {
     expect($vacancy->fresh()->cancel_reason)->toBe('Presupuesto aplazado');
 });
 
-it('company_user cannot transition to stages outside publish/cancel', function (): void {
+it('company_user cannot drive the internal search states', function (): void {
     [$user, $company] = makeCompanyOwner();
     $vacancy = Vacancy::factory()->create([
         'company_id' => $company->id,
@@ -128,7 +172,8 @@ it('company_user cannot transition to stages outside publish/cancel', function (
     ]);
     Sanctum::actingAs($user);
 
-    // en_busqueda no está permitido para company_user (solo publicar/cancelar)
+    // `en_busqueda` describes HUMAE's own progress on the mandate (§5.7), so it
+    // is behind VacancyPolicy::advance. The company owns `close` and `cancel`.
     $this->postJson("/api/v1/me/company/vacancies/{$vacancy->id}/transition", [
         'to' => 'en_busqueda',
     ])->assertForbidden();

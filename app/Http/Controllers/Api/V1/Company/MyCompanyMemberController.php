@@ -11,6 +11,7 @@ use App\Http\Resources\V1\Companies\CompanyMemberResource;
 use App\Models\Company;
 use App\Models\CompanyMember;
 use App\Models\User;
+use App\Support\Tenancy\CompanyTenancy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -64,7 +65,7 @@ class MyCompanyMemberController extends Controller
         $target = User::where('email', $validated['email'])->first();
         if ($target === null) {
             return $this->error(
-                'Ese correo no tiene una cuenta HUMAE. Pide al usuario que se registre primero.',
+                'Ese correo no tiene una cuenta de empresa en HUMAE. Pide a tu contacto en HUMAE que la invite.',
                 status: HttpStatus::HTTP_UNPROCESSABLE_ENTITY,
             );
         }
@@ -77,8 +78,28 @@ class MyCompanyMemberController extends Controller
             );
         }
 
+        // Naming somebody else's address is not that person's consent (F-13).
+        // The endpoint used to attach any existing account and, worse, hand it
+        // the Spatie `company_user` role if it did not have one — so a client
+        // could conscript a candidate out of HUMAE's own talent base into its
+        // team. Company accounts come from HUMAE (§6 «Registrarse — Empresa
+        // cliente ❌ (invitación)»); this endpoint only wires up a colleague
+        // HUMAE already provisioned, and never changes anybody's role.
         if (! $target->hasRole(UserRole::CompanyUser->value)) {
-            $target->assignRole(UserRole::CompanyUser->value);
+            return $this->error(
+                'Esa cuenta no es de empresa. Pide a tu contacto en HUMAE que la invite a tu equipo.',
+                status: HttpStatus::HTTP_FORBIDDEN,
+            );
+        }
+
+        // Asked through CompanyTenancy, not through `$target->companyMemberships()`:
+        // that relation runs under the caller's own tenancy scope, so it would
+        // only ever see this company and always answer "no other company".
+        if (app(CompanyTenancy::class)->companyIdsFor($target) !== []) {
+            return $this->error(
+                'Esa cuenta ya pertenece a otra empresa.',
+                status: HttpStatus::HTTP_FORBIDDEN,
+            );
         }
 
         if (! empty($validated['is_primary_contact'])) {

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\CompanyMemberRole;
+use App\Models\Concerns\BelongsToCompany;
+use App\Models\Contracts\CompanyOwned;
+use App\Models\Scopes\CompanyOwnedScope;
+use App\Support\Tenancy\CompanyTenancy;
 use Database\Factories\CompanyMemberFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,8 +26,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $accepted_at
  * @property-read User|null $user
  */
-class CompanyMember extends Model
+class CompanyMember extends Model implements CompanyOwned
 {
+    use BelongsToCompany;
+
     /** @use HasFactory<CompanyMemberFactory> */
     use HasFactory;
 
@@ -47,10 +53,30 @@ class CompanyMember extends Model
         ];
     }
 
-    /** @return BelongsTo<Company, $this> */
+    /**
+     * This table IS the tenancy map, so writing to it invalidates the answer
+     * {@see CompanyTenancy} memoised for that user.
+     */
+    protected static function booted(): void
+    {
+        $flush = static function (self $member): void {
+            app(CompanyTenancy::class)->flush((int) $member->user_id);
+        };
+
+        static::saved($flush);
+        static::deleted($flush);
+    }
+
+    /**
+     * Exempt from the tenancy scope: a membership row that survived the scope
+     * already proves the caller may see its company.
+     *
+     * @return BelongsTo<Company, $this>
+     */
     public function company(): BelongsTo
     {
-        return $this->belongsTo(Company::class);
+        return $this->belongsTo(Company::class)
+            ->withoutGlobalScope(CompanyOwnedScope::class);
     }
 
     /** @return BelongsTo<User, $this> */

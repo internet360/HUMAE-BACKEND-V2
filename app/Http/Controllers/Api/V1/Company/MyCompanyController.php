@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1\Company;
 use App\Enums\CompanyMemberRole;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Companies\CompanyRequest;
 use App\Http\Resources\V1\Companies\CompanyResource;
 use App\Models\Company;
 use App\Models\CompanyMember;
@@ -52,7 +53,15 @@ class MyCompanyController extends Controller
         );
     }
 
-    public function update(Request $request): JsonResponse
+    /**
+     * Edit the caller's own company.
+     *
+     * Takes the shared `CompanyRequest`: which fields the role may submit is
+     * decided there, once, for this endpoint and for HUMAE's registry. The
+     * duplicated 20-line whitelist this replaced is what let the two surfaces
+     * disagree about the same user.
+     */
+    public function update(CompanyRequest $request): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
@@ -80,30 +89,7 @@ class MyCompanyController extends Controller
             );
         }
 
-        $validated = $request->validate([
-            'trade_name' => ['sometimes', 'nullable', 'string', 'max:200'],
-            'legal_name' => ['sometimes', 'string', 'max:200'],
-            'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
-            'website' => ['sometimes', 'nullable', 'url', 'max:300'],
-            'founded_year' => ['sometimes', 'nullable', 'integer', 'min:1800', 'max:2099'],
-            'industry_id' => ['sometimes', 'nullable', 'integer', 'exists:industries,id'],
-            'company_size_id' => ['sometimes', 'nullable', 'integer', 'exists:company_sizes,id'],
-            'contact_name' => ['sometimes', 'nullable', 'string', 'max:200'],
-            'contact_email' => ['sometimes', 'nullable', 'email', 'max:160'],
-            'contact_phone' => ['sometimes', 'nullable', 'string', 'max:30'],
-            'contact_position' => ['sometimes', 'nullable', 'string', 'max:200'],
-            'country_id' => ['sometimes', 'nullable', 'integer', 'exists:countries,id'],
-            'state_id' => ['sometimes', 'nullable', 'integer', 'exists:states,id'],
-            'city_id' => ['sometimes', 'nullable', 'integer', 'exists:cities,id'],
-            'address_line' => ['sometimes', 'nullable', 'string', 'max:300'],
-            'postal_code' => ['sometimes', 'nullable', 'string', 'max:15'],
-            'linkedin_url' => ['sometimes', 'nullable', 'url', 'max:300'],
-            'facebook_url' => ['sometimes', 'nullable', 'url', 'max:300'],
-            'instagram_url' => ['sometimes', 'nullable', 'url', 'max:300'],
-            'twitter_url' => ['sometimes', 'nullable', 'url', 'max:300'],
-        ]);
-
-        $company->update($validated);
+        $company->update($request->validated());
 
         $fresh = $company->fresh() ?? $company;
 

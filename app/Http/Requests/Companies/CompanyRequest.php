@@ -4,14 +4,39 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Companies;
 
+use App\Http\Requests\Concerns\RestrictsFieldsByRole;
 use App\Models\Company;
 use Illuminate\Foundation\Http\FormRequest;
 
+/**
+ * The one place that decides which company fields each role may write.
+ *
+ * Serves both the HUMAE registry (`POST/PATCH /companies[/{id}]`) and the
+ * client's own profile (`PATCH /me/company`). `MyCompanyController` used to
+ * carry its own copy of the field list, which is how the two surfaces drifted:
+ * the company endpoint excluded HUMAE's commercial columns on purpose and the
+ * staff endpoint handed the same user all of them (F-06).
+ */
 class CompanyRequest extends FormRequest
 {
-    public function authorize(): bool
+    use RestrictsFieldsByRole;
+
+    /**
+     * HUMAE's own columns on a client record: its lifecycle, who owns the
+     * relationship, what HUMAE writes down about it, and the two identifiers
+     * HUMAE issues (`slug`) or verifies (`rfc`).
+     *
+     * @return list<string>
+     */
+    protected function staffOnlyFields(): array
     {
-        return true;
+        return [
+            'status',
+            'internal_notes',
+            'account_manager_id',
+            'rfc',
+            'slug',
+        ];
     }
 
     /**
