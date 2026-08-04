@@ -28,14 +28,17 @@ class AuthController extends Controller
         $data = $request->validated();
 
         $user = $this->auth->registerCandidate($data);
-        $token = $this->auth->issueToken($user, $request->userAgent() ?? 'api');
 
+        // No token here (F-17). `login()` below refuses this same account with
+        // 403 `email_unverified`, so a token issued at registration would be a
+        // session the rest of the auth system does not honour. ARCHITECTURE.md
+        // §8.1 puts verify-email before anything else; the client goes to its
+        // inbox and comes back through /auth/login.
         return $this->success(
             message: 'Registro exitoso. Revisa tu email para verificar la cuenta.',
             data: [
                 'user' => new UserResource($user->load('roles', 'permissions')),
-                'token' => $token,
-                'token_type' => 'Bearer',
+                'verification_required' => true,
             ],
             status: HttpStatus::HTTP_CREATED,
         );

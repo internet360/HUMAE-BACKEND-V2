@@ -10,7 +10,13 @@ beforeEach(function (): void {
     $this->seed(RolesAndPermissionsSeeder::class);
 });
 
-it('registers a new candidate and returns token + user envelope', function (): void {
+// F-17: this used to assert `data.token` came back. A token the auth system
+// refuses on every other path is not a session, it is a hole — `login` rejects
+// the same account with 403 `email_unverified`. Registration now returns the
+// created user and a flag telling the client to go read its mail, matching the
+// order ARCHITECTURE.md §8.1 sets out. The gate itself lives in
+// VerifiedEmailGateTest.
+it('registers a new candidate without issuing a session before verification', function (): void {
     $response = $this->postJson('/api/v1/auth/register', [
         'name' => 'Nuevo Candidato',
         'email' => 'nuevo@humae.com.mx',
@@ -23,16 +29,21 @@ it('registers a new candidate and returns token + user envelope', function (): v
         ->assertCreated()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.user.email', 'nuevo@humae.com.mx')
+        ->assertJsonPath('data.verification_required', true)
+        ->assertJsonMissingPath('data.token')
+        ->assertJsonMissingPath('data.token_type')
         ->assertJsonStructure([
             'success',
             'message',
-            'data' => ['user' => ['id', 'email', 'roles', 'permissions'], 'token', 'token_type'],
+            'data' => ['user' => ['id', 'email', 'roles', 'permissions'], 'verification_required'],
         ]);
 
     $user = User::where('email', 'nuevo@humae.com.mx')->first();
 
     expect($user)->not->toBeNull()
-        ->and($user->hasRole(UserRole::Candidate->value))->toBeTrue();
+        ->and($user->hasRole(UserRole::Candidate->value))->toBeTrue()
+        ->and($user->email_verified_at)->toBeNull()
+        ->and($user->tokens()->count())->toBe(0);
 });
 
 it('rejects registration with existing email', function (): void {

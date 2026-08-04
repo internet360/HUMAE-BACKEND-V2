@@ -1584,8 +1584,13 @@ it('applies every registered authorization middleware to at least one route', fu
         ->values()
         ->all();
 
+    // F-17 closed this half: `EnsureVerifiedEmail` now fronts every
+    // authenticated group. Asserted rather than tolerated, so un-applying it
+    // fails the build instead of quietly downgrading to a skip.
+    expect($applied)->toContain(EnsureVerifiedEmail::class);
+
     $orphans = array_values(array_filter(
-        [EnsureVerifiedEmail::class, EnsureActiveMembership::class],
+        [EnsureActiveMembership::class],
         fn (string $middleware): bool => ! in_array($middleware, $applied, true),
     ));
 
@@ -1593,6 +1598,10 @@ it('applies every registered authorization middleware to at least one route', fu
         test()->markTestSkipped(
             'KNOWN OPEN FINDING F-14: aliased in bootstrap/app.php but applied to zero routes — '
             .implode(', ', $orphans)
+            .'. Deliberate: the rule it describes is already enforced in'
+            .' DirectorySearchService::applyMembershipFilter(), and gating any route on'
+            .' membership would invert ARCHITECTURE.md §8.1 (payment comes after profile'
+            .' and psychometrics). Recommendation on record: delete the middleware.'
         );
     }
 

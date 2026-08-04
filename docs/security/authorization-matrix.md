@@ -15,9 +15,12 @@
 > falla si alguien añade una ruta sin añadir su fila. Las 9 de infraestructura se documentan pero no se
 > sondean (§3, §7).
 >
-> **Estado tras el rediseño de la capa de autorización**: 15 de los 16 hallazgos cerrados. Queda abierto
-> **F-14** (middlewares muertos) por decisión explícita: se reporta, no se toca. Al analizarlo apareció un
-> agujero nuevo, **F-17**, que se documenta sin corregir por la misma razón. Ver §5.
+> **Estado tras el rediseño de la capa de autorización**: 16 de los 17 hallazgos cerrados. **F-17** (el token
+> del alta saltaba la verificación de correo) se cerró en `fix/enforce-email-verification`, y con él la mitad
+> de **F-14** que correspondía a `EnsureVerifiedEmail`, ya aplicado a toda la superficie autenticada. Queda
+> abierto sólo `EnsureActiveMembership`: sigue aliasado y sin aplicar **a propósito**, porque la regla que
+> describe ya se aplica donde corresponde y engancharlo invertiría §8.1. Recomendación en firme: borrarlo.
+> Ver §5.5 y §5.6.
 
 ---
 
@@ -442,9 +445,10 @@ funcionalidad ausente.
 | ~~**F-11**~~ | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | **Cerrado.** `ReportScope::forUser()` resuelve el corte por rol y `ReportsService` lo aplica en los cuatro informes con dimensión de vacante. La empresa entra a los tres de proceso, acotada a sus vacantes; los cinco de plataforma y el de desempeño se quedan en HUMAE porque no hay «sus vacantes» que acotar. Ver §2.13 | §6 «Ver reportes» |
 | ~~**F-12**~~ | Baja | `POST /auth/register/company` | Todos | **Cerrado retirando la ruta**, junto con `AuthController::registerCompany`, `RegisterCompanyRequest` y `AuthService::registerCompanyUser`. `pending_approval` la hacía segura, no correcta: cualquiera creaba una fila en `companies` y una cuenta `company_user`, y §5 no lista la ruta. El alta soportada es `POST /admin/users`, que emite el token que consume `/auth/invitation/accept`. **Cambio incompatible para el frontend** | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
-| **F-14** | Media | Toda la API | Todos | **Abierto a propósito** — se pidió reportar, no tocar. `EnsureVerifiedEmail` y `EnsureActiveMembership` siguen registrados como alias en `bootstrap/app.php` y sin aplicarse a ninguna ruta. Análisis y recomendación por middleware en §5.5 | §1 (premisa de negocio); §5 no lo especifica |
+| **F-14** | Media | Toda la API | Todos | **Medio cerrado.** `EnsureVerifiedEmail` ya no es huérfano: acompaña a `auth:sanctum` en los ocho grupos autenticados (cerró F-17). `EnsureActiveMembership` sigue aliasado en `bootstrap/app.php` y aplicado a cero rutas, y ahí se queda: su regla ya vive en `DirectorySearchService::applyMembershipFilter()` y engancharlo rompería §8.1. Recomendación: borrarlo. Análisis en §5.5 | §1 (premisa de negocio); §5 no lo especifica |
 | ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
 | ~~**F-16**~~ | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | **Cerrado.** `RoleMiddleware:candidate` sobre la ruta. `GET /me/membership` y `GET /me/payments` siguen abiertos a cualquier autenticado, como dice §5.3 | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
+| ~~**F-17**~~ | Media | `POST /auth/register` → toda la superficie autenticada | `candidate` recién registrado | **Cerrado por los dos lados.** El alta ya no emite token: devuelve `201` con `data.user` + `data.verification_required` y remite al correo. Además `EnsureVerifiedEmail` acompaña a `auth:sanctum` en cada grupo autenticado y responde `403` con el mismo código `email_unverified` que `login`. Detalle en §5.6 | §8.1, que pone `verify-email` antes de `/me/profile` |
 
 ### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas — resuelta
 
@@ -565,7 +569,8 @@ owner antes de escribir nada.
 
 ### 5.5 F-14 — los dos middlewares muertos: qué hacer con cada uno
 
-No se cambió nada. El análisis:
+Al cerrar F-17 se ejecutó la mitad `EnsureVerifiedEmail` de este análisis. La otra mitad sigue como estaba,
+por la razón que ya se documentaba aquí. El análisis original, con el desenlace de cada uno:
 
 #### `EnsureActiveMembership` → **recomendación: borrarlo**
 
@@ -586,7 +591,7 @@ Matiz registrado: el filtro por defecto se puede desactivar con `?has_active_mem
 reclutador sí puede ver candidatos sin membresía si lo pide explícitamente. Es una decisión de HUMAE sobre
 su propia base, no una fuga.
 
-#### `EnsureVerifiedEmail` → **recomendación: engancharlo** (no en este PR)
+#### `EnsureVerifiedEmail` → **enganchado** (`fix/enforce-email-verification`)
 
 Aquí la premisa de que «ya está aplicado en el login» resultó **incompleta**, y conviene decirlo claro.
 
@@ -603,27 +608,47 @@ Comprobado ejecutando la secuencia:
 | `GET /me/psychometrics/tests` con ese token | **`200`** |
 | `POST /auth/login` con las mismas credenciales | `403 email_unverified` |
 
-Es decir: `EnsureVerifiedEmail` **no** es código muerto que duplica una regla ya aplicada. Es la pared que
-falta en el único camino donde existe un usuario sin verificar. Se registra como **F-17** abajo.
+Es decir: `EnsureVerifiedEmail` **no** era código muerto que duplicaba una regla ya aplicada. Era la pared
+que faltaba en el único camino donde existe un usuario sin verificar. Se registró como **F-17** abajo y se
+cerró después.
 
-Engancharlo al grupo autenticado de `/me/*` cierra el hueco y coincide con el orden de §8.1. Requiere
-confirmación del product owner sobre el alcance exacto (¿sólo la superficie de candidato, o también
-membresía y notificaciones?), y por eso no se hizo aquí.
+### 5.6 F-17 — el token del registro saltaba la verificación de correo (cerrado)
 
-### 5.6 F-17 (nuevo) — el token del registro salta la verificación de correo
-
-| Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
+| Id | Sev. | Ruta | Rol | Qué ocurría | Fila §5/§6 violada |
 |---|---|---|---|---|---|
-| **F-17** | Media | `POST /auth/register` → toda la superficie `/me/*` | `candidate` recién registrado | El alta devuelve un token de Sanctum utilizable antes de verificar el correo. El candado de `login` no lo alcanza porque el usuario nunca pasa por `login`. Basta un correo que no se posee para crear cuenta y usar perfil y psicométricos completos | §8.1, que pone `verify-email` antes de `/me/profile` |
+| ~~**F-17**~~ | Media | `POST /auth/register` → toda la superficie autenticada | `candidate` recién registrado | El alta devolvía un token de Sanctum utilizable antes de verificar el correo. El candado de `login` no lo alcanzaba porque el usuario nunca pasaba por `login`. Bastaba un correo que no se posee para crear cuenta y usar perfil y psicométricos completos | §8.1, que pone `verify-email` antes de `/me/profile` |
 
-**No corregido en este PR** por instrucción explícita de no tocar el flujo de verificación de correo.
-Dos formas de cerrarlo, a elegir por el product owner:
+Se aplicaron **las dos** correcciones que se habían planteado como alternativas, porque resuelven cosas
+distintas:
 
-1. Enganchar `EnsureVerifiedEmail` al grupo autenticado de `/me/*` (§5.5).
-2. Dejar de emitir token en `POST /auth/register` y obligar a pasar por `login` tras verificar.
+1. **`POST /auth/register` ya no emite token.** Un token que el resto del sistema de autenticación rechaza
+   en cualquier otro camino no es una sesión, es un agujero. La respuesta es `201` con `data.user` y
+   `data.verification_required: true`; ya no hay `data.token` ni `data.token_type`. **Cambio incompatible
+   para el frontend**: `register-form.tsx` autenticaba al usuario y saltaba a `/dashboard` con ese token;
+   necesita una pantalla de «revisa tu correo».
+2. **`EnsureVerifiedEmail` acompaña a `auth:sanctum`** en los ocho grupos autenticados de `routes/api.php`,
+   como defensa en profundidad: cualquier camino futuro que emita un token nace tapado sin que nadie tenga
+   que acordarse de esta conversación.
 
-La segunda es más limpia pero cambia el contrato con el frontend, que hoy autentica al usuario justo
-después del alta.
+El rechazo del middleware reutiliza a propósito el código `email_unverified` que ya devolvía
+`AuthController::login()`, para que el frontend ramifique sobre un solo contrato:
+
+```json
+{ "success": false, "message": "Verifica tu correo antes de continuar. Te enviamos un enlace al registrarte.", "errors": { "code": ["email_unverified"] } }
+```
+
+Fuera del candado a propósito: `/auth/logout`, `/auth/me` y `/auth/resend-verification` (la salida de
+emergencia de una cuenta sin verificar), más toda la superficie pública — `/health`, `/auth/register*`,
+`/auth/login`, `/auth/verify-email/*`, `/auth/forgot-password`, `/auth/reset-password`,
+`/auth/invitation/*` y `/webhooks/stripe`, que no llevan `auth:sanctum` y donde el middleware respondería
+`401` a todo el mundo.
+
+El camino de invitación no se ve afectado: `InvitationController::accept()` fija
+`email_verified_at => $user->email_verified_at ?? now()`, así que reclutadores y usuarios de empresa
+invitados cruzan el candado con el token que les emite la aceptación.
+
+Sonda: [`tests/Feature/Api/V1/Auth/VerifiedEmailGateTest.php`](../../tests/Feature/Api/V1/Auth/VerifiedEmailGateTest.php),
+que reproduce la secuencia original y además falla si aparece una ruta autenticada nueva sin candado.
 
 ---
 
@@ -719,12 +744,16 @@ detectó el efecto colateral de F-09.
    `companyScopedFields()`. Responde `403`, no `422`. Cierra F-02, F-05, F-06 y F-08.
 4. ✅ **`role:candidate` sobre `/me/profile/*` y `/me/psychometrics/*`** y creación implícita fuera de la
    ruta de lectura. Cierra F-09. Queda pendiente el **rastro de datos** (§5.4).
-5. ⏳ **Aplicar o retirar los middlewares muertos.** F-14 sigue abierto por instrucción. Recomendación en
-   §5.5: **borrar** `EnsureActiveMembership`, **enganchar** `EnsureVerifiedEmail` — que no es redundante,
-   ver F-17 en §5.6.
+5. ⏳ **Aplicar o retirar los middlewares muertos.** `EnsureVerifiedEmail` **enganchado** (§5.6, cierra
+   F-17). Queda pendiente **borrar** `EnsureActiveMembership`: es la única forma de cerrar F-14, porque
+   aplicarlo rompería §8.1. Mientras siga en el árbol, la sonda de cobertura de middlewares
+   (`it applies every registered authorization middleware to at least one route`) se reporta *skipped*
+   nombrándolo.
 6. ⏳ **Ratificar en §5/§6 las 20 rutas UNSPECIFIED**, empezando por las que tocan PII o pipeline. Sin
    cambios: se conservó el comportamiento actual en todas ellas.
 7. ⏳ **Ratificar la partición de la superficie de reportes** (§2.13). Es una interpretación de §6, no una
    transcripción.
 8. ⏳ **Verificar el rastro de F-09 en producción** y decidir la limpieza (§5.4).
-9. ⏳ **Decidir F-17** (§5.6): el token del alta salta la verificación de correo.
+9. ✅ **F-17 cerrado** (§5.6): el alta ya no emite token y `EnsureVerifiedEmail` cubre la superficie
+   autenticada. Pendiente en el frontend: `register-form.tsx` necesita una pantalla de verificación
+   pendiente en lugar de saltar a `/dashboard`.

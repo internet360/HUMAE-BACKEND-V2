@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
 use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
+use App\Http\Middleware\EnsureVerifiedEmail;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Middleware\RoleMiddleware;
 
@@ -53,6 +54,23 @@ use Spatie\Permission\Middleware\RoleMiddleware;
 |
 */
 
+/**
+ * Sesión autenticada y con correo verificado.
+ *
+ * §8.1 ordena el flujo `register → verify-email → /me/profile → …`, así que
+ * verificar precede a todo lo demás. `EnsureVerifiedEmail` acompaña a
+ * `auth:sanctum` en cada grupo autenticado como defensa en profundidad: aunque
+ * hoy ningún endpoint emita un token sin verificar (F-17 cerró el del alta),
+ * cualquier camino futuro que lo haga ya nace tapado.
+ *
+ * Fuera del candado a propósito: `/auth/logout`, `/auth/me` y
+ * `/auth/resend-verification` — son la salida de emergencia de una cuenta sin
+ * verificar. Cerrarlas dejaría al usuario encerrado sin forma de verificarse.
+ *
+ * @var list<string>
+ */
+$authenticated = ['auth:sanctum', EnsureVerifiedEmail::class];
+
 Route::get('/health', HealthController::class)->name('health');
 
 /*
@@ -62,7 +80,7 @@ Route::get('/health', HealthController::class)->name('health');
 | Los candidatos los consumen desde el editor de perfil (skills, languages,
 | degree levels); los recruiters los usan para construir filtros de vacantes.
 */
-Route::middleware('auth:sanctum')->prefix('catalogs')->name('catalogs.')->group(function (): void {
+Route::middleware($authenticated)->prefix('catalogs')->name('catalogs.')->group(function (): void {
     Route::get('/skills', [CatalogController::class, 'skills'])->name('skills');
     Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
     Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
@@ -115,7 +133,9 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->middleware('throttle:3,1')
         ->name('verification.resend-public');
 
-    // Autenticado
+    // Autenticado, pero SIN `EnsureVerifiedEmail`: estas tres son la salida de
+    // emergencia de una cuenta sin verificar (cerrar sesión, saber quién eres,
+    // pedir otro correo). Engancharles el candado deja al usuario encerrado.
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/me', [AuthController::class, 'me'])->name('me');
@@ -130,7 +150,7 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
 | Candidate (self) endpoints
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function (): void {
+Route::middleware($authenticated)->prefix('me')->name('me.')->group(function (): void {
     // Membresía y pagos. §5.3 titula la sección «Membership (auth)» sin acotar
     // rol y ambos GET se autoacotan al usuario autenticado, pero el checkout sí
     // tiene fila propia: §6 «Pagar membresía — Candidato ✅», y «—» para todos
@@ -241,7 +261,7 @@ Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function ():
 | Recruiter / Admin: Companies + Vacancies
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware($authenticated)->group(function (): void {
     // Companies
     Route::apiResource('companies', CompanyController::class)
         ->names('companies');
@@ -343,7 +363,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 | Company user: vacantes de la empresa del usuario
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->prefix('me/company')->name('me.company.')->group(function (): void {
+Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->group(function (): void {
     Route::get('/', [MyCompanyController::class, 'show'])->name('show');
     Route::patch('/', [MyCompanyController::class, 'update'])->name('update');
 
@@ -375,7 +395,7 @@ Route::middleware('auth:sanctum')->prefix('me/company')->name('me.company.')->gr
 | Admin / Recruiter: Reportes
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->prefix('admin/reports')->name('admin.reports.')->group(function (): void {
+Route::middleware($authenticated)->prefix('admin/reports')->name('admin.reports.')->group(function (): void {
     Route::get('/candidates-registered', [ReportsController::class, 'candidatesRegistered'])
         ->name('candidates-registered');
     Route::get('/active-memberships', [ReportsController::class, 'activeMemberships'])
@@ -398,7 +418,7 @@ Route::middleware('auth:sanctum')->prefix('admin/reports')->name('admin.reports.
 | Admin: gestión de usuarios (recruiters, company_users, admins)
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->prefix('admin/users')->name('admin.users.')->group(function (): void {
+Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {
     Route::get('/', [AdminUserController::class, 'index'])->name('index');
     Route::post('/', [AdminUserController::class, 'store'])->name('store');
     Route::post('/{user}/resend-invitation', [AdminUserController::class, 'resendInvitation'])
@@ -417,7 +437,7 @@ Route::middleware('auth:sanctum')->prefix('admin/users')->name('admin.users.')->
 | Protegido por el permiso Spatie `catalogs.manage` (rol admin). Complementa
 | los endpoints públicos de lectura en /api/v1/catalogs/*.
 */
-Route::middleware('auth:sanctum')
+Route::middleware($authenticated)
     ->prefix('admin/catalogs')
     ->name('admin.catalogs.')
     ->group(function (): void {
