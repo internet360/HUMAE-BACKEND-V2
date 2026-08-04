@@ -174,14 +174,14 @@ Las cinco rutas responden `403` a `company_user` y a `candidate`.
 
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
-| GET | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-01** |
+| GET | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 | POST | `/companies` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
-| GET | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-15** |
-| PATCH | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-06** |
+| GET | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| PATCH | `/companies/{company}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 | DELETE | `/companies/{company}` | ❌ | ❌ | ❌ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
-| GET | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
-| POST | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
-| DELETE | `/companies/{company}/members/{userId}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | **F-07** |
+| GET | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| POST | `/companies/{company}/members` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
+| DELETE | `/companies/{company}/members/{userId}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 admin/recruiter | ✔ |
 
 **Inferencia (`DELETE /companies/{company}`)**: §5.6 lista «GET, POST /companies, /companies/{id}, PATCH,
 DELETE — admin / recruiter» en una sola fila. Se infiere **sólo admin** para el `DELETE`: es la única acción
@@ -399,13 +399,13 @@ funcionalidad ausente.
 
 | Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
 |---|---|---|---|---|---|
-| **F-01** | Crítica | `GET /companies` | `company_user` (cualquiera) | Devuelve `200` con el padrón completo de empresas cliente de HUMAE: `rfc`, `contact.email`, `contact.phone`, `address_line`, `account_manager_id`. Cualquier cliente enumera a los demás | §5.6 «GET /companies — admin / recruiter» |
+| ~~**F-01**~~ | Crítica | `GET /companies` | `company_user` (cualquiera) | **Cerrado.** `CompanyPolicy::viewAny()` es sólo recruiter (admin vía `before`). Segundo candado: el scope de inquilino deja el padrón en la propia empresa aunque alguien reabra la Policy | §5.6 «GET /companies — admin / recruiter» |
 | ~~**F-02**~~ | Crítica | `POST /vacancies` | `company_user` ajeno | **Cerrado.** `VacancyRequest` declara `company_id` como campo acotado por inquilino y `CompanyTenancy::assertBelongsTo()` responde `403` si el llamante no pertenece a esa empresa | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
 | ~~**F-03**~~ | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | **Cerrado.** El endpoint de staff queda tras `RoleMiddleware:recruiter|admin` (§5.6) y autoriza con la habilidad que nombra el estado destino (`VacancyStateMachine::abilityFor()`), no con `update` | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
 | ~~**F-04**~~ | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | **Cerrado.** `PATCH`, `DELETE` y `/transition` de `/vacancies/{id}` quedan tras `RoleMiddleware:recruiter|admin`: son la superficie de staff que §5.6 describe. La empresa opera las suyas en `/me/company/vacancies/*` | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
 | ~~**F-05**~~ | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | **Cerrado.** `VacancyRequest::staffOnlyFields()` rechaza con `403` `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days` y `assigned_recruiter_id`; `company_id` pasa por el candado de inquilino. El `unset()` silencioso del controlador se borró | §6 «Agregar notas internas — Empresa cliente ❌» |
-| **F-06** | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | Escribe sobre su propio registro campos que el endpoint `/me/company` excluye a propósito: `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
-| **F-07** | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | `CompanyMemberController` autoriza con `CompanyPolicy::view/update`. `AttachMemberRequest` acepta cualquier `user_id` existente, así que el cliente adjunta a su empresa una cuenta arbitraria de la plataforma | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
+| ~~**F-06**~~ | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | **Cerrado.** `CompanyPolicy::update()` es sólo recruiter. Además `MyCompanyController` dejó de llevar su propia lista de campos: ambos endpoints comparten `CompanyRequest`, que declara esos cinco como `staffOnlyFields()` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
+| ~~**F-07**~~ | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | **Cerrado** para el cliente: el controlador sigue autorizando con `CompanyPolicy::view/update`, que ahora son de staff. Queda abierto que `AttachMemberRequest` acepte cualquier `user_id` — para HUMAE es el alta de equipo que §5.6 le concede; ver F-13 para la variante de autoservicio | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
 | ~~**F-08**~~ | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | **Cerrado.** Ambos Requests declaran la misma regla por el mismo mecanismo (`RestrictsFieldsByRole`). `company_feedback` sigue abierto a la empresa: es su propia opinión | §6 «Agregar notas internas — Empresa cliente ❌» |
 | **F-09** | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | Ninguna comprueba el rol. Peor: `ProfileService::findOrCreate()` **crea un `candidate_profiles`** para el llamante. Un reclutador que abre `GET /me/profile` se da de alta como candidato y entra al directorio; el efecto se dispara incluso en las rutas que responden `404`, porque `ensureOwned()` resuelve el perfil antes de comparar | §5.2 y §5.4 «auth, role: candidate» |
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
@@ -413,7 +413,7 @@ funcionalidad ausente.
 | **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | **F-13** | Media | `POST /me/company/members` | `company_user` owner | El owner adjunta a su equipo cualquier cuenta existente indicando su correo, y el controlador le **asigna el rol Spatie `company_user`** si no lo tenía. Sin consentimiento del titular | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
 | **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
-| **F-15** | Baja | `GET /companies/{id}` | `company_user` miembro | Lee el registro completo de su propia empresa por el endpoint de staff, incluido `internal_notes` | §5.6 «GET /companies/{id} — admin / recruiter» |
+| ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
 | **F-16** | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | Sin filtro de rol: cualquier autenticado inicia una sesión de pago de membresía de candidato | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
 
 ### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas — resuelta

@@ -1029,7 +1029,7 @@ function authzMatrixRows(): array
     $add('GET /companies', [
         'method' => 'GET', 'uri' => '/api/v1/companies', 'spec' => '§5.6 admin/recruiter',
         'must_not_leak' => ['company_owner' => $companySentinels, 'company_other' => $companySentinels],
-        ...authzAccess($staff, ['company_owner' => 'F-01', 'company_other' => 'F-01']),
+        ...authzAccess($staff),
     ]);
     $add('POST /companies', [
         'method' => 'POST', 'uri' => '/api/v1/companies', 'spec' => '§5.6 admin/recruiter',
@@ -1038,12 +1038,12 @@ function authzMatrixRows(): array
     ]);
     $add('GET /companies/{company}', [
         'method' => 'GET', 'uri' => '/api/v1/companies/{company}', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-15']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /companies/{company}', [
         'method' => 'PATCH', 'uri' => '/api/v1/companies/{company}', 'spec' => '§5.6 admin/recruiter',
         'payload' => ['status' => 'archived', 'internal_notes' => 'reescrito por la empresa'],
-        ...authzAccess($staff, ['company_owner' => 'F-06']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /companies/{company}', [
         'method' => 'DELETE', 'uri' => '/api/v1/companies/{company}', 'spec' => 'UNSPECIFIED — inferido: admin (destructivo)',
@@ -1051,16 +1051,16 @@ function authzMatrixRows(): array
     ]);
     $add('GET /companies/{company}/members', [
         'method' => 'GET', 'uri' => '/api/v1/companies/{company}/members', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
     $add('POST /companies/{company}/members', [
         'method' => 'POST', 'uri' => '/api/v1/companies/{company}/members', 'spec' => '§5.6 admin/recruiter',
         'payload' => ['user_id' => '{user}', 'role' => 'viewer'],
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /companies/{company}/members/{userId}', [
         'method' => 'DELETE', 'uri' => '/api/v1/companies/{company}/members/{company_member_user}', 'spec' => '§5.6 admin/recruiter',
-        ...authzAccess($staff, ['company_owner' => 'F-07']),
+        ...authzAccess($staff),
     ]);
 
     // -------------------------------------------------------- Vacantes (§5.6)
