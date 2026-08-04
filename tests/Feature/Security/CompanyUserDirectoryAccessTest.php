@@ -23,13 +23,14 @@ use Laravel\Sanctum\Sanctum;
  * Probe: what can a company_user reach on the PRIVATE candidate directory?
  *
  * ARCHITECTURE.md §5.5 scopes the directory to recruiter/admin and §6 is
- * explicit per row: "Ver expediente completo de candidato: Empresa ❌",
- * "Descargar CV de cualquier candidato: Empresa ❌", "Marcar favoritos:
- * Empresa ❌".
+ * explicit per row: "Ver directorio de candidatos: Empresa ❌", "Ver expediente
+ * completo de candidato: Empresa ❌", "Descargar CV de cualquier candidato:
+ * Empresa ❌", "Marcar favoritos: Empresa ❌".
  *
- * The one deliberate deviation kept alive here is the compact listing, which
- * the shipped company panel (/me/empresa/directorio) uses to point at a
- * candidate and request a vacancy for them.
+ * The compact listing used to be kept open as a deliberate deviation for the
+ * shipped company panel (/me/empresa/directorio). The product owner has ruled
+ * §6 authoritative, so it is closed too: a client company sees only the
+ * candidates HUMAE presented to her own vacancy.
  *
  * Note there is no relationship whatsoever between this company and this
  * candidate: the directory gate was purely role-based, so any company reached
@@ -77,10 +78,15 @@ beforeEach(function (): void {
     ]);
 });
 
-it('still lets a company browse the compact directory listing', function (): void {
+/**
+ * Inverted with the same justification as the twin case in
+ * tests/Feature/Api/V1/Directory/DirectorySearchTest.php: the listing was the
+ * last surviving deviation from §6 and the product owner rejected it.
+ */
+it('does not let a company browse the compact directory listing', function (): void {
     Sanctum::actingAs($this->companyUser);
 
-    $this->getJson('/api/v1/directory/candidates')->assertOk();
+    $this->getJson('/api/v1/directory/candidates')->assertForbidden();
 });
 
 it('does not expose the full candidate record to a company', function (): void {

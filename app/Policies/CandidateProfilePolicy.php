@@ -12,14 +12,14 @@ use App\Models\User;
  * Authorization over candidate records, including the private directory.
  *
  * ARCHITECTURE.md §5.5 scopes the directory to recruiter / admin and §6 spells
- * the individual rows out: "Ver expediente completo de candidato: Empresa ❌",
- * "Descargar CV de cualquier candidato: Empresa ❌", "Marcar favoritos:
- * Empresa ❌".
+ * the individual rows out: "Ver directorio de candidatos: Empresa ❌", "Ver
+ * expediente completo de candidato: Empresa ❌", "Descargar CV de cualquier
+ * candidato: Empresa ❌", "Marcar favoritos: Empresa ❌".
  *
- * The single deliberate deviation is `viewAny`: the shipped company panel
- * (`/me/empresa/directorio`) browses the compact listing so it can point at a
- * candidate and request a vacancy. Browsing the listing does not grant the
- * record behind it.
+ * A client company never browses HUMAE's talent base. She sees only the
+ * candidates HUMAE presented to her own vacancy, through the pipeline
+ * (`GET /me/company/vacancies/{id}/assignments`). That boundary is the product
+ * premise in §1: curation by HUMAE is what the fee pays for.
  */
 class CandidateProfilePolicy
 {
@@ -30,14 +30,11 @@ class CandidateProfilePolicy
 
     /**
      * Browse the directory listing (compact cards, no contact data, no files).
+     * Internal staff only — see the class docblock.
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole([
-            UserRole::Recruiter->value,
-            UserRole::CompanyUser->value,
-            UserRole::Admin->value,
-        ]);
+        return $user->hasRole(UserRole::Recruiter->value);
     }
 
     /**

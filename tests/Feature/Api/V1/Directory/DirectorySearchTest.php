@@ -184,14 +184,22 @@ it('blocks candidates from the directory', function (): void {
     $this->getJson('/api/v1/directory/candidates')->assertStatus(403);
 });
 
-it('allows company_users to access the directory', function (): void {
+/**
+ * Inverted on purpose. This test used to assert 200 and was kept alive as a
+ * known contradiction with ARCHITECTURE.md §6 ("Ver directorio de candidatos —
+ * Empresa cliente: ❌") pending a product decision. The product owner ruled §6
+ * authoritative: a client company does not browse HUMAE's talent base, she sees
+ * only the candidates HUMAE presented to her own vacancy. The old assertion
+ * encoded a rejected behavior, so it is wrong, not merely inconvenient.
+ */
+it('blocks company_users from the directory — a client company never browses the talent base', function (): void {
     makeCandidateWithActiveMembership();
 
     $companyUser = User::factory()->create();
     $companyUser->assignRole(UserRole::CompanyUser->value);
     Sanctum::actingAs($companyUser);
 
-    $this->getJson('/api/v1/directory/candidates')->assertStatus(200);
+    $this->getJson('/api/v1/directory/candidates')->assertStatus(403);
 });
 
 it('rejects unauthenticated directory access', function (): void {

@@ -174,13 +174,16 @@ class VacancyController extends Controller
     /**
      * Devuelve candidatos sugeridos para una vacante con score de matching
      * (PDF cosasfaltanteshumae, "Ajuste en la lógica de matching").
+     *
+     * Sourcing tool for HUMAE staff only: it returns profiles of candidates
+     * that were never presented to the company. See VacancyPolicy.
      */
     public function suggestedCandidates(
         Request $request,
         Vacancy $vacancy,
         MatchingService $matching,
     ): JsonResponse {
-        $this->authorize('view', $vacancy);
+        $this->authorize('viewSuggestedCandidates', $vacancy);
 
         $minScore = (int) $request->input('min_score', 0);
         $limit = min(50, max(1, (int) $request->input('limit', 20)));
