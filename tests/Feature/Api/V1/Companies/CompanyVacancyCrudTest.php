@@ -192,3 +192,76 @@ it('company assignments resource omits contact PII of candidate', function (): v
     expect($candidate)->not->toHaveKey('contact_email')
         ->and($candidate)->not->toHaveKey('contact_phone');
 });
+
+it('company_user cannot reach hidden stages through the stage filter', function (): void {
+    [$user, $company] = makeCompanyOwner();
+    $vacancy = Vacancy::factory()->create(['company_id' => $company->id]);
+
+    VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Sourced,
+    ]);
+    VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Rejected,
+    ]);
+
+    Sanctum::actingAs($user);
+
+    // Asking for a hidden stage must return nothing, never the hidden rows and
+    // never a silent fallback to the full visible list.
+    foreach (['sourced', 'rejected', 'withdrawn'] as $hidden) {
+        $response = $this->getJson(
+            "/api/v1/me/company/vacancies/{$vacancy->id}/assignments?stage={$hidden}",
+        );
+        $response->assertOk();
+        expect($response->json('data'))->toBe([]);
+    }
+});
+
+it('company_user stage filter still narrows within the visible set', function (): void {
+    [$user, $company] = makeCompanyOwner();
+    $vacancy = Vacancy::factory()->create(['company_id' => $company->id]);
+
+    VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Presented,
+    ]);
+    VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Finalist,
+    ]);
+
+    Sanctum::actingAs($user);
+
+    $response = $this->getJson(
+        "/api/v1/me/company/vacancies/{$vacancy->id}/assignments?stage=finalist",
+    );
+    $response->assertOk();
+
+    expect(collect($response->json('data'))->pluck('stage')->all())->toBe(['finalist']);
+});
+
+it('recruiter visibility is unaffected by the company stage restriction', function (): void {
+    [, $company] = makeCompanyOwner();
+    $vacancy = Vacancy::factory()->create(['company_id' => $company->id]);
+
+    VacancyAssignment::factory()->create([
+        'vacancy_id' => $vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Sourced,
+    ]);
+
+    $recruiter = User::factory()->create();
+    $recruiter->assignRole(UserRole::Recruiter->value);
+    Sanctum::actingAs($recruiter);
+
+    $response = $this->getJson("/api/v1/vacancies/{$vacancy->id}/assignments");
+    $response->assertOk();
+
+    expect(collect($response->json('data'))->pluck('stage')->all())->toContain('sourced');
+});

@@ -226,17 +226,24 @@ class CompanyVacancyController extends Controller
     {
         $this->authorize('view', $vacancy);
 
-        $stages = array_map(fn (AssignmentStage $s) => $s->value, AssignmentStage::cases());
+        // La empresa solo ve lo que HUMAE decidió presentarle. Este whereIn es
+        // el límite de confidencialidad del pipeline: sin él, el cliente lee la
+        // lista interna del reclutador (`sourced`) y sus descartes (`rejected`).
+        $visibleStages = AssignmentStage::visibleToCompanyValues();
 
         $query = VacancyAssignment::query()
             ->where('vacancy_id', $vacancy->id)
+            ->whereIn('stage', $visibleStages)
             ->with(['candidateProfile.user', 'candidateProfile.skills']);
 
+        // El filtro solo puede estrechar el conjunto visible, nunca ampliarlo:
+        // pedir `?stage=sourced` devuelve vacío, no las filas ocultas.
         if ($request->filled('stage')) {
             $requested = (string) $request->input('stage');
-            if (\in_array($requested, $stages, true)) {
-                $query->where('stage', $requested);
-            }
+            $query->whereIn(
+                'stage',
+                \in_array($requested, $visibleStages, true) ? [$requested] : [],
+            );
         }
 
         $assignments = $query
