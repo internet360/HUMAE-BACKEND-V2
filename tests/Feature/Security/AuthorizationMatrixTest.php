@@ -950,9 +950,7 @@ function authzMatrixRows(): array
         // Both candidates already hold an active membership, so the controller
         // answers 409 before reaching Stripe. A 409 for a role §6 marks "—"
         // still proves there is no role gate in front of the endpoint.
-        ...authzAccess(['candidate_owner', 'candidate_other'], [
-            'recruiter' => 'F-16', 'company_owner' => 'F-16', 'company_other' => 'F-16', 'admin' => 'F-16',
-        ]),
+        ...authzAccess(['candidate_owner', 'candidate_other']),
     ]);
     $add('GET /me/payments', [
         'method' => 'GET', 'uri' => '/api/v1/me/payments', 'spec' => '§5.3 auth',
@@ -1245,7 +1243,7 @@ function authzMatrixRows(): array
     $add('POST /me/company/members (adjuntar una cuenta de candidato ajena)', [
         'method' => 'POST', 'uri' => '/api/v1/me/company/members', 'spec' => 'UNSPECIFIED — inferido: no se puede enrolar una cuenta ajena sin su consentimiento',
         'payload' => ['email' => '{candidate_other_email}', 'role' => 'viewer'],
-        ...authzAccess([], ['company_owner' => 'F-13', 'company_other' => 'F-13']),
+        ...authzAccess([]),
     ]);
     $add('PATCH /me/company/members/{member}', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/members/{member}', 'spec' => 'UNSPECIFIED — inferido: owner de la propia empresa',

@@ -121,7 +121,7 @@ a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efe
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | GET | `/me/membership` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
-| POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | **F-16** |
+| POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | ✔ |
 | GET | `/me/payments` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
 
 §5.3 titula la sección «Membership (auth)» sin acotar rol, y ambos `GET` se autoacotan al usuario
@@ -262,7 +262,7 @@ candidato. Verificado por sonda con centinela.
 | GET | `/me/company` | ❌ | ❌ | ❌ | 🔒 | ✅ | §6 «Ver/editar su propio perfil — Empresa ✅ (propia)» | ✔ |
 | PATCH | `/me/company` | ❌ | ❌ | ❌ | 🔒 | ✅ | §6 ídem (owner/manager) | ✔ |
 | GET | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
-| POST | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | **F-13** |
+| POST | `/me/company/members` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | PATCH | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | DELETE | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | GET | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «GET /me/company/jobs — company_user» | ✔ |
@@ -411,10 +411,10 @@ funcionalidad ausente.
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
 | **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
 | **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
-| **F-13** | Media | `POST /me/company/members` | `company_user` owner | El owner adjunta a su equipo cualquier cuenta existente indicando su correo, y el controlador le **asigna el rol Spatie `company_user`** si no lo tenía. Sin consentimiento del titular | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
+| ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
 | **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
 | ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
-| **F-16** | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | Sin filtro de rol: cualquier autenticado inicia una sesión de pago de membresía de candidato | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
+| ~~**F-16**~~ | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | **Cerrado.** `RoleMiddleware:candidate` sobre la ruta. `GET /me/membership` y `GET /me/payments` siguen abiertos a cualquier autenticado, como dice §5.3 | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
 
 ### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas — resuelta
 

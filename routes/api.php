@@ -130,10 +130,13 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function (): void {
-    // Membresía
+    // Membresía y pagos. §5.3 titula la sección «Membership (auth)» sin acotar
+    // rol y ambos GET se autoacotan al usuario autenticado, pero el checkout sí
+    // tiene fila propia: §6 «Pagar membresía — Candidato ✅», y «—» para todos
+    // los demás. La membresía de 499 MXN es del candidato (§1).
     Route::get('/membership', [MembershipController::class, 'show'])->name('membership.show');
     Route::post('/membership/checkout', [MembershipController::class, 'checkout'])
-        ->middleware('throttle:10,1')
+        ->middleware([RoleMiddleware::using([UserRole::Candidate]), 'throttle:10,1'])
         ->name('membership.checkout');
 
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
