@@ -5,12 +5,25 @@ declare(strict_types=1);
 namespace App\Http\Resources\V1\Pipeline;
 
 use App\Enums\AssignmentStage;
+use App\Enums\UserRole;
 use App\Models\VacancyAssignment;
 use App\Services\AssignmentStageMachine;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
+ * Internal pipeline view. Every route that returns it is gated to
+ * recruiter/admin except `PATCH /assignments/{id}/select-finalist`, the one
+ * pipeline action ARCHITECTURE.md §6 hands to the client company
+ * ("Seleccionar candidato finalista — Empresa cliente: ✅ decide").
+ *
+ * `recruiter_notes` and `rejection_reason` are HUMAE's own assessment of the
+ * candidate, so they are gated on role here — §6 keeps internal notes away from
+ * the company ("Agregar notas internas — Empresa cliente: ❌") and reading them
+ * is worse than writing them. The sibling CompanyAssignmentResource omits them
+ * for the same reason; this class is reachable by a company through exactly one
+ * door, and that door was open.
+ *
  * @mixin VacancyAssignment
  */
 class AssignmentResource extends JsonResource
@@ -22,6 +35,7 @@ class AssignmentResource extends JsonResource
     {
         $stage = $this->stage ?? AssignmentStage::Sourced;
         $profile = $this->candidateProfile;
+        $isInternalStaff = $this->isInternalStaff($request);
 
         return [
             'id' => $this->id,
@@ -31,8 +45,8 @@ class AssignmentResource extends JsonResource
             'stage' => $stage->value,
             'priority' => $this->priority?->value,
             'score' => $this->score,
-            'recruiter_notes' => $this->recruiter_notes,
-            'rejection_reason' => $this->rejection_reason,
+            'recruiter_notes' => $this->when($isInternalStaff, fn () => $this->recruiter_notes),
+            'rejection_reason' => $this->when($isInternalStaff, fn () => $this->rejection_reason),
             'allowed_transitions' => AssignmentStageMachine::allowedValuesFrom($stage),
             'candidate' => $profile !== null ? [
                 'id' => $profile->id,
@@ -53,5 +67,19 @@ class AssignmentResource extends JsonResource
                 $this->whenLoaded('notes'),
             ),
         ];
+    }
+
+    private function isInternalStaff(Request $request): bool
+    {
+        $user = $request->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        return $user->hasAnyRole([
+            UserRole::Recruiter->value,
+            UserRole::Admin->value,
+        ]);
     }
 }
