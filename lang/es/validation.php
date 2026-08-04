@@ -177,6 +177,11 @@ return [
         'password' => 'contraseña',
         'name' => 'nombre',
         'phone' => 'teléfono',
+        'company' => 'empresa',
+        'subject' => 'asunto',
+        'message' => 'mensaje',
+        'type' => 'tipo',
+        'source' => 'origen',
     ],
 
     'custom' => [],

@@ -856,6 +856,14 @@ function authzMatrixRows(): array
         ...authzAccess($authenticated),
     ]);
 
+    // ------------------------------------------- Contacto público (§4.8 / nuevo)
+    $add('POST /contact-submissions', [
+        'method' => 'POST', 'uri' => '/api/v1/contact-submissions',
+        'spec' => 'Nuevo — público, intencional: formulario de contacto y "solicitar acceso" de empresas (§6 invitation-only)',
+        'payload' => ['name' => 'Sondeo', 'email' => '{actor_email}', 'message' => 'Mensaje de sondeo de autorización.'],
+        ...authzAccess($everyone),
+    ]);
+
     // -------------------------------------------------- Catálogos (UNSPECIFIED)
     foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'vacancy-types'] as $catalog) {
         $add("GET /catalogs/{$catalog}", [
@@ -1389,6 +1397,13 @@ function authzMatrixRows(): array
     ]);
     $add('DELETE /admin/users/{user}', [
         'method' => 'DELETE', 'uri' => '/api/v1/admin/users/{user}', 'spec' => '§5.10 admin only',
+        ...authzAccess(['admin']),
+    ]);
+
+    // ------------------------------------- Admin: solicitudes de contacto (nuevo)
+    $add('GET /admin/contact-submissions', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/contact-submissions',
+        'spec' => 'Nuevo — admin only, por simetría con /admin/users (visibilidad de leads)',
         ...authzAccess(['admin']),
     ]);
 

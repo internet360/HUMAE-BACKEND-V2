@@ -113,4 +113,18 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Support / Reply-To Address
+    |--------------------------------------------------------------------------
+    |
+    | The HUMAE support inbox. Used as the Reply-To header on outbound
+    | transactional email, and as the destination for internal notifications
+    | that have no specific user to notify (e.g. a public contact submission —
+    | see App\Services\ContactSubmissionService).
+    |
+    */
+
+    'reply_to' => env('MAIL_REPLY_TO'),
+
 ];

@@ -10,10 +10,11 @@
 > `F-xx` y la sonda las reporta como *skipped* nombrando el hallazgo, de modo que un rojo en ese archivo
 > siempre significa un agujero **nuevo**.
 >
-> **Alcance de la auditoría**: 144 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 153 rutas totales
-> (`php artisan route:list`). Se sondearon las 144 de la API — cobertura verificada por el propio test, que
+> **Alcance de la auditoría**: 146 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 155 rutas totales
+> (`php artisan route:list`). Se sondearon las 146 de la API — cobertura verificada por el propio test, que
 > falla si alguien añade una ruta sin añadir su fila. Las 9 de infraestructura se documentan pero no se
-> sondean (§3, §7).
+> sondean (§3, §7). Las dos rutas más recientes, `POST /contact-submissions` y
+> `GET /admin/contact-submissions` (§2.16), llegaron con este cierre y ya están contadas aquí.
 >
 > **Estado tras el rediseño de la capa de autorización**: 16 de los 17 hallazgos cerrados. **F-17** (el token
 > del alta saltaba la verificación de correo) se cerró en `fix/enforce-email-verification`, y con él la mitad
@@ -368,6 +369,33 @@ directa (`UserController::ensureAdmin()`).
 El webhook autoriza por firma HMAC (`Stripe-Signature`); una petición sin firma válida recibe `400` antes
 de tocar el dominio.
 
+### 2.16 Contacto (nuevo)
+
+`contact_submissions` estaba en el modelo, la migración y el factory desde Fase 3 (ARCHITECTURE.md §4.8:
+«formulario público de contacto, si aplica»), pero §5 nunca listaba un endpoint para ella y `routes/api.php`
+no tenía ninguna ruta que la usara: cada envío del formulario de la landing, `/contacto` o `/empresas` se
+descartaba en el frontend después de mostrar un toast de éxito falso. Este cierre construye las dos rutas
+que faltaban.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| POST | `/contact-submissions` | ✅ | ✅ | ✅ | ✅ | ✅ | Nuevo — público intencional | ✔ |
+| GET | `/admin/contact-submissions` | ❌ | ❌ | ❌ | ❌ | ✅ | Nuevo — admin only | ✔ |
+
+**`POST /contact-submissions`** — público y sin autenticar a propósito: es el destino de tres formularios
+front-end (landing, `/contacto`, `/empresas`) y de la nueva página «solicitar acceso» para empresas cliente,
+que existe precisamente porque §6 deja el alta de empresa como invitación-only (no hay autoservicio). No
+exige sesión por la misma razón que `/auth/register` no la exige: quien escribe todavía no tiene cuenta.
+Lleva `throttle:5,1`, igual que `/auth/register/recruiter` y `/auth/login`, porque es superficie pública sin
+autenticar y por lo tanto blanco de spam y de amplificación de correo hacia la bandeja de soporte. No
+refleja el registro guardado en la respuesta (`201` sin `data`): un endpoint público no tiene por qué
+confirmarle a quien prueba qué quedó persistido.
+
+**`GET /admin/contact-submissions`** — por simetría con `/admin/users`: los leads capturados por el
+endpoint anterior sólo eran visibles por correo (`NewContactSubmissionNotification` a la dirección de
+soporte); esta ruta los hace además consultables en el panel, paginados. Cerrado a todo el que no sea
+`admin` con `RoleMiddleware:admin`, igual que `/admin/catalogs/*`.
+
 ---
 
 ## 3. Rutas de infraestructura (fuera de `/api/v1`)
@@ -716,12 +744,12 @@ retiradas. Las celdas «—» quedan deliberadamente fuera: §6 las marca como n
 
 | Concepto | Cantidad |
 |---|---|
-| Rutas totales (`route:list`) | 153 |
-| Rutas `/api/v1/*` | 144 |
-| Rutas `/api/v1/*` sondeadas | 144 (100 %, verificado por test) |
+| Rutas totales (`route:list`) | 155 |
+| Rutas `/api/v1/*` | 146 |
+| Rutas `/api/v1/*` sondeadas | 146 (100 %, verificado por test) |
 | Rutas de infraestructura documentadas, no sondeadas | 9 |
-| Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla) |
-| Peticiones HTTP por corrida | 1 078 (154 filas × 7 actores) |
+| Filas de la tabla de expectativas | 156 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla) |
+| Peticiones HTTP por corrida | 1 092 (156 filas × 7 actores) |
 | Actores | 7 — anónimo, candidato dueño, candidato ajeno, reclutador, `company_user` dueño, `company_user` ajeno, admin |
 | Tests de apoyo en el mismo archivo | 6 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, derivación de las transiciones desde la máquina de estados, middlewares aplicados |
 | Sonda del primitivo de inquilino | `tests/Feature/Security/CompanyTenancyTest.php` — 9 casos |
