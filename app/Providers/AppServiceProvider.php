@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Helpers\LocalFileStorage;
 use App\Helpers\StripeClient;
 use App\Models\User;
+use App\Support\Tenancy\CompanyTenancy;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Contracts\Auth\CanResetPassword;
@@ -28,6 +29,13 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(LocalFileStorage::class, static function (): LocalFileStorage {
             return new LocalFileStorage;
+        });
+
+        // Must be a singleton: the tenancy scope asks it the same question on
+        // every query of the request, and the memoised answer is invalidated by
+        // CompanyMember model events on the very same instance.
+        $this->app->singleton(CompanyTenancy::class, static function (): CompanyTenancy {
+            return new CompanyTenancy;
         });
     }
 

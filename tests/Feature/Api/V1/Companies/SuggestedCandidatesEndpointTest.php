@@ -107,8 +107,10 @@ it('candidate role cannot access suggested candidates', function (): void {
     $company = Company::factory()->create();
     $vacancy = Vacancy::factory()->create(['company_id' => $company->id]);
 
+    // A candidate belongs to no client company, so the tenancy scope leaves it
+    // with an empty set and the vacancy never resolves.
     $this->getJson("/api/v1/vacancies/{$vacancy->id}/suggested-candidates")
-        ->assertStatus(403);
+        ->assertNotFound();
 });
 
 /**

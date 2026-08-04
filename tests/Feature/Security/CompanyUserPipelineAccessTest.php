@@ -236,10 +236,14 @@ it('locks a candidate out of every pipeline route', function (): void {
     $candidateUser->assignRole(UserRole::Candidate->value);
     Sanctum::actingAs($candidateUser);
 
-    $this->getJson("/api/v1/vacancies/{$this->vacancy->id}/assignments")->assertForbidden();
+    // Two locks answer here, and they answer differently on purpose. Routes
+    // carrying a {vacancy} are refused by the tenancy scope during binding
+    // (404 — a candidate belongs to no company, so no vacancy exists for it);
+    // routes carrying an {assignment} reach VacancyAssignmentPolicy (403).
+    $this->getJson("/api/v1/vacancies/{$this->vacancy->id}/assignments")->assertNotFound();
     $this->postJson("/api/v1/vacancies/{$this->vacancy->id}/assignments", [
         'candidate_profile_id' => CandidateProfile::factory()->create()->id,
-    ])->assertForbidden();
+    ])->assertNotFound();
     $this->patchJson("/api/v1/assignments/{$this->sourced->id}", ['stage' => 'presented'])
         ->assertForbidden();
     $this->deleteJson("/api/v1/assignments/{$this->sourced->id}")->assertForbidden();

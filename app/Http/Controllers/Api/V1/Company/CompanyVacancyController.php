@@ -233,7 +233,10 @@ class CompanyVacancyController extends Controller
         $base = $slugify->slugify($title) ?: 'vacante';
         $slug = $base;
         $i = 1;
-        while (Vacancy::where('slug', $slug)->exists()) {
+        // Slugs and codes are unique platform-wide, so uniqueness has to be
+        // checked across every tenant — a tenant-scoped count would happily
+        // mint a duplicate.
+        while (Vacancy::acrossCompanies()->where('slug', $slug)->exists()) {
             $i++;
             $slug = $base.'-'.$i;
         }
@@ -246,7 +249,7 @@ class CompanyVacancyController extends Controller
         $year = (int) now()->format('Y');
         $prefix = "HUM-{$year}-";
 
-        $last = Vacancy::where('code', 'like', $prefix.'%')
+        $last = Vacancy::acrossCompanies()->where('code', 'like', $prefix.'%')
             ->orderByDesc('code')
             ->value('code');
 

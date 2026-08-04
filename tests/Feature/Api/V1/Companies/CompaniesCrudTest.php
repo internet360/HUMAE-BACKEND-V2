@@ -53,7 +53,7 @@ it('candidate cannot list companies', function (): void {
     $this->getJson('/api/v1/companies')->assertStatus(403);
 });
 
-it('recruiter can update any company, company_user cannot', function (): void {
+it('recruiter can update any company; a company_user outside it never resolves the row', function (): void {
     $company = Company::factory()->create();
 
     actAs(UserRole::Recruiter->value);
@@ -61,8 +61,11 @@ it('recruiter can update any company, company_user cannot', function (): void {
         'legal_name' => 'New Name S.A.',
     ])->assertOk();
 
+    // The tenancy scope hides companies the caller is not a member of, so route
+    // model binding fails before the policy runs: 404, not 403. Refusing
+    // without confirming the row exists is the stronger answer.
     actAs(UserRole::CompanyUser->value);
     $this->patchJson("/api/v1/companies/{$company->id}", [
         'legal_name' => 'Hacked',
-    ])->assertStatus(403);
+    ])->assertNotFound();
 });

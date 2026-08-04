@@ -50,8 +50,10 @@ it('company_user cannot show vacancy from another company', function (): void {
     $vacancy = Vacancy::factory()->create(['company_id' => $companyB->id]);
     Sanctum::actingAs($userA);
 
+    // Another tenant's vacancy is scoped out of route model binding, so the
+    // request dies at resolution with a 404 instead of reaching the policy.
     $this->getJson("/api/v1/me/company/vacancies/{$vacancy->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 });
 
 it('company_user can update vacancy in non-terminal state', function (): void {

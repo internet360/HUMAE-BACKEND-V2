@@ -235,7 +235,7 @@ class VacancyController extends Controller
         }
         $slug = $base;
         $i = 1;
-        while (Vacancy::where('slug', $slug)->exists()) {
+        while (Vacancy::acrossCompanies()->where('slug', $slug)->exists()) {
             $i++;
             $slug = $base.'-'.$i;
         }
@@ -248,7 +248,7 @@ class VacancyController extends Controller
         $year = (int) now()->format('Y');
         $prefix = "HUM-{$year}-";
 
-        $last = Vacancy::where('code', 'like', $prefix.'%')
+        $last = Vacancy::acrossCompanies()->where('code', 'like', $prefix.'%')
             ->orderByDesc('code')
             ->value('code');
 

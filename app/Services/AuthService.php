@@ -102,7 +102,7 @@ class AuthService
             $baseSlug = $slugify->slugify($companyData['legal_name']);
             $slug = $baseSlug !== '' ? $baseSlug : 'empresa';
             $i = 1;
-            while (Company::where('slug', $slug)->exists()) {
+            while (Company::acrossCompanies()->where('slug', $slug)->exists()) {
                 $slug = $baseSlug.'-'.(++$i);
             }
 

@@ -7,6 +7,9 @@ namespace App\Models;
 use App\Enums\Priority;
 use App\Enums\VacancyState;
 use App\Enums\VacancyTargetKind;
+use App\Models\Concerns\BelongsToCompany;
+use App\Models\Contracts\CompanyOwned;
+use App\Models\Scopes\CompanyOwnedScope;
 use Database\Factories\VacancyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -65,8 +68,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Company|null $company
  */
-class Vacancy extends Model
+class Vacancy extends Model implements CompanyOwned
 {
+    use BelongsToCompany;
+
     /** @use HasFactory<VacancyFactory> */
     use HasFactory;
 
@@ -151,10 +156,17 @@ class Vacancy extends Model
         ];
     }
 
-    /** @return BelongsTo<Company, $this> */
+    /**
+     * Exempt from the tenancy scope: a vacancy that survived the scope already
+     * proves the caller may see its company, and the notification paths resolve
+     * it while acting as the candidate.
+     *
+     * @return BelongsTo<Company, $this>
+     */
     public function company(): BelongsTo
     {
-        return $this->belongsTo(Company::class);
+        return $this->belongsTo(Company::class)
+            ->withoutGlobalScope(CompanyOwnedScope::class);
     }
 
     /** @return BelongsTo<User, $this> */
