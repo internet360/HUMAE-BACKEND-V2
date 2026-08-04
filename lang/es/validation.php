@@ -182,6 +182,7 @@ return [
         'message' => 'mensaje',
         'type' => 'tipo',
         'source' => 'origen',
+        'channel' => 'canal',
     ],
 
     'custom' => [],
