@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\DegreeLevelController as AdminDegreeLevelController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\FunctionalAreaController as AdminFunctionalAreaController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
@@ -41,6 +42,7 @@ use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
+use Spatie\Permission\Middleware\RoleMiddleware;
 
 /*
 |--------------------------------------------------------------------------
@@ -246,33 +248,47 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/vacancies/{vacancy}/suggested-candidates', [VacancyController::class, 'suggestedCandidates'])
         ->name('vacancies.suggested-candidates');
 
-    // Directorio de candidatos (recruiter/admin)
+    // Directorio de candidatos.
+    // El listado compacto lo consume también el panel de empresa
+    // (/me/empresa/directorio) para pedir una vacante sobre un candidato.
     Route::get('/directory/candidates', [DirectoryController::class, 'index'])
         ->name('directory.candidates.index');
-    Route::get('/directory/candidates/{candidate}', [DirectoryController::class, 'show'])
-        ->name('directory.candidates.show');
-    Route::post('/directory/candidates/{candidate}/favorite', [DirectoryController::class, 'toggleFavorite'])
-        ->name('directory.candidates.favorite');
-    Route::get('/directory/candidates/{candidate}/cv.pdf', [DirectoryController::class, 'downloadCv'])
-        ->middleware('throttle:30,1')
-        ->name('directory.candidates.cv');
-    Route::get('/directory/candidates/{candidate}/documents/{document}/download', [DirectoryController::class, 'downloadDocument'])
-        ->middleware('throttle:60,1')
-        ->name('directory.candidates.documents.download');
 
-    // Pipeline: assignments
-    Route::get('/vacancies/{vacancy}/assignments', [AssignmentController::class, 'index'])
-        ->name('vacancies.assignments.index');
-    Route::post('/vacancies/{vacancy}/assignments', [AssignmentController::class, 'store'])
-        ->name('vacancies.assignments.store');
-    Route::patch('/assignments/{assignment}', [AssignmentController::class, 'update'])
-        ->name('assignments.update');
-    Route::delete('/assignments/{assignment}', [AssignmentController::class, 'destroy'])
-        ->name('assignments.destroy');
+    // El expediente y los archivos del candidato son sólo de HUMAE
+    // (ARCHITECTURE.md §5.5 y §6). Doble candado: middleware de rol + Policy.
+    Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::get('/directory/candidates/{candidate}', [DirectoryController::class, 'show'])
+            ->name('directory.candidates.show');
+        Route::post('/directory/candidates/{candidate}/favorite', [DirectoryController::class, 'toggleFavorite'])
+            ->name('directory.candidates.favorite');
+        Route::get('/directory/candidates/{candidate}/cv.pdf', [DirectoryController::class, 'downloadCv'])
+            ->middleware('throttle:30,1')
+            ->name('directory.candidates.cv');
+        Route::get('/directory/candidates/{candidate}/documents/{document}/download', [DirectoryController::class, 'downloadDocument'])
+            ->middleware('throttle:60,1')
+            ->name('directory.candidates.documents.download');
+    });
+
+    // Pipeline: assignments (recruiter / admin — ARCHITECTURE.md §5.7).
+    // La empresa cliente lee su short list por el endpoint de empresa
+    // (/me/company/vacancies/{id}/assignments), que filtra por etapa.
+    Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::get('/vacancies/{vacancy}/assignments', [AssignmentController::class, 'index'])
+            ->name('vacancies.assignments.index');
+        Route::post('/vacancies/{vacancy}/assignments', [AssignmentController::class, 'store'])
+            ->name('vacancies.assignments.store');
+        Route::patch('/assignments/{assignment}', [AssignmentController::class, 'update'])
+            ->name('assignments.update');
+        Route::delete('/assignments/{assignment}', [AssignmentController::class, 'destroy'])
+            ->name('assignments.destroy');
+    });
+
+    // Única acción del pipeline que decide la empresa cliente (§5.7, §6).
     Route::patch('/assignments/{assignment}/select-finalist', [AssignmentController::class, 'selectFinalist'])
         ->name('assignments.select-finalist');
 
-    // Notas de asignación
+    // Notas de asignación: la empresa sólo alcanza las notas `company` de un
+    // candidato ya presentado. Lo resuelve VacancyAssignmentPolicy.
     Route::get('/assignments/{assignment}/notes', [AssignmentNoteController::class, 'index'])
         ->name('assignments.notes.index');
     Route::post('/assignments/{assignment}/notes', [AssignmentNoteController::class, 'store'])

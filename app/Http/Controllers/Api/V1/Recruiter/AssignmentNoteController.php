@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Recruiter;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pipeline\AssignmentNoteRequest;
 use App\Http\Resources\V1\Pipeline\AssignmentNoteResource;
@@ -18,20 +17,11 @@ class AssignmentNoteController extends Controller
 {
     public function index(Request $request, VacancyAssignment $assignment): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        if (! $this->canAccessAssignment($user, $assignment)) {
-            return $this->error(
-                'No tienes acceso a las notas de esta asignación.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
+        $this->authorize('viewNotes', $assignment);
 
         $query = $assignment->notes()->with('author')->orderByDesc('created_at');
 
-        // Company_user solo ve notas visibles para empresa
-        if ($this->isCompanyOnly($user)) {
+        if (! $this->canReadInternalNotes($request, $assignment)) {
             $query->where('visibility', 'company');
         }
 
@@ -43,23 +33,19 @@ class AssignmentNoteController extends Controller
 
     public function store(AssignmentNoteRequest $request, VacancyAssignment $assignment): JsonResponse
     {
+        $this->authorize('createNote', $assignment);
+
         /** @var User $user */
         $user = $request->user();
-
-        if (! $this->canAccessAssignment($user, $assignment)) {
-            return $this->error(
-                'No puedes crear notas para esta asignación.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
 
         /** @var array<string, mixed> $data */
         $data = $request->validated();
 
-        // Company_user siempre crea con visibility=company (no puede forzar internal).
-        $visibility = $this->isCompanyOnly($user)
-            ? 'company'
-            : ($data['visibility'] ?? 'internal');
+        // Only internal staff may file an internal note; a company note is
+        // always company-visible, whatever the payload asked for.
+        $visibility = $this->canReadInternalNotes($request, $assignment)
+            ? ($data['visibility'] ?? 'internal')
+            : 'company';
 
         $note = $assignment->notes()->create([
             'author_id' => $user->id,
@@ -76,26 +62,11 @@ class AssignmentNoteController extends Controller
         );
     }
 
-    private function canAccessAssignment(User $user, VacancyAssignment $assignment): bool
+    private function canReadInternalNotes(Request $request, VacancyAssignment $assignment): bool
     {
-        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            return true;
-        }
+        /** @var User $user */
+        $user = $request->user();
 
-        if ($user->hasRole(UserRole::CompanyUser->value)) {
-            $vacancy = $assignment->vacancy;
-            $company = $vacancy?->company;
-
-            return $company !== null
-                && $company->members()->where('user_id', $user->id)->exists();
-        }
-
-        return false;
-    }
-
-    private function isCompanyOnly(User $user): bool
-    {
-        return $user->hasRole(UserRole::CompanyUser->value)
-            && ! $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value]);
+        return $user->can('viewInternalNotes', $assignment);
     }
 }
