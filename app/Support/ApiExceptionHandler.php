@@ -11,6 +11,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Exceptions\UnauthorizedException;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -51,6 +52,20 @@ final class ApiExceptionHandler
 
             return self::envelope(
                 message: $e->getMessage() ?: 'No autorizado.',
+                status: HttpStatus::HTTP_FORBIDDEN,
+            );
+        });
+
+        // Spatie's role/permission middleware throws its own HttpException with
+        // an English message. Without this handler it falls through to the
+        // generic renderer and answers "Error interno del servidor." on a 403.
+        $exceptions->render(function (UnauthorizedException $e, Request $request) {
+            if (! self::wantsJson($request)) {
+                return null;
+            }
+
+            return self::envelope(
+                message: 'No cuentas con los permisos necesarios para esta acción.',
                 status: HttpStatus::HTTP_FORBIDDEN,
             );
         });

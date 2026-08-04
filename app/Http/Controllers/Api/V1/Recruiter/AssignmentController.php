@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Recruiter;
 
 use App\Enums\AssignmentStage;
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pipeline\AssignCandidateRequest;
 use App\Http\Requests\Pipeline\UpdateAssignmentRequest;
@@ -28,7 +27,7 @@ class AssignmentController extends Controller
 
     public function index(Request $request, Vacancy $vacancy): JsonResponse
     {
-        $this->authorize('view', $vacancy);
+        $this->authorize('viewAny', [VacancyAssignment::class, $vacancy]);
 
         $assignments = $vacancy->assignments()
             ->with(['candidateProfile.user'])
@@ -43,28 +42,10 @@ class AssignmentController extends Controller
 
     public function store(AssignCandidateRequest $request, Vacancy $vacancy): JsonResponse
     {
-        $this->authorize('update', $vacancy);
+        $this->authorize('create', [VacancyAssignment::class, $vacancy]);
 
         /** @var User $user */
         $user = $request->user();
-
-        $isRecruiterOrAdmin = $user->hasAnyRole([
-            UserRole::Recruiter->value,
-            UserRole::Admin->value,
-        ]);
-
-        $isCompanyOwner = $user->hasRole(UserRole::CompanyUser->value)
-            && $vacancy->company?->members()
-                ->where('user_id', $user->id)
-                ->whereIn('role', ['owner', 'manager'])
-                ->exists();
-
-        if (! $isRecruiterOrAdmin && ! $isCompanyOwner) {
-            return $this->error(
-                'No tienes permisos para asignar candidatos a esta vacante.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
 
         /** @var array<string, mixed> $data */
         $data = $request->validated();
@@ -96,7 +77,7 @@ class AssignmentController extends Controller
 
     public function update(UpdateAssignmentRequest $request, VacancyAssignment $assignment): JsonResponse
     {
-        $this->authorizeAccess($request, $assignment);
+        $this->authorize('update', $assignment);
 
         /** @var array<string, mixed> $data */
         $data = $request->validated();
@@ -128,7 +109,7 @@ class AssignmentController extends Controller
 
     public function destroy(Request $request, VacancyAssignment $assignment): JsonResponse
     {
-        $this->authorizeAccess($request, $assignment);
+        $this->authorize('delete', $assignment);
         $assignment->delete();
 
         return $this->success(message: 'Asignación eliminada.', status: HttpStatus::HTTP_NO_CONTENT);
@@ -136,33 +117,7 @@ class AssignmentController extends Controller
 
     public function selectFinalist(Request $request, VacancyAssignment $assignment): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        // Company_user solo puede marcar finalista en sus propias vacantes;
-        // recruiter/admin también pueden.
-        $vacancy = $assignment->vacancy;
-        if ($vacancy === null) {
-            return $this->error('Asignación inválida.', status: HttpStatus::HTTP_NOT_FOUND);
-        }
-
-        $isRecruiterOrAdmin = $user->hasAnyRole([
-            UserRole::Recruiter->value,
-            UserRole::Admin->value,
-        ]);
-
-        $isCompanyOwner = $user->hasRole(UserRole::CompanyUser->value)
-            && $vacancy->company?->members()
-                ->where('user_id', $user->id)
-                ->whereIn('role', ['owner', 'manager'])
-                ->exists();
-
-        if (! $isRecruiterOrAdmin && ! $isCompanyOwner) {
-            return $this->error(
-                'No tienes permisos para seleccionar finalista.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
+        $this->authorize('selectFinalist', $assignment);
 
         try {
             $this->pipeline->selectFinalist($assignment);
@@ -179,15 +134,5 @@ class AssignmentController extends Controller
             message: 'Candidato marcado como finalista.',
             data: AssignmentResource::make($fresh),
         );
-    }
-
-    private function authorizeAccess(Request $request, VacancyAssignment $assignment): void
-    {
-        $vacancy = $assignment->vacancy;
-        if ($vacancy === null) {
-            abort(HttpStatus::HTTP_NOT_FOUND);
-        }
-
-        $this->authorize('update', $vacancy);
     }
 }

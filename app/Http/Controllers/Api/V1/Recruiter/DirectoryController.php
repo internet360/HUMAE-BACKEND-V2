@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Recruiter;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\Directory\DirectoryCandidateDetailResource;
 use App\Http\Resources\V1\Directory\DirectoryCandidateResource;
@@ -31,7 +30,7 @@ class DirectoryController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $this->authorizeRecruiter($request);
+        $this->authorize('viewAny', CandidateProfile::class);
 
         $paginator = $this->search->search($request);
 
@@ -58,7 +57,7 @@ class DirectoryController extends Controller
 
     public function show(Request $request, CandidateProfile $candidate): JsonResponse
     {
-        $this->authorizeRecruiter($request);
+        $this->authorize('view', $candidate);
 
         $candidate->load([
             'user',
@@ -83,7 +82,7 @@ class DirectoryController extends Controller
 
     public function toggleFavorite(Request $request, CandidateProfile $candidate): JsonResponse
     {
-        $this->authorizeRecruiter($request);
+        $this->authorize('favorite', $candidate);
 
         /** @var User $user */
         $user = $request->user();
@@ -115,7 +114,7 @@ class DirectoryController extends Controller
 
     public function downloadCv(Request $request, CandidateProfile $candidate): Response
     {
-        $this->authorizeRecruiter($request);
+        $this->authorize('downloadCv', $candidate);
 
         $user = $candidate->user;
         if ($user === null) {
@@ -137,7 +136,7 @@ class DirectoryController extends Controller
         CandidateProfile $candidate,
         CandidateDocument $document,
     ): BinaryFileResponse|StreamedResponse|JsonResponse {
-        $this->authorizeRecruiter($request);
+        $this->authorize('downloadDocument', $candidate);
 
         if ($document->candidate_profile_id !== $candidate->id || $document->is_internal) {
             abort(HttpStatus::HTTP_NOT_FOUND);
@@ -153,23 +152,6 @@ class DirectoryController extends Controller
         $downloadName = trim((string) $document->title).($extension !== '' ? '.'.$extension : '');
 
         return Storage::disk('local')->download($document->file_public_id, $downloadName);
-    }
-
-    private function authorizeRecruiter(Request $request): void
-    {
-        /** @var User|null $user */
-        $user = $request->user();
-        if ($user === null) {
-            abort(HttpStatus::HTTP_UNAUTHORIZED);
-        }
-
-        if (! $user->hasAnyRole([
-            UserRole::Recruiter->value,
-            UserRole::CompanyUser->value,
-            UserRole::Admin->value,
-        ])) {
-            abort(HttpStatus::HTTP_FORBIDDEN, 'Acceso restringido.');
-        }
     }
 
     /**

@@ -8,6 +8,19 @@ use App\Enums\UserRole;
 use App\Models\CandidateProfile;
 use App\Models\User;
 
+/**
+ * Authorization over candidate records, including the private directory.
+ *
+ * ARCHITECTURE.md §5.5 scopes the directory to recruiter / admin and §6 spells
+ * the individual rows out: "Ver expediente completo de candidato: Empresa ❌",
+ * "Descargar CV de cualquier candidato: Empresa ❌", "Marcar favoritos:
+ * Empresa ❌".
+ *
+ * The single deliberate deviation is `viewAny`: the shipped company panel
+ * (`/me/empresa/directorio`) browses the compact listing so it can point at a
+ * candidate and request a vacancy. Browsing the listing does not grant the
+ * record behind it.
+ */
 class CandidateProfilePolicy
 {
     public function before(User $user): ?bool
@@ -15,6 +28,9 @@ class CandidateProfilePolicy
         return $user->hasRole(UserRole::Admin->value) ? true : null;
     }
 
+    /**
+     * Browse the directory listing (compact cards, no contact data, no files).
+     */
     public function viewAny(User $user): bool
     {
         return $user->hasAnyRole([
@@ -24,13 +40,43 @@ class CandidateProfilePolicy
         ]);
     }
 
+    /**
+     * Read the full record: CURP, RFC, address, contact phone, references and
+     * document metadata. Internal staff, or the candidate itself.
+     */
     public function view(User $user, CandidateProfile $profile): bool
     {
-        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::CompanyUser->value])) {
+        if ($user->hasRole(UserRole::Recruiter->value)) {
             return true;
         }
 
         return $profile->user_id === $user->id;
+    }
+
+    /**
+     * Download the generated CV of an arbitrary candidate. Internal staff only.
+     */
+    public function downloadCv(User $user, CandidateProfile $profile): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
+     * Download a document a candidate uploaded to the private disk.
+     * Internal staff only.
+     */
+    public function downloadDocument(User $user, CandidateProfile $profile): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
+     * Bookmark a candidate. `directory_favorites` is keyed by `recruiter_id`,
+     * so this is staff-only by schema as well as by §6.
+     */
+    public function favorite(User $user, CandidateProfile $profile): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
     }
 
     public function update(User $user, CandidateProfile $profile): bool
