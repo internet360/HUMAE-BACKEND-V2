@@ -18,6 +18,11 @@
         </include>
     </source>
     <php>
+        <!-- La suite ya rozaba el límite por defecto de PHP (117 MB de 128 MB
+             con 282 tests) antes de sumar la sonda de autorización. El consumo
+             crece de forma lineal con el número de tests: es acumulación del
+             contenedor de Laravel entre tests, no una fuga de un test concreto. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
