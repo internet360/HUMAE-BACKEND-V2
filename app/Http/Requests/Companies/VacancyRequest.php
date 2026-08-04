@@ -75,12 +75,10 @@ class VacancyRequest extends FormRequest
 
             'assigned_recruiter_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
 
-            // Si se envía, el controller crea la vacante como `activa` (auto-publica)
-            // y asigna al candidato en una sola transacción. Útil para el flujo
-            // "encontré candidato → necesito vacante para asignarlo".
-            'auto_assign_candidate_profile_id' => [
-                'sometimes', 'nullable', 'integer', 'exists:candidate_profiles,id',
-            ],
+            // No hay campo para asignar candidatos al crear una vacante.
+            // Asignar es la curación de HUMAE (ARCHITECTURE.md §6, «Asignar
+            // candidatos a vacante — Empresa cliente: ❌») y se hace desde
+            // POST /vacancies/{vacancy}/assignments, cerrado a recruiter/admin.
         ];
     }
 }

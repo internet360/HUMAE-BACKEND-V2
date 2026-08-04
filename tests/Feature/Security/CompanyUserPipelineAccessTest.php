@@ -171,6 +171,45 @@ it('still lets the company pick the finalist among the candidates it was shown',
         ->assertJsonPath('data.stage', 'finalist');
 });
 
+/**
+ * select-finalist is the single pipeline route a company may call, and it
+ * answered with AssignmentResource — the INTERNAL view. `recruiter_notes` and
+ * `rejection_reason` are HUMAE's own assessment of the candidate and are
+ * separate DB columns from the visibility-scoped note thread, so the note
+ * filtering above never covered them (§6, "Agregar notas internas — Empresa
+ * cliente: ❌").
+ */
+it('does not leak recruiter_notes or rejection_reason in the select-finalist response', function (): void {
+    $interviewing = VacancyAssignment::factory()->create([
+        'vacancy_id' => $this->vacancy->id,
+        'candidate_profile_id' => CandidateProfile::factory()->create()->id,
+        'stage' => AssignmentStage::Interviewing,
+        'recruiter_notes' => 'Pide 20% más de lo presupuestado; negociar a la baja.',
+        'rejection_reason' => 'Motivo interno de descarte.',
+    ]);
+
+    Sanctum::actingAs($this->companyUser);
+
+    $response = $this->patchJson("/api/v1/assignments/{$interviewing->id}/select-finalist")
+        ->assertOk();
+
+    expect($response->json('data'))
+        ->not->toHaveKey('recruiter_notes')
+        ->and($response->json('data'))->not->toHaveKey('rejection_reason');
+
+    // Same row, same fields: a recruiter still gets them. The role is the only
+    // difference, so the field is gated and not merely missing from the model.
+    $recruiter = User::factory()->create();
+    $recruiter->assignRole(UserRole::Recruiter->value);
+    Sanctum::actingAs($recruiter);
+
+    $this->getJson("/api/v1/vacancies/{$this->vacancy->id}/assignments")
+        ->assertOk()
+        ->assertJsonFragment([
+            'recruiter_notes' => 'Pide 20% más de lo presupuestado; negociar a la baja.',
+        ]);
+});
+
 it('still lets the company read company-visible notes of a presented candidate', function (): void {
     $presented = VacancyAssignment::factory()->create([
         'vacancy_id' => $this->vacancy->id,

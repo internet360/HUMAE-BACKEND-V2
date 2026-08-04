@@ -11,19 +11,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Companies\VacancyRequest;
 use App\Http\Resources\V1\Companies\VacancyResource;
 use App\Http\Resources\V1\Pipeline\CompanyAssignmentResource;
-use App\Models\CandidateProfile;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Models\VacancyAssignment;
-use App\Services\PipelineService;
 use App\Services\VacancyStateMachine;
 use Cocur\Slugify\Slugify;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
-use Throwable;
 
 /**
  * Endpoints para usuarios tipo `company_user`. Solo operan sobre las vacantes
@@ -62,7 +58,14 @@ class CompanyVacancyController extends Controller
         );
     }
 
-    public function store(VacancyRequest $request, PipelineService $pipeline): JsonResponse
+    /**
+     * A company files a vacancy request. It always lands in `borrador` and
+     * HUMAE reviews it: the company neither publishes on creation nor attaches
+     * candidates (ARCHITECTURE.md §6, "Asignar candidatos a vacante — Empresa
+     * cliente: ❌"). Assigning is HUMAE's curation step, done from
+     * POST /vacancies/{vacancy}/assignments.
+     */
+    public function store(VacancyRequest $request): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
@@ -88,51 +91,19 @@ class CompanyVacancyController extends Controller
         // Las empresas no eligen al reclutador responsable; se descarta si vino.
         unset($data['assigned_recruiter_id']);
 
-        // Si la empresa quiere asignar un candidato directamente al crear la
-        // vacante (flujo "encontré candidato, necesito vacante"), creamos la
-        // vacante en estado `activa` y asignamos en una sola transacción.
-        $autoAssignCandidateId = isset($data['auto_assign_candidate_profile_id'])
-            ? (int) $data['auto_assign_candidate_profile_id']
-            : null;
-        unset($data['auto_assign_candidate_profile_id']);
-
-        try {
-            $vacancy = DB::transaction(function () use ($data, $user, $autoAssignCandidateId, $pipeline): Vacancy {
-                $initialState = $autoAssignCandidateId !== null
-                    ? VacancyState::Activa
-                    : VacancyState::Borrador;
-
-                $vacancy = Vacancy::create([
-                    ...$data,
-                    'created_by' => $user->id,
-                    'state' => $initialState->value,
-                    'published_at' => $autoAssignCandidateId !== null ? now() : null,
-                    'slug' => $this->uniqueSlug((string) $data['title']),
-                    'code' => $this->nextVacancyCode(),
-                ]);
-
-                if ($autoAssignCandidateId !== null) {
-                    $candidate = CandidateProfile::findOrFail($autoAssignCandidateId);
-                    $freshVacancy = $vacancy->fresh() ?? $vacancy;
-                    // PipelineService::assign valida estado + membresía activa.
-                    $pipeline->assign($freshVacancy, $candidate, $user);
-                }
-
-                return $vacancy;
-            });
-        } catch (Throwable $e) {
-            return $this->error(
-                message: $e->getMessage(),
-                status: HttpStatus::HTTP_CONFLICT,
-            );
-        }
+        $vacancy = Vacancy::create([
+            ...$data,
+            'created_by' => $user->id,
+            'state' => VacancyState::Borrador->value,
+            'published_at' => null,
+            'slug' => $this->uniqueSlug((string) $data['title']),
+            'code' => $this->nextVacancyCode(),
+        ]);
 
         $vacancy->load('company');
 
         return $this->success(
-            message: $autoAssignCandidateId !== null
-                ? 'Vacante creada y candidato asignado.'
-                : 'Vacante creada en borrador. HUMAE la revisará.',
+            message: 'Vacante creada en borrador. HUMAE la revisará.',
             data: VacancyResource::make($vacancy),
             status: HttpStatus::HTTP_CREATED,
         );

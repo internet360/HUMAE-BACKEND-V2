@@ -36,6 +36,22 @@ class VacancyPolicy
         return false;
     }
 
+    /**
+     * Read the matching engine's suggestions for a vacancy.
+     *
+     * The payload is a ranked slice of the talent base: candidates HUMAE has
+     * NOT presented, with name, headline, seniority and functional areas. That
+     * is the candidate directory reached from a different door, and
+     * ARCHITECTURE.md §6 closes the directory to the client company
+     * ("Ver directorio de candidatos — Empresa cliente: ❌"). Sourcing is
+     * HUMAE's curation step (§1), so this is internal staff only — owning the
+     * vacancy grants nothing here.
+     */
+    public function viewSuggestedCandidates(User $user, Vacancy $vacancy): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
     public function create(User $user): bool
     {
         return $user->hasAnyRole([UserRole::Recruiter->value, UserRole::CompanyUser->value]);

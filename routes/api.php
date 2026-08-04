@@ -245,18 +245,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
     Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
         ->name('vacancies.transition');
+    // El motor de matching entrega perfiles de candidatos que HUMAE todavía no
+    // presentó: es el directorio con pasos extra. Sólo HUMAE
+    // (ARCHITECTURE.md §6 «Ver directorio de candidatos — Empresa cliente: ❌»).
     Route::get('/vacancies/{vacancy}/suggested-candidates', [VacancyController::class, 'suggestedCandidates'])
+        ->middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))
         ->name('vacancies.suggested-candidates');
 
-    // Directorio de candidatos.
-    // El listado compacto lo consume también el panel de empresa
-    // (/me/empresa/directorio) para pedir una vacante sobre un candidato.
-    Route::get('/directory/candidates', [DirectoryController::class, 'index'])
-        ->name('directory.candidates.index');
-
-    // El expediente y los archivos del candidato son sólo de HUMAE
-    // (ARCHITECTURE.md §5.5 y §6). Doble candado: middleware de rol + Policy.
+    // El directorio de candidatos —listado, expediente y archivos— es sólo de
+    // HUMAE (ARCHITECTURE.md §5.5 y §6). La empresa cliente ve únicamente a los
+    // candidatos que HUMAE le presentó, vía /me/company/vacancies/{id}/assignments.
+    // Doble candado: middleware de rol + Policy.
     Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::get('/directory/candidates', [DirectoryController::class, 'index'])
+            ->name('directory.candidates.index');
         Route::get('/directory/candidates/{candidate}', [DirectoryController::class, 'show'])
             ->name('directory.candidates.show');
         Route::post('/directory/candidates/{candidate}/favorite', [DirectoryController::class, 'toggleFavorite'])
