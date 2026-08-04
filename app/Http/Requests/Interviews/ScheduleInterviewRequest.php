@@ -6,15 +6,28 @@ namespace App\Http\Requests\Interviews;
 
 use App\Enums\InterviewMode;
 use App\Enums\UserRole;
+use App\Http\Requests\Concerns\RestrictsFieldsByRole;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class ScheduleInterviewRequest extends FormRequest
 {
-    public function authorize(): bool
+    use RestrictsFieldsByRole;
+
+    /**
+     * The meeting link is published by HUMAE once the candidate has confirmed
+     * a slot; the company proposes the times, not the room.
+     *
+     * Stated through the shared concern rather than as `prohibited` rules so
+     * this endpoint and {@see UpdateInterviewRequest} express one rule the same
+     * way — and answer it the same way, with a 403.
+     *
+     * @return list<string>
+     */
+    protected function staffOnlyFields(): array
     {
-        return true;
+        return ['meeting_url', 'meeting_provider', 'meeting_id'];
     }
 
     /**
@@ -49,17 +62,11 @@ class ScheduleInterviewRequest extends FormRequest
             ],
             'duration_minutes' => ['sometimes', 'integer', 'min:15', 'max:480'],
             'timezone' => ['sometimes', 'string', 'max:60'],
-            // El meeting_url lo agrega el reclutador después de que el candidato
-            // confirma la fecha; la empresa no debe poder establecerlo.
-            'meeting_url' => $isCompany
-                ? ['prohibited']
-                : ['sometimes', 'nullable', 'url', 'max:600'],
-            'meeting_provider' => $isCompany
-                ? ['prohibited']
-                : ['sometimes', 'nullable', 'string', 'max:40'],
-            'meeting_id' => $isCompany
-                ? ['prohibited']
-                : ['sometimes', 'nullable', 'string', 'max:120'],
+            // Quién puede escribirlos lo decide staffOnlyFields(); aquí sólo
+            // queda la forma del dato.
+            'meeting_url' => ['sometimes', 'nullable', 'url', 'max:600'],
+            'meeting_provider' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'meeting_id' => ['sometimes', 'nullable', 'string', 'max:120'],
             // Solo aplica para presencial — deshabilitado en esta fase.
             'location' => ['prohibited'],
         ];
@@ -73,9 +80,6 @@ class ScheduleInterviewRequest extends FormRequest
         return [
             'alternate_scheduled_at.required' => 'Como empresa, debes proponer dos horarios para que el candidato escoja uno.',
             'alternate_scheduled_at.different' => 'Los dos horarios propuestos deben ser distintos.',
-            'meeting_url.prohibited' => 'El enlace de la reunión lo agrega el reclutador HUMAE tras la confirmación del candidato.',
-            'meeting_provider.prohibited' => 'El enlace de la reunión lo agrega el reclutador HUMAE.',
-            'meeting_id.prohibited' => 'El enlace de la reunión lo agrega el reclutador HUMAE.',
             'location.prohibited' => 'Por ahora solo se admiten entrevistas online.',
             'mode.in' => 'Por ahora solo se admiten entrevistas online.',
         ];

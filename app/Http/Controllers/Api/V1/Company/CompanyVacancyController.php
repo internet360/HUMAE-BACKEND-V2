@@ -74,22 +74,12 @@ class CompanyVacancyController extends Controller
             return $this->error('No tienes acceso a este recurso.', status: HttpStatus::HTTP_FORBIDDEN);
         }
 
+        // `company_id` is guarded in VacancyRequest against the caller's own
+        // memberships, and `assigned_recruiter_id` — along with the rest of
+        // HUMAE's commercial terms — is refused there too. The controller no
+        // longer re-states either rule.
         /** @var array<string, mixed> $data */
         $data = $request->validated();
-
-        $isMember = $user->companyMemberships()
-            ->where('company_id', (int) $data['company_id'])
-            ->exists();
-
-        if (! $isMember && ! $user->hasRole(UserRole::Admin->value)) {
-            return $this->error(
-                'No puedes crear vacantes para esta empresa.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
-
-        // Las empresas no eligen al reclutador responsable; se descarta si vino.
-        unset($data['assigned_recruiter_id']);
 
         $vacancy = Vacancy::create([
             ...$data,

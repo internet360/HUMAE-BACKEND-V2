@@ -1075,7 +1075,7 @@ function authzMatrixRows(): array
     $add('POST /vacancies (company_id de la empresa A)', [
         'method' => 'POST', 'uri' => '/api/v1/vacancies', 'spec' => '§6 Crear vacante — Empresa ✅ (propia)',
         'payload' => ['company_id' => '{company}', 'title' => 'Vacante de sondeo', 'description' => 'Descripción de la vacante de sondeo.'],
-        ...authzAccess(['recruiter', 'company_owner', 'admin'], ['company_other' => 'F-02']),
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
     ]);
     $add('GET /vacancies/{vacancy}', [
         'method' => 'GET', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 recruiter/admin/company (propias)',
@@ -1196,7 +1196,7 @@ function authzMatrixRows(): array
             'recommendation' => 'reject',
             'meeting_url' => 'https://meet.example.com/sondeo',
         ],
-        ...authzAccess($staff, ['company_owner' => 'F-08']),
+        ...authzAccess($staff),
     ]);
     $add('POST /interviews/{interview}/select-slot', [
         'method' => 'POST', 'uri' => '/api/v1/interviews/{interview}/select-slot', 'spec' => 'UNSPECIFIED — inferido: candidato + HUMAE + decisor de la empresa',
@@ -1278,7 +1278,7 @@ function authzMatrixRows(): array
             'company_id' => '{company}', 'title' => 'Solicitud de sondeo', 'description' => 'Solicitud de vacante de sondeo.',
             'internal_notes' => 'escrito por la empresa', 'fee_amount' => 1, 'sla_days' => 1,
         ],
-        ...authzAccess(['admin'], ['company_owner' => 'F-05']),
+        ...authzAccess(['admin']),
     ]);
     $add('GET /me/company/vacancies/{vacancy}', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§5.6 /me/company/jobs — company_user',
@@ -1288,12 +1288,12 @@ function authzMatrixRows(): array
     $add('PATCH /me/company/vacancies/{vacancy} (notas internas + honorarios)', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§6 Agregar notas internas — Empresa ❌',
         'payload' => ['internal_notes' => 'reescrito por la empresa', 'fee_amount' => 1],
-        ...authzAccess($staff, ['company_owner' => 'F-05']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /me/company/vacancies/{vacancy} (reasignar company_id)', [
         'method' => 'PATCH', 'uri' => '/api/v1/me/company/vacancies/{vacancy}', 'spec' => '§5.6 + aislamiento entre inquilinos',
         'payload' => ['company_id' => '{company_b}'],
-        ...authzAccess($staff, ['company_owner' => 'F-05']),
+        ...authzAccess($staff),
     ]);
     $add('POST /me/company/vacancies/{vacancy}/transition (→ activa)', [
         'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy_draft}/transition', 'spec' => '§6 Aprobar / activar vacante — Empresa ❌',

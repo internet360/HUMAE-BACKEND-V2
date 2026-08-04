@@ -194,7 +194,7 @@ reclutador archive empresas, hay que cambiar la Policy, no la ruta.
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | GET | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 recruiter/admin/company (propias) | ✔ |
-| POST | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Crear vacante — Empresa ✅ (propia)» | **F-02** |
+| POST | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Crear vacante — Empresa ✅ (propia)» | ✔ |
 | GET | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
 | PATCH | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «PATCH /jobs/{id} — recruiter / admin» | ✔ |
 | DELETE | `/vacancies/{vacancy}` | ❌ | ❌ | ❌ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
@@ -234,7 +234,7 @@ una etapa `AssignmentStage::visibleToCompany()`. La sonda comprueba las dos mita
 | GET | `/interviews` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §5.8 | ✔ |
 | POST | `/interviews` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Programar entrevista — Candidato ❌, Empresa: propuesta» | ✔ |
 | GET | `/interviews/{interview}` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §5.8 | ✔ |
-| PATCH | `/interviews/{interview}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.8 «reprograma, cambia estado» | **F-08** |
+| PATCH | `/interviews/{interview}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.8 «reprograma, cambia estado» | ✔ |
 | POST | `/interviews/{interview}/select-slot` | ❌ | 🔒 | ✅ | 🔒 | ✅ | **UNSPECIFIED** | ✔ |
 | POST | `/interviews/{interview}/meeting-details` | ❌ | ❌ | ✅ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
 | POST | `/interviews/{interview}/confirm` | ❌ | 🔒 | ✅ | 🔒 | ✅ | §6 «Confirmar entrevista» | ✔ |
@@ -266,9 +266,9 @@ candidato. Verificado por sonda con centinela.
 | PATCH | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | DELETE | `/me/company/members/{member}` | ❌ | ❌ | ❌ | 🔒 | ❌ | **UNSPECIFIED** | ✔ |
 | GET | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «GET /me/company/jobs — company_user» | ✔ |
-| POST | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «POST /me/company/jobs — queda borrador» | **F-05** |
+| POST | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «POST /me/company/jobs — queda borrador» | ✔ |
 | GET | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
-| PATCH | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | **F-05** |
+| PATCH | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
 | POST | `/me/company/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Aprobar/activar ❌», «Marcar cubierta ✅ (propone)» | ✔ |
 | GET | `/me/company/vacancies/{vacancy}/assignments` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Ver candidatos asignados — Empresa ✅ (propia vacante)» | ✔ |
 
@@ -400,13 +400,13 @@ funcionalidad ausente.
 | Id | Sev. | Ruta | Rol | Qué ocurre | Fila §5/§6 violada |
 |---|---|---|---|---|---|
 | **F-01** | Crítica | `GET /companies` | `company_user` (cualquiera) | Devuelve `200` con el padrón completo de empresas cliente de HUMAE: `rfc`, `contact.email`, `contact.phone`, `address_line`, `account_manager_id`. Cualquier cliente enumera a los demás | §5.6 «GET /companies — admin / recruiter» |
-| **F-02** | Crítica | `POST /vacancies` | `company_user` ajeno | `VacancyPolicy::create()` sólo comprueba el rol y `VacancyRequest` valida `company_id` con `exists:companies,id`. Un cliente crea vacantes dentro de la empresa de otro cliente | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
+| ~~**F-02**~~ | Crítica | `POST /vacancies` | `company_user` ajeno | **Cerrado.** `VacancyRequest` declara `company_id` como campo acotado por inquilino y `CompanyTenancy::assertBelongsTo()` responde `403` si el llamante no pertenece a esa empresa | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
 | ~~**F-03**~~ | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | **Cerrado.** El endpoint de staff queda tras `RoleMiddleware:recruiter|admin` (§5.6) y autoriza con la habilidad que nombra el estado destino (`VacancyStateMachine::abilityFor()`), no con `update` | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
 | ~~**F-04**~~ | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | **Cerrado.** `PATCH`, `DELETE` y `/transition` de `/vacancies/{id}` quedan tras `RoleMiddleware:recruiter|admin`: son la superficie de staff que §5.6 describe. La empresa opera las suyas en `/me/company/vacancies/*` | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
-| **F-05** | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | El endpoint propio pasa `$request->validated()` completo al modelo. La empresa escribe `internal_notes`, `fee_amount`, `sla_days` y reasigna `company_id`. `store()` sólo descarta `assigned_recruiter_id` | §6 «Agregar notas internas — Empresa cliente ❌» |
+| ~~**F-05**~~ | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | **Cerrado.** `VacancyRequest::staffOnlyFields()` rechaza con `403` `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days` y `assigned_recruiter_id`; `company_id` pasa por el candado de inquilino. El `unset()` silencioso del controlador se borró | §6 «Agregar notas internas — Empresa cliente ❌» |
 | **F-06** | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | Escribe sobre su propio registro campos que el endpoint `/me/company` excluye a propósito: `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
 | **F-07** | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | `CompanyMemberController` autoriza con `CompanyPolicy::view/update`. `AttachMemberRequest` acepta cualquier `user_id` existente, así que el cliente adjunta a su empresa una cuenta arbitraria de la plataforma | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
-| **F-08** | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | `UpdateInterviewRequest` no replica las prohibiciones de `ScheduleInterviewRequest`: la empresa escribe `recruiter_feedback`, `recommendation`, `rating`, `meeting_url` y `location`, campos que el endpoint de creación le prohíbe explícitamente | §6 «Agregar notas internas — Empresa cliente ❌» |
+| ~~**F-08**~~ | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | **Cerrado.** Ambos Requests declaran la misma regla por el mismo mecanismo (`RestrictsFieldsByRole`). `company_feedback` sigue abierto a la empresa: es su propia opinión | §6 «Agregar notas internas — Empresa cliente ❌» |
 | **F-09** | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | Ninguna comprueba el rol. Peor: `ProfileService::findOrCreate()` **crea un `candidate_profiles`** para el llamante. Un reclutador que abre `GET /me/profile` se da de alta como candidato y entra al directorio; el efecto se dispara incluso en las rutas que responden `404`, porque `ensureOwned()` resuelve el perfil antes de comparar | §5.2 y §5.4 «auth, role: candidate» |
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
 | **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
@@ -465,6 +465,31 @@ Se añadieron dos habilidades nuevas para completar el vocabulario de transicion
 Las Policies se descubren por convención de Laravel 12 (`App\Models\X` → `App\Policies\XPolicy`);
 `AppServiceProvider` no registra ninguna explícitamente. El descubrimiento funciona, pero cualquier Policy
 que no siga el naming quedaría silenciosamente desconectada.
+
+### 5.3 Permiso a nivel de campo: un solo mecanismo
+
+`App\Http\Requests\Concerns\RestrictsFieldsByRole` es el único sitio donde se declara qué campos puede
+enviar cada rol. Un Request que lo usa contesta dos preguntas:
+
+| Declaración | Significado | Respuesta si se incumple |
+|---|---|---|
+| `staffOnlyFields()` | Campos que sólo escribe HUMAE (recruiter/admin) | `403` nombrando los campos |
+| `companyScopedFields()` | Campos con un `company_id` que debe ser del llamante | `403` |
+
+**Por qué `403` y no `422`**: «este campo no es tuyo» es una decisión de autorización. Contestar `422`
+invita al llamante a corregir el payload cuando lo que está mal es su rol. Además el chequeo corre en
+`authorize()`, antes de las reglas, así que un campo prohibido se rechaza aunque el resto del payload sea
+inválido.
+
+Declaraciones actuales:
+
+| Request | `staffOnlyFields()` | `companyScopedFields()` |
+|---|---|---|
+| `VacancyRequest` | `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` | `company_id` |
+| `UpdateInterviewRequest` | `rating`, `recommendation`, `recruiter_feedback`, `meeting_url`, `meeting_provider`, `meeting_id`, `location` | — |
+| `ScheduleInterviewRequest` | `meeting_url`, `meeting_provider`, `meeting_id` | — |
+| `CompanyRequest` | `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | — |
+
 
 ---
 

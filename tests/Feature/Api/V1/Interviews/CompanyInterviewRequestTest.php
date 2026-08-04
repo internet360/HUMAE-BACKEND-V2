@@ -84,13 +84,33 @@ it('company_user cannot pass meeting_url when proposing an interview', function 
     ['user' => $user, 'assignment' => $assignment] = companyOwnerWithAssignment();
     Sanctum::actingAs($user);
 
+    // 403, not 422. "This field is not yours to write" is an authorization
+    // answer, and it is now the same answer on the update endpoint, which used
+    // to have no rule at all (F-08).
     $this->postJson('/api/v1/interviews', [
         'vacancy_assignment_id' => $assignment->id,
         'scheduled_at' => now()->addDays(2)->toIso8601String(),
         'alternate_scheduled_at' => now()->addDays(3)->toIso8601String(),
         'mode' => 'online',
         'meeting_url' => 'https://meet.google.com/xyz-abcd-efg',
-    ])->assertUnprocessable();
+    ])->assertForbidden();
+});
+
+it('company_user cannot write the interview evaluation when rescheduling', function (): void {
+    ['user' => $user, 'assignment' => $assignment] = companyOwnerWithAssignment();
+    $interview = Interview::factory()->create([
+        'vacancy_assignment_id' => $assignment->id,
+        'scheduled_at' => now()->addDays(2),
+    ]);
+    Sanctum::actingAs($user);
+
+    $this->patchJson("/api/v1/interviews/{$interview->id}", [
+        'scheduled_at' => now()->addDays(5)->toIso8601String(),
+        'recruiter_feedback' => 'reescrito por la empresa',
+        'recommendation' => 'reject',
+    ])->assertForbidden();
+
+    expect($interview->fresh()->recommendation)->toBeNull();
 });
 
 it('rejects presencial and telefonica modes', function (): void {
