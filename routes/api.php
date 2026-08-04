@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\DegreeLevelController as AdminDeg
 use App\Http\Controllers\Api\V1\Admin\Catalogs\FunctionalAreaController as AdminFunctionalAreaController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
+use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
@@ -39,6 +40,7 @@ use App\Http\Controllers\Api\V1\Recruiter\CompanyMemberController;
 use App\Http\Controllers\Api\V1\Recruiter\DirectoryController;
 use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
 use App\Http\Controllers\Api\V1\Shared\CatalogController;
+use App\Http\Controllers\Api\V1\Shared\ContactSubmissionController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
 use App\Http\Middleware\EnsureVerifiedEmail;
@@ -72,6 +74,22 @@ use Spatie\Permission\Middleware\RoleMiddleware;
 $authenticated = ['auth:sanctum', EnsureVerifiedEmail::class];
 
 Route::get('/health', HealthController::class)->name('health');
+
+/*
+|--------------------------------------------------------------------------
+| Contacto público (captación de leads)
+|--------------------------------------------------------------------------
+| Público y sin autenticar: es el formulario de la landing, /contacto y
+| /empresas, y también la página "solicitar acceso" para empresas cliente,
+| ya que §6 deja las cuentas de empresa como invitación-only — no hay alta
+| autoservicio, así que esta es la puerta de entrada. Lleva throttle por la
+| misma razón que /auth/register y /auth/verify-email/resend: superficie
+| pública sin autenticar, blanco de spam y de amplificación de correo hacia
+| la bandeja de soporte.
+*/
+Route::post('/contact-submissions', [ContactSubmissionController::class, 'store'])
+    ->middleware('throttle:5,1')
+    ->name('contact-submissions.store');
 
 /*
 |--------------------------------------------------------------------------
@@ -429,6 +447,22 @@ Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->
         ->name('reject');
     Route::delete('/{user}', [AdminUserController::class, 'destroy'])->name('destroy');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Admin: solicitudes de contacto
+|--------------------------------------------------------------------------
+| Visibilidad mínima de los leads capturados por POST /contact-submissions,
+| para que no vivan sólo en la bandeja de correo de soporte.
+*/
+Route::middleware($authenticated)
+    ->prefix('admin/contact-submissions')
+    ->name('admin.contact-submissions.')
+    ->group(function (): void {
+        Route::get('/', [AdminContactSubmissionController::class, 'index'])
+            ->middleware(RoleMiddleware::using([UserRole::Admin]))
+            ->name('index');
+    });
 
 /*
 |--------------------------------------------------------------------------
