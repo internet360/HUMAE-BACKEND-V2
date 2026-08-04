@@ -1322,25 +1322,51 @@ function authzMatrixRows(): array
     ]);
 
     // -------------------------------------------------------- Reportes (§5.10)
+    //
+    // §6 grants "Ver reportes" to three roles with three scopes. The nine
+    // reports do not all admit one: a payment has no vacancy, so "sus
+    // vacantes" cannot narrow it, and §6 closes the whole candidate axis to
+    // the client company. The surface therefore splits, and five rows are
+    // inverted against the original transcription, which expected the company
+    // to reach every report.
+    //
+    // Process reports — dimensioned by vacancy. Every granted role, scoped.
+    foreach ([
+        'vacancies-by-state',
+        'interviews',
+        'time-to-fill',
+    ] as $report) {
+        $add("GET /admin/reports/{$report}", [
+            'method' => 'GET', 'uri' => "/api/v1/admin/reports/{$report}",
+            'spec' => '§6 Ver reportes — Reclutador ✅ (sus procesos), Empresa ✅ (sus vacantes), Admin ✅',
+            ...authzAccess(['recruiter', 'company_owner', 'company_other', 'admin']),
+        ]);
+    }
+
+    // Platform metrics — HUMAE's own business view: registrations, memberships,
+    // payments, and the directory's most favourited profiles. No vacancy to
+    // scope by, and §6 «Ver directorio de candidatos — Empresa cliente ❌»
+    // covers the last one verbatim.
     foreach ([
         'candidates-registered',
         'active-memberships',
         'payments',
         'expiring-memberships',
-        'vacancies-by-state',
-        'interviews',
-        'recruiter-effectiveness',
-        'time-to-fill',
         'most-searched-profiles',
     ] as $report) {
         $add("GET /admin/reports/{$report}", [
             'method' => 'GET', 'uri' => "/api/v1/admin/reports/{$report}",
-            'spec' => '§6 Ver reportes — Reclutador ✅ (sus procesos), Empresa ✅ (sus vacantes), Admin ✅',
-            ...authzAccess(['recruiter', 'company_owner', 'company_other', 'admin'], [
-                'company_owner' => 'F-11', 'company_other' => 'F-11',
-            ]),
+            'spec' => '§6 Ver reportes + §6 «Ver directorio — Empresa ❌»; sin dimensión de vacante que acotar',
+            ...authzAccess($staff),
         ]);
     }
+
+    // Recruiter performance — vacancy-shaped, but it measures HUMAE's own team.
+    $add('GET /admin/reports/recruiter-effectiveness', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/reports/recruiter-effectiveness',
+        'spec' => '§6 Ver reportes — Reclutador ✅ (su propia fila), Admin ✅; la empresa no audita a su proveedor',
+        ...authzAccess($staff),
+    ]);
 
     // --------------------------------------------------- Admin usuarios (§5.10)
     $add('GET /admin/users', ['method' => 'GET', 'uri' => '/api/v1/admin/users', 'spec' => '§5.10 admin only', ...authzAccess(['admin'])]);

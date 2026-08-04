@@ -284,23 +284,49 @@ candidato `sourced` ni ninguna clave de PII aparecen en el payload.
 
 ### 2.13 Reportes — §5.10 / §6
 
-| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
-|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
-| GET | `/admin/reports/candidates-registered` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 «Ver reportes» | **F-11** |
-| GET | `/admin/reports/active-memberships` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/payments` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/expiring-memberships` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/vacancies-by-state` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/interviews` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/recruiter-effectiveness` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/time-to-fill` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | **F-11** |
-| GET | `/admin/reports/most-searched-profiles` | ❌ | ❌ | 🔒 | ❌ | ✅ | §6 + §5.5 | **F-11** |
-
 **Conflicto interno del documento maestro**: §5.10 titula la sección «Admin (admin only)», mientras §6
 concede «Ver reportes — Reclutador ✅ (sus procesos), Empresa cliente ✅ (sus vacantes)». Se resuelve a favor
-de §6 por indicación del product owner. Excepción documentada: `most-searched-profiles` devuelve nombres de
-candidatos, y §6 cierra el directorio a la empresa (❌), así que ese informe concreto se mantiene en
-recruiter/admin.
+de §6 por indicación del product owner.
+
+Los nueve informes no admiten todos el mismo acotado, así que la superficie se parte en tres familias.
+`ReportScope::forUser()` resuelve a cuál pertenece cada llamante y `ReportsService` recibe el corte.
+
+**Familia 1 — de proceso.** Tienen dimensión de vacante, que es justo a lo que se refieren «sus procesos» y
+«sus vacantes». Las lee todo rol concedido, acotadas.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/vacancies-by-state` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 «Ver reportes» | ✔ |
+| GET | `/admin/reports/interviews` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | ✔ |
+| GET | `/admin/reports/time-to-fill` | ❌ | ❌ | 🔒 | 🔒 | ✅ | §6 ídem | ✔ |
+
+**Familia 2 — desempeño del reclutador.** También tiene forma de vacante, pero mide al equipo de HUMAE. El
+cliente lee su embudo, no la evaluación de su proveedor.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/recruiter-effectiveness` | ❌ | ❌ | 🔒 | ❌ | ✅ | §6 ídem | ✔ |
+
+**Familia 3 — métricas de plataforma.** Registros, membresías, pagos y demanda del directorio: negocio de
+HUMAE. Un pago no tiene vacante, así que «sus vacantes» no puede acotarlo, y §6 cierra a la empresa todo el
+eje del candidato — el directorio de forma explícita.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/reports/candidates-registered` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/active-memberships` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/payments` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/expiring-memberships` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 + §5.10 | ✔ |
+| GET | `/admin/reports/most-searched-profiles` | ❌ | ❌ | ✅ | ❌ | ✅ | §6 «Ver directorio — Empresa ❌» + §5.5 | ✔ |
+
+**Definición de «sus procesos»** (reclutador): las vacantes con `assigned_recruiter_id = él`. Es la lectura
+más estrecha que el documento sostiene sin inventar; si el product owner quiere una más amplia (por ejemplo
+también las asignaciones que él creó en vacantes de otros), el cambio es una consulta en `ReportScope` y
+nada más.
+
+**Pendiente de ratificación**: la partición en familias es una interpretación de §6, no una transcripción.
+Las cinco filas de la familia 3 y la de la familia 2 se cerraron a la empresa por criterio; conviene que el
+product owner las confirme.
 
 ### 2.14 Admin — usuarios y catálogos — §5.10 (admin only)
 
@@ -409,7 +435,7 @@ funcionalidad ausente.
 | ~~**F-08**~~ | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | **Cerrado.** Ambos Requests declaran la misma regla por el mismo mecanismo (`RestrictsFieldsByRole`). `company_feedback` sigue abierto a la empresa: es su propia opinión | §6 «Agregar notas internas — Empresa cliente ❌» |
 | ~~**F-09**~~ | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | **Cerrado.** Las 30 rutas quedan tras `RoleMiddleware:candidate`. Además `ProfileService` se partió en `find()` (no crea) y `findOrCreate()` (crea, y **rechaza** si la cuenta no es de candidato); `ensureOwned()` usa `find()`, así que una lectura denegada ya no escribe. El rastro de datos preexistente queda pendiente de verificar — ver §5.4 | §5.2 y §5.4 «auth, role: candidate» |
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
-| **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
+| ~~**F-11**~~ | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | **Cerrado.** `ReportScope::forUser()` resuelve el corte por rol y `ReportsService` lo aplica en los cuatro informes con dimensión de vacante. La empresa entra a los tres de proceso, acotada a sus vacantes; los cinco de plataforma y el de desempeño se quedan en HUMAE porque no hay «sus vacantes» que acotar. Ver §2.13 | §6 «Ver reportes» |
 | ~~**F-12**~~ | Baja | `POST /auth/register/company` | Todos | **Cerrado retirando la ruta**, junto con `AuthController::registerCompany`, `RegisterCompanyRequest` y `AuthService::registerCompanyUser`. `pending_approval` la hacía segura, no correcta: cualquiera creaba una fila en `companies` y una cuenta `company_user`, y §5 no lista la ruta. El alta soportada es `POST /admin/users`, que emite el token que consume `/auth/invitation/accept`. **Cambio incompatible para el frontend** | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
 | **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
