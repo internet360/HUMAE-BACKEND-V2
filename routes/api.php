@@ -76,9 +76,10 @@ Route::prefix('auth')->name('auth.')->group(function (): void {
         ->middleware('throttle:5,1')
         ->name('register.recruiter');
 
-    Route::post('/register/company', [AuthController::class, 'registerCompany'])
-        ->middleware('throttle:5,1')
-        ->name('register.company');
+    // No hay alta autoservicio de empresa cliente: §6 «Registrarse — Empresa
+    // cliente ❌ (invitación)». Las cuentas de empresa las crea HUMAE desde
+    // POST /admin/users, que emite el token de invitación que consume
+    // /auth/invitation/accept.
 
     Route::post('/register', [AuthController::class, 'register'])
         ->middleware('throttle:10,1')

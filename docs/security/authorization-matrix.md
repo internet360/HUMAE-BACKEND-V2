@@ -42,7 +42,7 @@
 |---|---|:-:|:-:|:-:|:-:|:-:|---|---|
 | POST | `/auth/register` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/register/recruiter` | ✅ | ✅ | ✅ | ✅ | ✅ | **UNSPECIFIED** | ✔ |
-| POST | `/auth/register/company` | ❌ | ❌ | ❌ | ❌ | ❌ | §6 «Registrarse — Empresa cliente ❌ (invitación)» | **F-12** |
+| POST | `/auth/register/company` | ❌ | ❌ | ❌ | ❌ | ❌ | §6 «Registrarse — Empresa cliente ❌ (invitación)» | ✔ (ruta retirada) |
 | POST | `/auth/login` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/forgot-password` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
 | POST | `/auth/reset-password` | ✅ | ✅ | ✅ | ✅ | ✅ | §5.1 público | ✔ |
@@ -410,7 +410,7 @@ funcionalidad ausente.
 | ~~**F-09**~~ | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | **Cerrado.** Las 30 rutas quedan tras `RoleMiddleware:candidate`. Además `ProfileService` se partió en `find()` (no crea) y `findOrCreate()` (crea, y **rechaza** si la cuenta no es de candidato); `ensureOwned()` usa `find()`, así que una lectura denegada ya no escribe. El rastro de datos preexistente queda pendiente de verificar — ver §5.4 | §5.2 y §5.4 «auth, role: candidate» |
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
 | **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
-| **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
+| ~~**F-12**~~ | Baja | `POST /auth/register/company` | Todos | **Cerrado retirando la ruta**, junto con `AuthController::registerCompany`, `RegisterCompanyRequest` y `AuthService::registerCompanyUser`. `pending_approval` la hacía segura, no correcta: cualquiera creaba una fila en `companies` y una cuenta `company_user`, y §5 no lista la ruta. El alta soportada es `POST /admin/users`, que emite el token que consume `/auth/invitation/accept`. **Cambio incompatible para el frontend** | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | ~~**F-13**~~ | Media | `POST /me/company/members` | `company_user` owner | **Cerrado.** El endpoint ya no asigna roles y sólo enlaza cuentas que **ya** son `company_user` y no pertenecen a otra empresa; cualquier otra responde `403` remitiendo a HUMAE. Un flujo de invitación con aceptación explícita sería mejor y no se construyó aquí: sería una funcionalidad nueva, no un cierre de hallazgo | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
 | **F-14** | Media | Toda la API | Todos | `EnsureVerifiedEmail` y `EnsureActiveMembership` están registrados como alias en `bootstrap/app.php` y **no se aplican a ninguna ruta**. Mismo tipo de defecto que la `InterviewPolicy` muerta: parecen protección en revisión y no ejecutan nada. Consecuencia de negocio: un candidato sin membresía activa (499 MXN / 6 meses) usa el perfil y los psicométricos completos | §1 (premisa de negocio); §5 no lo especifica |
 | ~~**F-15**~~ | Baja | `GET /companies/{id}` | `company_user` miembro | **Cerrado.** `CompanyPolicy::view()` es sólo recruiter. El cliente se lee a sí mismo en `/me/company` | §5.6 «GET /companies/{id} — admin / recruiter» |
@@ -600,7 +600,7 @@ retiradas. Las celdas «—» quedan deliberadamente fuera: §6 las marca como n
 |---|---|
 | Rutas totales (`route:list`) | 154 |
 | Rutas `/api/v1/*` | 145 |
-| Rutas `/api/v1/*` sondeadas | 145 (100 %, verificado por test) |
+| Rutas `/api/v1/*` sondeadas | 144 (100 %, verificado por test) |
 | Rutas de infraestructura documentadas, no sondeadas | 9 |
 | Filas de la tabla de expectativas | 154 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`) |
 | Peticiones HTTP por corrida | 1 078 (154 filas × 7 actores) |

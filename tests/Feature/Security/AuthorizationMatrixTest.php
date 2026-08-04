@@ -788,6 +788,8 @@ function authzMatrixRows(): array
         ...authzAccess($everyone),
     ]);
 
+    // The route is gone, so every actor gets a 404. The row stays so the matrix
+    // keeps stating the rule: §6 «Registrarse — Empresa cliente ❌ (invitación)».
     $add('POST /auth/register/company', [
         'method' => 'POST', 'uri' => '/api/v1/auth/register/company', 'spec' => '§6 Registrarse — Empresa ❌ (invitación)',
         'payload' => [
@@ -796,7 +798,7 @@ function authzMatrixRows(): array
             'accept_terms' => true,
             'company' => ['legal_name' => 'Empresa Nueva S.A. de C.V.'],
         ],
-        ...authzAccess([], array_fill_keys($everyone, 'F-12')),
+        ...authzAccess([]),
     ]);
 
     $add('POST /auth/login', [
