@@ -140,57 +140,63 @@ const AUTHZ_GUARDED_TABLES = [
 ];
 
 /**
- * Every public policy ability, mapped to the controller that invokes it.
+ * Every public policy ability, mapped to the file that names it, relative to
+ * `app/`.
  *
  * `null` means nobody invokes it: a registered ability that enforces nothing.
  * That is what InterviewPolicy was before the third remediation pass, so the
  * inventory is pinned here instead of being rediscovered by incident.
+ *
+ * The four vacancy transition abilities are named in `VacancyStateMachine`
+ * rather than in a controller: both transition endpoints derive the ability
+ * from the target state through `abilityFor()`, so the mapping lives in one
+ * place and neither endpoint can grow its own whitelist. The test below pins
+ * that indirection so it cannot be quietly undone.
  */
 const AUTHZ_POLICY_INVENTORY = [
     'CandidateProfilePolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/DirectoryController.php',
-        'view' => 'Api/V1/Recruiter/DirectoryController.php',
-        'downloadCv' => 'Api/V1/Recruiter/DirectoryController.php',
-        'downloadDocument' => 'Api/V1/Recruiter/DirectoryController.php',
-        'favorite' => 'Api/V1/Recruiter/DirectoryController.php',
-        'update' => null,
-        'delete' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'downloadCv' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
     ],
     'CompanyPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/CompanyController.php',
-        'view' => 'Api/V1/Recruiter/CompanyController.php',
-        'create' => 'Api/V1/Recruiter/CompanyController.php',
-        'update' => 'Api/V1/Recruiter/CompanyController.php',
-        'delete' => 'Api/V1/Recruiter/CompanyController.php',
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
     ],
     'InterviewPolicy' => [
-        'view' => 'Api/V1/Interviews/InterviewController.php',
-        'selectSlot' => 'Api/V1/Interviews/InterviewController.php',
-        'reschedule' => 'Api/V1/Interviews/InterviewController.php',
-        'confirm' => null,
-        'cancel' => null,
+        'view' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'selectSlot' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'reschedule' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'confirm' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'cancel' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
     ],
     'VacancyAssignmentPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/AssignmentController.php',
-        'create' => 'Api/V1/Recruiter/AssignmentController.php',
-        'update' => 'Api/V1/Recruiter/AssignmentController.php',
-        'delete' => 'Api/V1/Recruiter/AssignmentController.php',
-        'selectFinalist' => 'Api/V1/Recruiter/AssignmentController.php',
-        'scheduleInterview' => 'Api/V1/Interviews/InterviewController.php',
-        'viewNotes' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'createNote' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'viewInternalNotes' => 'Api/V1/Recruiter/AssignmentNoteController.php',
-        'view' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'selectFinalist' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'scheduleInterview' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'viewNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
+        'createNote' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
+        'viewInternalNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
     ],
     'VacancyPolicy' => [
-        'viewAny' => 'Api/V1/Recruiter/VacancyController.php',
-        'view' => 'Api/V1/Recruiter/VacancyController.php',
-        'viewSuggestedCandidates' => 'Api/V1/Recruiter/VacancyController.php',
-        'create' => 'Api/V1/Recruiter/VacancyController.php',
-        'update' => 'Api/V1/Recruiter/VacancyController.php',
-        'delete' => 'Api/V1/Recruiter/VacancyController.php',
-        'publish' => null,
-        'close' => null,
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'view' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'viewSuggestedCandidates' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'create' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'update' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'delete' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'publish' => 'Services/VacancyStateMachine.php',
+        'close' => 'Services/VacancyStateMachine.php',
+        'cancel' => 'Services/VacancyStateMachine.php',
+        'advance' => 'Services/VacancyStateMachine.php',
     ],
 ];
 
@@ -1079,12 +1085,12 @@ function authzMatrixRows(): array
     $add('PATCH /vacancies/{vacancy}', [
         'method' => 'PATCH', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 PATCH /jobs/{id} — recruiter/admin',
         'payload' => ['title' => 'Título reescrito', 'internal_notes' => 'reescrito', 'fee_amount' => 1],
-        ...authzAccess($staff, ['company_owner' => 'F-04']),
+        ...authzAccess($staff),
     ]);
     $add('PATCH /vacancies/{vacancy} (reasignar company_id)', [
         'method' => 'PATCH', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => '§5.6 + aislamiento entre inquilinos',
         'payload' => ['company_id' => '{company_b}'],
-        ...authzAccess($staff, ['company_owner' => 'F-04']),
+        ...authzAccess($staff),
     ]);
     $add('DELETE /vacancies/{vacancy}', [
         'method' => 'DELETE', 'uri' => '/api/v1/vacancies/{vacancy}', 'spec' => 'UNSPECIFIED — inferido: admin (destructivo)',
@@ -1093,7 +1099,7 @@ function authzMatrixRows(): array
     $add('POST /vacancies/{vacancy}/transition (→ cubierta)', [
         'method' => 'POST', 'uri' => '/api/v1/vacancies/{vacancy}/transition', 'spec' => '§5.6 recruiter/admin',
         'payload' => ['to' => VacancyState::Cubierta->value],
-        ...authzAccess($staff, ['company_owner' => 'F-03']),
+        ...authzAccess($staff),
     ]);
     $add('GET /vacancies/{vacancy}/suggested-candidates', [
         'method' => 'GET', 'uri' => '/api/v1/vacancies/{vacancy}/suggested-candidates', 'spec' => 'UNSPECIFIED — inferido: §6 directorio ❌ para Empresa',
@@ -1292,12 +1298,17 @@ function authzMatrixRows(): array
     $add('POST /me/company/vacancies/{vacancy}/transition (→ activa)', [
         'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy_draft}/transition', 'spec' => '§6 Aprobar / activar vacante — Empresa ❌',
         'payload' => ['to' => VacancyState::Activa->value],
-        ...authzAccess($staff, ['company_owner' => 'F-10']),
+        ...authzAccess($staff),
     ]);
+    // Row inverted for the recruiter: it used to expect a refusal because the
+    // controller's whitelist blocked `cubierta` for everybody, which
+    // contradicts §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)».
+    // The ability decides now, so both transition endpoints agree and HUMAE may
+    // confirm the close from either one.
     $add('POST /me/company/vacancies/{vacancy}/transition (→ cubierta)', [
-        'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/transition', 'spec' => '§6 Marcar vacante como cubierta — Empresa ✅ (propone)',
+        'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/transition', 'spec' => '§6 Marcar vacante como cubierta — Empresa ✅ (propone), Reclutador ✅ (confirma)',
         'payload' => ['to' => VacancyState::Cubierta->value],
-        ...authzAccess(['company_owner'], ['company_owner' => 'F-10']),
+        ...authzAccess(['company_owner', 'recruiter', 'admin']),
     ]);
     $add('GET /me/company/vacancies/{vacancy}/assignments', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/assignments', 'spec' => '§6 Ver candidatos asignados — Empresa ✅ (propia vacante)',
@@ -1491,15 +1502,15 @@ it('accounts for every policy ability', function (): void {
 
 it('keeps every ability the inventory calls invoked actually invoked', function (): void {
     foreach (AUTHZ_POLICY_INVENTORY as $policy => $abilities) {
-        foreach ($abilities as $ability => $controller) {
-            if ($controller === null) {
+        foreach ($abilities as $ability => $callSite) {
+            if ($callSite === null) {
                 continue;
             }
 
-            $source = (string) file_get_contents(app_path('Http/Controllers/'.$controller));
+            $source = (string) file_get_contents(app_path($callSite));
 
             // If this fails, `{$policy}::{$ability}` just became an orphan:
-            // the documented call site no longer authorizes on it.
+            // the documented call site no longer names it.
             expect($source)->toContain("'{$ability}'");
         }
     }
@@ -1509,25 +1520,36 @@ it('reports the abilities no controller invokes', function (): void {
     $orphans = [];
 
     foreach (AUTHZ_POLICY_INVENTORY as $policy => $abilities) {
-        foreach ($abilities as $ability => $controller) {
-            if ($controller === null) {
+        foreach ($abilities as $ability => $callSite) {
+            if ($callSite === null) {
                 $orphans[] = "{$policy}::{$ability}";
             }
         }
     }
 
-    // The transition endpoints authorize on `update`, not on the purpose-built
-    // `publish` / `close` abilities. That is the root cause of F-03: a client
-    // company that may edit its own vacancy inherits the right to close it.
-    expect($orphans)->toBe([
-        'CandidateProfilePolicy::update',
-        'CandidateProfilePolicy::delete',
-        'InterviewPolicy::confirm',
-        'InterviewPolicy::cancel',
-        'VacancyAssignmentPolicy::view',
-        'VacancyPolicy::publish',
-        'VacancyPolicy::close',
-    ]);
+    // A written-but-unwired ability is a hole waiting to open: it reads like
+    // protection in review and enforces nothing at runtime. The seven that
+    // existed at audit time are gone — `publish`, `close`, `confirm` and
+    // `cancel` are wired, and `CandidateProfilePolicy::update/delete` plus
+    // `VacancyAssignmentPolicy::view` were deleted because the ownership they
+    // expressed is structural: those controllers resolve the record from the
+    // authenticated user, never from a caller-supplied id.
+    expect($orphans)->toBe([]);
+});
+
+it('derives both vacancy transition abilities from the state machine', function (): void {
+    // The purpose-named abilities are only worth anything if neither endpoint
+    // re-invents the mapping. `abilityFor()` is the single source; a controller
+    // that stops calling it has grown its own whitelist again — which is
+    // exactly how F-10 shipped inverted against §6.
+    foreach ([
+        'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
+        'Http/Controllers/Api/V1/Company/CompanyVacancyController.php',
+    ] as $controller) {
+        $source = (string) file_get_contents(app_path($controller));
+
+        expect($source)->toContain('VacancyStateMachine::abilityFor');
+    }
 });
 
 it('applies every registered authorization middleware to at least one route', function (): void {

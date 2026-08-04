@@ -237,14 +237,20 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('/companies/{company}/members/{userId}', [CompanyMemberController::class, 'destroy'])
         ->name('companies.members.destroy');
 
-    // Vacancies
+    // Vacancies. Lectura y alta las comparte la empresa cliente (§5.6, «GET,
+    // POST /jobs — recruiter / admin / company_user (propias)»); la edición
+    // administrativa y las transiciones son de HUMAE («PATCH /jobs/{id} —
+    // recruiter / admin», «POST /jobs/{id}/transition — recruiter / admin»).
+    // La empresa opera las suyas desde /me/company/vacancies/*.
     Route::get('/vacancies', [VacancyController::class, 'index'])->name('vacancies.index');
     Route::post('/vacancies', [VacancyController::class, 'store'])->name('vacancies.store');
     Route::get('/vacancies/{vacancy}', [VacancyController::class, 'show'])->name('vacancies.show');
-    Route::patch('/vacancies/{vacancy}', [VacancyController::class, 'update'])->name('vacancies.update');
-    Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
-    Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
-        ->name('vacancies.transition');
+    Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::patch('/vacancies/{vacancy}', [VacancyController::class, 'update'])->name('vacancies.update');
+        Route::delete('/vacancies/{vacancy}', [VacancyController::class, 'destroy'])->name('vacancies.destroy');
+        Route::post('/vacancies/{vacancy}/transition', [VacancyController::class, 'transition'])
+            ->name('vacancies.transition');
+    });
     // El motor de matching entrega perfiles de candidatos que HUMAE todavía no
     // presentó: es el directorio con pasos extra. Sólo HUMAE
     // (ARCHITECTURE.md §6 «Ver directorio de candidatos — Empresa cliente: ❌»).

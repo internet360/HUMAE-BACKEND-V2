@@ -196,9 +196,9 @@ reclutador archive empresas, hay que cambiar la Policy, no la ruta.
 | GET | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 recruiter/admin/company (propias) | ✔ |
 | POST | `/vacancies` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Crear vacante — Empresa ✅ (propia)» | **F-02** |
 | GET | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
-| PATCH | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «PATCH /jobs/{id} — recruiter / admin» | **F-04** |
+| PATCH | `/vacancies/{vacancy}` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «PATCH /jobs/{id} — recruiter / admin» | ✔ |
 | DELETE | `/vacancies/{vacancy}` | ❌ | ❌ | ❌ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
-| POST | `/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «POST /jobs/{id}/transition — recruiter / admin» | **F-03** |
+| POST | `/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | ❌ | ✅ | §5.6 «POST /jobs/{id}/transition — recruiter / admin» | ✔ |
 | GET | `/vacancies/{vacancy}/suggested-candidates` | ❌ | ❌ | ✅ | ❌ | ✅ | **UNSPECIFIED** | ✔ |
 
 **Inferencias**
@@ -269,7 +269,7 @@ candidato. Verificado por sonda con centinela.
 | POST | `/me/company/vacancies` | ❌ | ❌ | ❌ | 🔒 | ✅ | §5.6 «POST /me/company/jobs — queda borrador» | **F-05** |
 | GET | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | ✔ |
 | PATCH | `/me/company/vacancies/{vacancy}` | ❌ | ❌ | ✅ | 🔒 | ✅ | §5.6 | **F-05** |
-| POST | `/me/company/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Aprobar/activar ❌», «Marcar cubierta ✅ (propone)» | **F-10** |
+| POST | `/me/company/vacancies/{vacancy}/transition` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Aprobar/activar ❌», «Marcar cubierta ✅ (propone)» | ✔ |
 | GET | `/me/company/vacancies/{vacancy}/assignments` | ❌ | ❌ | ✅ | 🔒 | ✅ | §6 «Ver candidatos asignados — Empresa ✅ (propia vacante)» | ✔ |
 
 **Inferencia (`/me/company/members/*`)**: §5.6 lista `/companies/{id}/members` como admin/recruiter pero no
@@ -401,14 +401,14 @@ funcionalidad ausente.
 |---|---|---|---|---|---|
 | **F-01** | Crítica | `GET /companies` | `company_user` (cualquiera) | Devuelve `200` con el padrón completo de empresas cliente de HUMAE: `rfc`, `contact.email`, `contact.phone`, `address_line`, `account_manager_id`. Cualquier cliente enumera a los demás | §5.6 «GET /companies — admin / recruiter» |
 | **F-02** | Crítica | `POST /vacancies` | `company_user` ajeno | `VacancyPolicy::create()` sólo comprueba el rol y `VacancyRequest` valida `company_id` con `exists:companies,id`. Un cliente crea vacantes dentro de la empresa de otro cliente | §6 «Crear vacante — Empresa cliente ✅ (**propia**)» |
-| **F-03** | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | El endpoint del reclutador autoriza con `update`, que la Policy concede al dueño de la vacante, y no aplica ninguna lista blanca de estados. La empresa lleva su vacante a `cubierta`, saltándose la restricción `[activa, cancelada]` de su propio endpoint | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
-| **F-04** | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | Escribe `internal_notes`, `fee_amount`, `fee_percentage`, `sla_days`, `assigned_recruiter_id` y **reasigna `company_id`** a otra empresa | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
+| ~~**F-03**~~ | Alta | `POST /vacancies/{id}/transition` | `company_user` owner/manager | **Cerrado.** El endpoint de staff queda tras `RoleMiddleware:recruiter|admin` (§5.6) y autoriza con la habilidad que nombra el estado destino (`VacancyStateMachine::abilityFor()`), no con `update` | §5.6 «POST /jobs/{id}/transition — recruiter / admin»; §6 «Marcar vacante como cubierta — Reclutador ✅ (confirma)» |
+| ~~**F-04**~~ | Alta | `PATCH /vacancies/{id}` | `company_user` owner/manager | **Cerrado.** `PATCH`, `DELETE` y `/transition` de `/vacancies/{id}` quedan tras `RoleMiddleware:recruiter|admin`: son la superficie de staff que §5.6 describe. La empresa opera las suyas en `/me/company/vacancies/*` | §5.6 «PATCH /jobs/{id} — recruiter / admin»; §6 «Agregar notas internas — Empresa ❌» |
 | **F-05** | Alta | `POST` y `PATCH /me/company/vacancies[/{id}]` | `company_user` owner/manager | El endpoint propio pasa `$request->validated()` completo al modelo. La empresa escribe `internal_notes`, `fee_amount`, `sla_days` y reasigna `company_id`. `store()` sólo descarta `assigned_recruiter_id` | §6 «Agregar notas internas — Empresa cliente ❌» |
 | **F-06** | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | Escribe sobre su propio registro campos que el endpoint `/me/company` excluye a propósito: `status`, `internal_notes`, `account_manager_id`, `rfc`, `slug` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
 | **F-07** | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | `CompanyMemberController` autoriza con `CompanyPolicy::view/update`. `AttachMemberRequest` acepta cualquier `user_id` existente, así que el cliente adjunta a su empresa una cuenta arbitraria de la plataforma | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
 | **F-08** | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | `UpdateInterviewRequest` no replica las prohibiciones de `ScheduleInterviewRequest`: la empresa escribe `recruiter_feedback`, `recommendation`, `rating`, `meeting_url` y `location`, campos que el endpoint de creación le prohíbe explícitamente | §6 «Agregar notas internas — Empresa cliente ❌» |
 | **F-09** | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | Ninguna comprueba el rol. Peor: `ProfileService::findOrCreate()` **crea un `candidate_profiles`** para el llamante. Un reclutador que abre `GET /me/profile` se da de alta como candidato y entra al directorio; el efecto se dispara incluso en las rutas que responden `404`, porque `ensureOwned()` resuelve el perfil antes de comparar | §5.2 y §5.4 «auth, role: candidate» |
-| **F-10** | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | La lista blanca está **invertida** respecto de §6: permite `activa` (§6: Empresa ❌) y bloquea `cubierta` (§6: Empresa ✅ propone) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
+| ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
 | **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
 | **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
 | **F-13** | Media | `POST /me/company/members` | `company_user` owner | El owner adjunta a su equipo cualquier cuenta existente indicando su correo, y el controlador le **asigna el rol Spatie `company_user`** si no lo tenía. Sin consentimiento del titular | **UNSPECIFIED** — inferencia: no se puede enrolar una cuenta ajena sin su consentimiento |
@@ -416,12 +416,24 @@ funcionalidad ausente.
 | **F-15** | Baja | `GET /companies/{id}` | `company_user` miembro | Lee el registro completo de su propia empresa por el endpoint de staff, incluido `internal_notes` | §5.6 «GET /companies/{id} — admin / recruiter» |
 | **F-16** | Baja | `POST /me/membership/checkout` | `recruiter`, `company_user`, `admin` | Sin filtro de rol: cualquier autenticado inicia una sesión de pago de membresía de candidato | §6 «Pagar membresía — Reclutador —, Empresa —, Admin —» |
 
-### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas
+### 5.1 Causa raíz de F-03: dos habilidades escritas y nunca conectadas — resuelta
 
-`VacancyPolicy` define `publish()` y `close()` con reglas propias (`publish` exige que el reclutador sea el
-`assigned_recruiter_id`). **Ningún controlador las invoca.** Los dos endpoints de transición autorizan con
-`update`, que la Policy concede al `owner`/`manager` de la empresa dueña. «Puedo editar mi vacante» y «puedo
-cerrar mi vacante» quedaron colapsadas en la misma habilidad.
+`VacancyPolicy` definía `publish()` y `close()` con reglas propias y **ningún controlador las invocaba**. Los
+dos endpoints de transición autorizaban con `update`, que la Policy concede al `owner`/`manager` de la
+empresa dueña: «puedo editar mi vacante» y «puedo cerrar mi vacante» colapsadas en la misma habilidad.
+
+Ahora la habilidad la nombra el estado destino, en un solo sitio
+(`VacancyStateMachine::abilityFor()`), y ambos endpoints la derivan de ahí:
+
+| Estado destino | Habilidad | Quién, según §6 |
+|---|---|---|
+| `activa` | `publish` | Reclutador / admin — «Aprobar / activar vacante: Empresa ❌» |
+| `cubierta` | `close` | Reclutador (confirma) + owner/manager de la empresa (propone) |
+| `cancelada` | `cancel` | Ídem `close` — §6 no tiene fila; se conserva el comportamiento previo |
+| resto (`en_busqueda`, `con_candidatos_asignados`, `entrevistas_en_curso`, `finalista_seleccionado`) | `advance` | Reclutador / admin — es el avance interno de HUMAE (§5.7) |
+
+`publish` dejó de exigir que el reclutador sea el `assigned_recruiter_id`: §6 no pone esa condición y el
+mismo reclutador podía editar la fila de todos modos. Se documenta como relajación deliberada.
 
 ### 5.2 Inventario de habilidades de Policy
 
@@ -430,16 +442,25 @@ habilidad sin clasificarla.
 
 | Policy | Invocadas | Huérfanas |
 |---|---|---|
-| `CandidateProfilePolicy` | `viewAny`, `view`, `downloadCv`, `downloadDocument`, `favorite` | `update`, `delete` |
+| `CandidateProfilePolicy` | `viewAny`, `view`, `downloadCv`, `downloadDocument`, `favorite` | — |
 | `CompanyPolicy` | `viewAny`, `view`, `create`, `update`, `delete` | — |
-| `InterviewPolicy` | `view`, `selectSlot`, `reschedule` | `confirm`, `cancel` |
-| `VacancyAssignmentPolicy` | `viewAny`, `create`, `update`, `delete`, `selectFinalist`, `scheduleInterview`, `viewNotes`, `createNote`, `viewInternalNotes` | `view` |
-| `VacancyPolicy` | `viewAny`, `view`, `viewSuggestedCandidates`, `create`, `update`, `delete` | `publish`, `close` |
+| `InterviewPolicy` | `view`, `selectSlot`, `reschedule`, `confirm`, `cancel` | — |
+| `VacancyAssignmentPolicy` | `viewAny`, `create`, `update`, `delete`, `selectFinalist`, `scheduleInterview`, `viewNotes`, `createNote`, `viewInternalNotes` | — |
+| `VacancyPolicy` | `viewAny`, `view`, `viewSuggestedCandidates`, `create`, `update`, `publish`, `close`, `cancel`, `advance`, `delete` | — |
 
-**Ninguna clase de Policy está muerta hoy** — `InterviewPolicy` ya se invoca desde el tercer parche. Quedan
-**7 habilidades huérfanas** de 36. `VacancyPolicy::publish/close` son las peligrosas (§5.1). Las de
-`CandidateProfilePolicy` y `VacancyAssignmentPolicy::view` son inertes: los controladores resuelven ese
-alcance por pertenencia directa.
+**Cero habilidades huérfanas.** Las 7 que había se resolvieron una por una:
+
+| Habilidad | Resolución |
+|---|---|
+| `VacancyPolicy::publish` | **Conectada** — transición a `activa` en ambos endpoints |
+| `VacancyPolicy::close` | **Conectada** — transición a `cubierta` en ambos endpoints |
+| `InterviewPolicy::confirm` | **Conectada** — `POST /interviews/{id}/confirm` |
+| `InterviewPolicy::cancel` | **Conectada** — `POST /interviews/{id}/cancel`. Al conectarla salió a la luz que le faltaba la rama del candidato: el controlador autorizaba con `view`, que sí la tiene, así que la habilidad escrita era más estricta que el comportamiento real. Se añadió la rama |
+| `CandidateProfilePolicy::update` | **Borrada** — el controlador resuelve el perfil desde el usuario autenticado; la pertenencia es estructural, no una decisión de política |
+| `CandidateProfilePolicy::delete` | **Borrada** — no existe endpoint que borre un expediente |
+| `VacancyAssignmentPolicy::view` | **Borrada** — no existe endpoint que lea una asignación suelta |
+
+Se añadieron dos habilidades nuevas para completar el vocabulario de transiciones: `cancel` y `advance`.
 
 Las Policies se descubren por convención de Laravel 12 (`App\Models\X` → `App\Policies\XPolicy`);
 `AppServiceProvider` no registra ninguna explícitamente. El descubrimiento funciona, pero cualquier Policy

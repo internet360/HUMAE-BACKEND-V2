@@ -75,14 +75,4 @@ class CandidateProfilePolicy
     {
         return $user->hasRole(UserRole::Recruiter->value);
     }
-
-    public function update(User $user, CandidateProfile $profile): bool
-    {
-        return $profile->user_id === $user->id;
-    }
-
-    public function delete(User $user, CandidateProfile $profile): bool
-    {
-        return $profile->user_id === $user->id;
-    }
 }

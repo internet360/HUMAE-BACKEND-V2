@@ -62,6 +62,11 @@ class InterviewPolicy
         return Response::deny('No tienes acceso a esta entrevista.');
     }
 
+    /**
+     * Accept the proposed slot. §6 — "Confirmar entrevista: Candidato ✅ (la
+     * propia), Reclutador ✅, Empresa ✅ (propia vacante)". Same set as `view`,
+     * but named for the act so the two can diverge without a rewrite.
+     */
     public function confirm(User $user, Interview $interview): Response
     {
         return $this->view($user, $interview);
@@ -116,6 +121,15 @@ class InterviewPolicy
         return Response::deny('No puedes reprogramar esta entrevista.');
     }
 
+    /**
+     * Call the interview off.
+     *
+     * §5.8 lists the route without a role, so the inference is "the parties to
+     * the interview, plus HUMAE" — which includes the candidate. The ability
+     * was written without the candidate branch and never invoked, so nobody
+     * noticed: the controller was authorizing cancellations on `view`, which
+     * does allow the candidate. Wiring the ability exposed the gap.
+     */
     public function cancel(User $user, Interview $interview): Response
     {
         $assignment = $interview->assignment;
@@ -125,6 +139,11 @@ class InterviewPolicy
         }
 
         if ($user->hasRole(UserRole::Recruiter->value)) {
+            return Response::allow();
+        }
+
+        if ($user->hasRole(UserRole::Candidate->value)
+            && $assignment->candidateProfile?->user_id === $user->id) {
             return Response::allow();
         }
 

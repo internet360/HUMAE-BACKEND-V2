@@ -141,10 +141,17 @@ class CompanyVacancyController extends Controller
         );
     }
 
+    /**
+     * Move one of the company's own vacancies through its state machine.
+     *
+     * The hand-rolled whitelist this replaced was inverted against §6 (F-10):
+     * it let the company activate its own vacancy — "Aprobar / activar vacante:
+     * Empresa ❌" — and blocked it from proposing `cubierta` — "Marcar vacante
+     * como cubierta: Empresa ✅ (propone)". Deriving the ability from the target
+     * state puts the rule in the policy, where §6 can be read off it.
+     */
     public function transition(Request $request, Vacancy $vacancy): JsonResponse
     {
-        $this->authorize('update', $vacancy);
-
         $states = array_map(fn (VacancyState $s) => $s->value, VacancyState::cases());
 
         $validated = $request->validate([
@@ -155,14 +162,7 @@ class CompanyVacancyController extends Controller
         $from = $vacancy->state ?? VacancyState::Borrador;
         $to = VacancyState::from($validated['to']);
 
-        // Company_user sólo puede disparar: publicar (borrador→activa) y cancelar.
-        $allowedForCompany = [VacancyState::Activa, VacancyState::Cancelada];
-        if (! in_array($to, $allowedForCompany, true)) {
-            return $this->error(
-                'Sólo puedes publicar o cancelar vacantes desde tu empresa.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
+        $this->authorize(VacancyStateMachine::abilityFor($to), $vacancy);
 
         if (! VacancyStateMachine::canTransition($from, $to)) {
             return $this->error(
@@ -178,6 +178,9 @@ class CompanyVacancyController extends Controller
 
         if ($to === VacancyState::Activa && $vacancy->published_at === null) {
             $payload['published_at'] = now();
+        }
+        if ($to === VacancyState::Cubierta) {
+            $payload['filled_at'] = now();
         }
         if ($to === VacancyState::Cancelada) {
             $payload['cancelled_at'] = now();
