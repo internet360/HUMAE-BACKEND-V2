@@ -736,17 +736,14 @@ function authzAccess(array $allow, array $findings = []): array
 }
 
 /**
- * §5.2 and §5.4 scope the candidate self-service surface to the candidate role.
- * Nothing in the code does, so F-09 covers every route in that surface.
+ * §5.2 and §5.4 scope the candidate self-service surface to the candidate role,
+ * and `role:candidate` now sits in front of all 30 routes.
  *
  * @return array{expect: array<string, string>, findings: array<string, string>}
  */
 function authzCandidateSelfService(bool $ownerOnly = false): array
 {
-    return authzAccess(
-        $ownerOnly ? ['candidate_owner'] : ['candidate_owner', 'candidate_other'],
-        ['recruiter' => 'F-09', 'company_owner' => 'F-09', 'company_other' => 'F-09', 'admin' => 'F-09'],
-    );
+    return authzAccess($ownerOnly ? ['candidate_owner'] : ['candidate_owner', 'candidate_other']);
 }
 
 function authzFutureDate(int $days): string

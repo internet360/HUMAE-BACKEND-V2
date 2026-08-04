@@ -138,77 +138,90 @@ Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function ():
 
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
 
-    // Perfil
-    Route::get('/profile', [CandidateProfileController::class, 'show'])->name('profile.show');
-    Route::patch('/profile', [CandidateProfileController::class, 'update'])->name('profile.update');
-    Route::post('/profile/avatar', [AvatarController::class, 'store'])
-        ->middleware('throttle:10,1')
-        ->name('profile.avatar');
+    /*
+    |----------------------------------------------------------------------
+    | Autoservicio del candidato — §5.2 y §5.4
+    |----------------------------------------------------------------------
+    | Ambas secciones se encabezan «auth, role: candidate» y ninguna de las
+    | 30 rutas lo comprobaba (F-09). No era sólo superficie de más: abrir
+    | GET /me/profile daba de alta un candidate_profiles para quien llamara,
+    | así que un reclutador se inscribía en la base de talento con sólo
+    | mirar. El aislamiento entre candidatos ya funcionaba; lo que faltaba
+    | era el filtro de rol.
+    */
+    Route::middleware(RoleMiddleware::using([UserRole::Candidate]))->group(function (): void {
+        // Perfil
+        Route::get('/profile', [CandidateProfileController::class, 'show'])->name('profile.show');
+        Route::patch('/profile', [CandidateProfileController::class, 'update'])->name('profile.update');
+        Route::post('/profile/avatar', [AvatarController::class, 'store'])
+            ->middleware('throttle:10,1')
+            ->name('profile.avatar');
 
-    // CV PDF
-    Route::get('/profile/cv.pdf', [CvController::class, 'download'])
-        ->middleware('throttle:30,1')
-        ->name('profile.cv');
+        // CV PDF
+        Route::get('/profile/cv.pdf', [CvController::class, 'download'])
+            ->middleware('throttle:30,1')
+            ->name('profile.cv');
 
-    // Experiencia laboral
-    Route::apiResource('profile/experiences', ExperienceController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.experiences');
+        // Experiencia laboral
+        Route::apiResource('profile/experiences', ExperienceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.experiences');
 
-    // Educación formal
-    Route::apiResource('profile/educations', EducationController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.educations');
+        // Educación formal
+        Route::apiResource('profile/educations', EducationController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.educations');
 
-    // Cursos
-    Route::apiResource('profile/courses', CourseController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.courses');
+        // Cursos
+        Route::apiResource('profile/courses', CourseController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.courses');
 
-    // Certificaciones
-    Route::apiResource('profile/certifications', CertificationController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.certifications');
+        // Certificaciones
+        Route::apiResource('profile/certifications', CertificationController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.certifications');
 
-    // Referencias
-    Route::apiResource('profile/references', ReferenceController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->names('profile.references');
+        // Referencias
+        Route::apiResource('profile/references', ReferenceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('profile.references');
 
-    // Skills (pivot)
-    Route::get('/profile/skills', [SkillController::class, 'index'])->name('profile.skills.index');
-    Route::post('/profile/skills', [SkillController::class, 'store'])->name('profile.skills.store');
-    Route::delete('/profile/skills/{skill}', [SkillController::class, 'destroy'])->name('profile.skills.destroy');
+        // Skills (pivot)
+        Route::get('/profile/skills', [SkillController::class, 'index'])->name('profile.skills.index');
+        Route::post('/profile/skills', [SkillController::class, 'store'])->name('profile.skills.store');
+        Route::delete('/profile/skills/{skill}', [SkillController::class, 'destroy'])->name('profile.skills.destroy');
 
-    // Languages (pivot)
-    Route::get('/profile/languages', [LanguageController::class, 'index'])->name('profile.languages.index');
-    Route::post('/profile/languages', [LanguageController::class, 'store'])->name('profile.languages.store');
-    Route::delete('/profile/languages/{language}', [LanguageController::class, 'destroy'])->name('profile.languages.destroy');
+        // Languages (pivot)
+        Route::get('/profile/languages', [LanguageController::class, 'index'])->name('profile.languages.index');
+        Route::post('/profile/languages', [LanguageController::class, 'store'])->name('profile.languages.store');
+        Route::delete('/profile/languages/{language}', [LanguageController::class, 'destroy'])->name('profile.languages.destroy');
 
-    // Documents
-    Route::get('/profile/documents', [DocumentController::class, 'index'])->name('profile.documents.index');
-    Route::post('/profile/documents', [DocumentController::class, 'store'])
-        ->middleware('throttle:20,1')
-        ->name('profile.documents.store');
-    Route::get('/profile/documents/{document}/download', [DocumentController::class, 'download'])
-        ->middleware('throttle:60,1')
-        ->name('profile.documents.download');
-    Route::delete('/profile/documents/{document}', [DocumentController::class, 'destroy'])->name('profile.documents.destroy');
+        // Documents
+        Route::get('/profile/documents', [DocumentController::class, 'index'])->name('profile.documents.index');
+        Route::post('/profile/documents', [DocumentController::class, 'store'])
+            ->middleware('throttle:20,1')
+            ->name('profile.documents.store');
+        Route::get('/profile/documents/{document}/download', [DocumentController::class, 'download'])
+            ->middleware('throttle:60,1')
+            ->name('profile.documents.download');
+        Route::delete('/profile/documents/{document}', [DocumentController::class, 'destroy'])->name('profile.documents.destroy');
 
-    // Psicométricos
-    Route::get('/psychometrics/tests', [PsychometricController::class, 'listTests'])
-        ->name('psychometrics.tests');
-    Route::post('/psychometrics/attempts', [PsychometricController::class, 'startAttempt'])
-        ->middleware('throttle:30,1')
-        ->name('psychometrics.attempts.start');
-    Route::get('/psychometrics/attempts/{attempt}', [PsychometricController::class, 'showAttempt'])
-        ->name('psychometrics.attempts.show');
-    Route::patch('/psychometrics/attempts/{attempt}/answers', [PsychometricController::class, 'saveAnswers'])
-        ->name('psychometrics.attempts.answers');
-    Route::post('/psychometrics/attempts/{attempt}/submit', [PsychometricController::class, 'submitAttempt'])
-        ->name('psychometrics.attempts.submit');
-    Route::get('/psychometrics/results/{attempt}', [PsychometricController::class, 'showResult'])
-        ->name('psychometrics.results.show');
+        // Psicométricos
+        Route::get('/psychometrics/tests', [PsychometricController::class, 'listTests'])
+            ->name('psychometrics.tests');
+        Route::post('/psychometrics/attempts', [PsychometricController::class, 'startAttempt'])
+            ->middleware('throttle:30,1')
+            ->name('psychometrics.attempts.start');
+        Route::get('/psychometrics/attempts/{attempt}', [PsychometricController::class, 'showAttempt'])
+            ->name('psychometrics.attempts.show');
+        Route::patch('/psychometrics/attempts/{attempt}/answers', [PsychometricController::class, 'saveAnswers'])
+            ->name('psychometrics.attempts.answers');
+        Route::post('/psychometrics/attempts/{attempt}/submit', [PsychometricController::class, 'submitAttempt'])
+            ->name('psychometrics.attempts.submit');
+        Route::get('/psychometrics/results/{attempt}', [PsychometricController::class, 'showResult'])
+            ->name('psychometrics.results.show');
+    });
 
     // Notificaciones (disponibles para cualquier usuario autenticado)
     Route::get('/notifications', [NotificationController::class, 'index'])

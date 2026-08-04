@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\UserRole;
 use App\Helpers\StripeClient;
 use App\Models\CandidateProfile;
 use App\Models\Membership;
@@ -166,6 +167,13 @@ class MembershipService
      */
     private function promoteCandidateToActive(User $user): void
     {
+        // Reached from the Stripe webhook, so it runs unauthenticated. Only a
+        // candidate has a place in the directory; promoting anybody else would
+        // be the F-09 side effect arriving by another door.
+        if (! $user->hasRole(UserRole::Candidate->value)) {
+            return;
+        }
+
         $profile = $this->profiles->findOrCreate($user);
 
         $promotable = [

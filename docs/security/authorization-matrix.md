@@ -85,36 +85,36 @@ comercial.
 
 ### 2.3 Perfil del candidato — §5.2 (`role: candidate`)
 
-§5.2 encabeza la sección con «auth, role: candidate». **Ninguna de estas 30 rutas comprueba el rol**
-(hallazgo **F-09**). Las columnas reflejan la intención de §5.2, no el comportamiento actual.
+§5.2 encabeza la sección con «auth, role: candidate». Las 30 rutas de esta superficie y la de §5.4 quedan
+tras `RoleMiddleware:candidate` (**F-09 cerrado**).
 
 | Método | Ruta | anón | cand | recr | emp | admin | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
-| GET | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| POST | `/me/profile/avatar` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/profile/cv.pdf` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/experiences` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/experiences/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/educations` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/educations/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/courses` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/courses/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/certifications` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/certifications/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/references` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| PATCH/DELETE | `/me/profile/references/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET/POST | `/me/profile/skills` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| DELETE | `/me/profile/skills/{skill}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/languages` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| DELETE | `/me/profile/languages/{language}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET/POST | `/me/profile/documents` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/profile/documents/{document}/download` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| DELETE | `/me/profile/documents/{document}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
+| GET | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH | `/me/profile` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/profile/avatar` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/profile/cv.pdf` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/experiences` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/experiences/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/educations` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/educations/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/courses` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/courses/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/certifications` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/certifications/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/references` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH/DELETE | `/me/profile/references/{id}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/skills` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/skills/{skill}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/languages` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/languages/{language}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET/POST | `/me/profile/documents` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/profile/documents/{document}/download` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| DELETE | `/me/profile/documents/{document}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
 
-«**F-09** (parcial)» = el aislamiento **entre candidatos** sí funciona: `ResolvesCandidateProfile::ensureOwned()`
-responde `404` a cualquiera que no sea el dueño del recurso. Lo que falla es el filtro de rol, y el efecto
-colateral que produce (ver §5, F-09).
+El aislamiento **entre candidatos** ya funcionaba: `ResolvesCandidateProfile::ensureOwned()` responde `404`
+a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efecto colateral que producía
+(ver §5.4).
 
 ### 2.4 Membresía y pagos — §5.3
 
@@ -132,12 +132,12 @@ autenticado (devuelven vacío para quien no tiene membresías ni pagos). `POST /
 
 | Método | Ruta | anón | cand | recr | emp | admin | Estado |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
-| GET | `/me/psychometrics/tests` | ❌ | ✅ | ❌ | ❌ | ❌ | **F-09** |
-| POST | `/me/psychometrics/attempts` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** |
-| GET | `/me/psychometrics/attempts/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| PATCH | `/me/psychometrics/attempts/{attempt}/answers` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| POST | `/me/psychometrics/attempts/{attempt}/submit` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
-| GET | `/me/psychometrics/results/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | **F-09** (parcial) |
+| GET | `/me/psychometrics/tests` | ❌ | ✅ | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/psychometrics/attempts` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/psychometrics/attempts/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| PATCH | `/me/psychometrics/attempts/{attempt}/answers` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| POST | `/me/psychometrics/attempts/{attempt}/submit` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
+| GET | `/me/psychometrics/results/{attempt}` | ❌ | 🔒 | ❌ | ❌ | ❌ | ✔ |
 
 ### 2.6 Notificaciones — §5.9
 
@@ -407,7 +407,7 @@ funcionalidad ausente.
 | ~~**F-06**~~ | Alta | `PATCH /companies/{id}` | `company_user` owner/manager | **Cerrado.** `CompanyPolicy::update()` es sólo recruiter. Además `MyCompanyController` dejó de llevar su propia lista de campos: ambos endpoints comparten `CompanyRequest`, que declara esos cinco como `staffOnlyFields()` | §5.6 «PATCH /companies/{id} — admin / recruiter» |
 | ~~**F-07**~~ | Alta | `GET`, `POST`, `DELETE /companies/{id}/members` | `company_user` owner/manager | **Cerrado** para el cliente: el controlador sigue autorizando con `CompanyPolicy::view/update`, que ahora son de staff. Queda abierto que `AttachMemberRequest` acepte cualquier `user_id` — para HUMAE es el alta de equipo que §5.6 le concede; ver F-13 para la variante de autoservicio | §5.6 «GET/POST/DELETE /companies/{id}/members — admin / recruiter» |
 | ~~**F-08**~~ | Alta | `PATCH /interviews/{id}` | `company_user` owner/manager | **Cerrado.** Ambos Requests declaran la misma regla por el mismo mecanismo (`RestrictsFieldsByRole`). `company_feedback` sigue abierto a la empresa: es su propia opinión | §6 «Agregar notas internas — Empresa cliente ❌» |
-| **F-09** | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | Ninguna comprueba el rol. Peor: `ProfileService::findOrCreate()` **crea un `candidate_profiles`** para el llamante. Un reclutador que abre `GET /me/profile` se da de alta como candidato y entra al directorio; el efecto se dispara incluso en las rutas que responden `404`, porque `ensureOwned()` resuelve el perfil antes de comparar | §5.2 y §5.4 «auth, role: candidate» |
+| ~~**F-09**~~ | Media | 30 rutas `/me/profile/*` y `/me/psychometrics/*` | `recruiter`, `company_user`, `admin` | **Cerrado.** Las 30 rutas quedan tras `RoleMiddleware:candidate`. Además `ProfileService` se partió en `find()` (no crea) y `findOrCreate()` (crea, y **rechaza** si la cuenta no es de candidato); `ensureOwned()` usa `find()`, así que una lectura denegada ya no escribe. El rastro de datos preexistente queda pendiente de verificar — ver §5.4 | §5.2 y §5.4 «auth, role: candidate» |
 | ~~**F-10**~~ | Media | `POST /me/company/vacancies/{id}/transition` | `company_user` | **Cerrado.** Se borró la lista blanca del controlador. Ambos endpoints derivan la habilidad del estado destino: `publish` (staff), `close` (staff + owner/manager), `cancel` (ídem), `advance` (staff) | §6 «Aprobar / activar vacante — Empresa ❌» y «Marcar vacante como cubierta — Empresa ✅ (propone)» |
 | **F-11** | Media | 9 rutas `/admin/reports/*` | `recruiter`, `company_user` | El reclutador recibe agregados **globales** (pagos, membresías, efectividad de todos los reclutadores) donde §6 dice «sus procesos». La empresa recibe `403` donde §6 dice «✅ sus vacantes» | §6 «Ver reportes» |
 | **F-12** | Baja | `POST /auth/register/company` | Todos | Alta autoservicio de empresa cliente. Mitigado: la cuenta nace en `pending_approval` y el login la rechaza hasta que un admin la aprueba | §6 «Registrarse — Empresa cliente ❌ (invitación)» |
@@ -465,6 +465,47 @@ Se añadieron dos habilidades nuevas para completar el vocabulario de transicion
 Las Policies se descubren por convención de Laravel 12 (`App\Models\X` → `App\Policies\XPolicy`);
 `AppServiceProvider` no registra ninguna explícitamente. El descubrimiento funciona, pero cualquier Policy
 que no siga el naming quedaría silenciosamente desconectada.
+
+### 5.4 Rastro de datos de F-09 — pendiente de verificar en producción
+
+El agujero de acceso venía con uno de integridad: cada llamada de un no-candidato a la superficie
+`/me/profile/*` **creaba** su fila en `candidate_profiles`, es decir lo inscribía en la base de talento.
+El código ya no lo hace; las filas creadas antes siguen ahí.
+
+**No se pudo comprobar**: la base MySQL no es alcanzable desde el entorno de trabajo (`Connection
+refused`) y la suite corre sobre SQLite en memoria. La verificación queda pendiente contra la base real.
+
+Consulta de detección (sólo lectura):
+
+```sql
+SELECT cp.id, cp.user_id, u.email, cp.state, cp.created_at,
+       GROUP_CONCAT(r.name) AS roles
+FROM candidate_profiles cp
+JOIN users u ON u.id = cp.user_id
+LEFT JOIN model_has_roles mhr
+       ON mhr.model_id = u.id AND mhr.model_type = 'App\\Models\\User'
+LEFT JOIN roles r ON r.id = mhr.role_id
+WHERE cp.deleted_at IS NULL
+GROUP BY cp.id, cp.user_id, u.email, cp.state, cp.created_at
+HAVING COALESCE(SUM(r.name = 'candidate'), 0) = 0;
+```
+
+**Limpieza propuesta — no ejecutada.** Un perfil huérfano sólo es seguro de retirar si nunca se usó. Antes
+de tocar nada hay que confirmar, fila por fila, que no tiene dependientes en `vacancy_assignments`,
+`psychometric_attempts`, `candidate_documents`, `directory_favorites`, `candidate_skills`,
+`candidate_languages`, `candidate_functional_areas`, `candidate_work_schedules` ni en las tablas de
+historial (`candidate_experiences`, `candidate_educations`, `candidate_courses`,
+`candidate_certifications`, `candidate_references`).
+
+- Perfil **sin dependientes y en estado `registro_incompleto`**: es el efecto colateral puro. Se propone
+  soft delete — `candidate_profiles` ya usa `SoftDeletes` —, que lo saca del directorio y conserva la
+  evidencia.
+- Perfil **con dependientes**: no se toca. Significa que alguien lo usó de verdad; revisar caso por caso
+  con el product owner.
+
+Recomendación operativa: correr la detección, adjuntar el resultado al ticket y decidir con el product
+owner antes de escribir nada.
+
 
 ### 5.3 Permiso a nivel de campo: un solo mecanismo
 
