@@ -10,11 +10,12 @@
 > `F-xx` y la sonda las reporta como *skipped* nombrando el hallazgo, de modo que un rojo en ese archivo
 > siempre significa un agujero **nuevo**.
 >
-> **Alcance de la auditoría**: 146 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 155 rutas totales
-> (`php artisan route:list`). Se sondearon las 146 de la API — cobertura verificada por el propio test, que
+> **Alcance de la auditoría**: 149 rutas bajo `/api/v1/` + 9 rutas de infraestructura = 158 rutas totales
+> (`php artisan route:list`). Se sondearon las 149 de la API — cobertura verificada por el propio test, que
 > falla si alguien añade una ruta sin añadir su fila. Las 9 de infraestructura se documentan pero no se
-> sondean (§3, §7). Las dos rutas más recientes, `POST /contact-submissions` y
-> `GET /admin/contact-submissions` (§2.16), llegaron con este cierre y ya están contadas aquí.
+> sondean (§3, §7). Las tres rutas más recientes, el tutorial de bienvenida por rol
+> (`GET /me/tutorials`, `POST /me/tutorials/{key}/complete`, `POST /me/tutorials/{key}/skip` — §2.17,
+> PLAN-FASE-16-UX-Y-TUTORIALES.md §5.1), llegaron con este cierre y ya están contadas aquí.
 >
 > **Estado tras el rediseño de la capa de autorización**: 16 de los 17 hallazgos cerrados. **F-17** (el token
 > del alta saltaba la verificación de correo) se cerró en `fix/enforce-email-verification`, y con él la mitad
@@ -396,6 +397,29 @@ endpoint anterior sólo eran visibles por correo (`NewContactSubmissionNotificat
 soporte); esta ruta los hace además consultables en el panel, paginados. Cerrado a todo el que no sea
 `admin` con `RoleMiddleware:admin`, igual que `/admin/catalogs/*`.
 
+### 2.17 Tutoriales de bienvenida (nuevo) — PLAN-FASE-16-UX-Y-TUTORIALES.md §5.1
+
+Cada uno de los tres roles con home propio (candidato, reclutador, empresa) recibe un tutorial de
+bienvenida único, guardado en BD para que sobreviva un cambio de navegador o dispositivo. `admin` no tiene
+home tutorial: la lista sale vacía y cualquier key le responde 404.
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/me/tutorials` | ❌ | ✅ | ✅ | ✅ | ✅ | Fase 16 §5.1 auth | ✔ |
+| POST | `/me/tutorials/{key}/complete` | ❌ | 🔒 | 🔒 | 🔒 | ❌ | Fase 16 §5.1 auth (propio rol) | ✔ |
+| POST | `/me/tutorials/{key}/skip` | ❌ | 🔒 | 🔒 | 🔒 | ❌ | Fase 16 §5.1 auth (propio rol) | ✔ |
+
+**Acotado por rol, no por middleware.** No hay un `id` en la ruta que amarrar a un dueño — el estado
+siempre pertenece al usuario autenticado (estructural, igual que `/me/profile`). Lo que sí varía por
+llamante es **qué `tutorial_key` aplica**: `TutorialService` resuelve la key contra el rol Spatie del
+usuario (`candidate_home` para `candidate`, `recruiter_home` para `recruiter`, `company_home` para
+`company_user`). Pedir una key de otro rol, o una key que no existe en `config/tutorials.php`, responde
+**404** — es un dato suministrado por el llamante, nunca un `403` ni un `500`. `GET /me/tutorials` nunca
+lista la key de otro rol: un candidato no tiene por qué saber que `recruiter_home` existe.
+
+`should_show` se calcula enteramente en el servidor comparando la `version` guardada en el estado contra la
+`version` configurada para esa key: el frontend nunca implementa la regla de versionado.
+
 ---
 
 ## 3. Rutas de infraestructura (fuera de `/api/v1`)
@@ -744,12 +768,12 @@ retiradas. Las celdas «—» quedan deliberadamente fuera: §6 las marca como n
 
 | Concepto | Cantidad |
 |---|---|
-| Rutas totales (`route:list`) | 155 |
-| Rutas `/api/v1/*` | 146 |
-| Rutas `/api/v1/*` sondeadas | 146 (100 %, verificado por test) |
+| Rutas totales (`route:list`) | 158 |
+| Rutas `/api/v1/*` | 149 |
+| Rutas `/api/v1/*` sondeadas | 149 (100 %, verificado por test) |
 | Rutas de infraestructura documentadas, no sondeadas | 9 |
-| Filas de la tabla de expectativas | 156 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla) |
-| Peticiones HTTP por corrida | 1 092 (156 filas × 7 actores) |
+| Filas de la tabla de expectativas | 163 (nueve rutas se sondean dos o tres veces con distinto payload: inquilino ajeno, escritura de campos internos, etapa `sourced`; la fila de `/auth/register/company` se conserva tras retirar la ruta para que la matriz siga enunciando la regla; `complete`/`skip` de tutoriales se sondean una vez por `tutorial_key`) |
+| Peticiones HTTP por corrida | 1 141 (163 filas × 7 actores) |
 | Actores | 7 — anónimo, candidato dueño, candidato ajeno, reclutador, `company_user` dueño, `company_user` ajeno, admin |
 | Tests de apoyo en el mismo archivo | 6 — cobertura de rutas, inventario de Policies, habilidades invocadas, habilidades huérfanas, derivación de las transiciones desde la máquina de estados, middlewares aplicados |
 | Sonda del primitivo de inquilino | `tests/Feature/Security/CompanyTenancyTest.php` — 9 casos |

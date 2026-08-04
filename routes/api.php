@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
 use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\ContactSubmissionController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
+use App\Http\Controllers\Api\V1\Shared\TutorialController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
 use App\Http\Middleware\EnsureVerifiedEmail;
 use Illuminate\Support\Facades\Route;
@@ -272,6 +273,16 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
         ->name('notifications.mark-read');
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])
         ->name('notifications.mark-all-read');
+
+    // Tutorial de bienvenida por rol (Fase 16 §5.1). Disponible para cualquier
+    // usuario autenticado: TutorialService resuelve qué tutorial aplica a su
+    // propio rol. Una key que no aplica (de otro rol o inexistente) responde
+    // 404, nunca 403 ni 500 — es un dato suministrado por el caller.
+    Route::get('/tutorials', [TutorialController::class, 'index'])->name('tutorials.index');
+    Route::post('/tutorials/{key}/complete', [TutorialController::class, 'complete'])
+        ->name('tutorials.complete');
+    Route::post('/tutorials/{key}/skip', [TutorialController::class, 'skip'])
+        ->name('tutorials.skip');
 });
 
 /*

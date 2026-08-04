@@ -707,6 +707,13 @@ function authzBuildFixtures(): array
             'verify_hash' => sha1((string) $candidateOwner->getEmailForVerification()),
             'notification' => $notificationId,
             'candidate_other_email' => AUTHZ_S_CANDIDATE_B_EMAIL,
+            // These three resolve to their own literal value: {tutorial_*} is
+            // only here so authzCanonicalUri() collapses it to `*`, the same
+            // way it collapses the route's real `{key}` parameter, so the
+            // coverage probe recognizes the row as covering the route shape.
+            'tutorial_candidate' => 'candidate_home',
+            'tutorial_recruiter' => 'recruiter_home',
+            'tutorial_company' => 'company_home',
         ],
     ];
 }
@@ -1006,6 +1013,36 @@ function authzMatrixRows(): array
         'method' => 'POST', 'uri' => '/api/v1/me/notifications/read-all', 'spec' => '§5.9 auth',
         ...authzAccess($authenticated),
     ]);
+
+    // ------------------------------------------ Tutoriales de bienvenida (Fase 16 §5.1)
+    // Cada key sólo aplica al rol que la posee: un candidato pidiendo
+    // `recruiter_home` recibe 404 (key inaplicable), no 403 — TutorialService
+    // resuelve la pertenencia, no un middleware de rol.
+    $add('GET /me/tutorials', [
+        'method' => 'GET', 'uri' => '/api/v1/me/tutorials', 'spec' => 'Fase 16 §5.1 auth',
+        ...authzAccess($authenticated),
+    ]);
+
+    // The `{tutorial_*}` token is not a fixture id — it resolves to the key's
+    // own literal name (see authzBuildFixtures()) — used purely so the route
+    // coverage probe sees the same `{key}/*` shape as the real route.
+    foreach ([
+        'candidate_home' => ['token' => 'tutorial_candidate', 'actors' => ['candidate_owner', 'candidate_other']],
+        'recruiter_home' => ['token' => 'tutorial_recruiter', 'actors' => ['recruiter']],
+        'company_home' => ['token' => 'tutorial_company', 'actors' => ['company_owner', 'company_other']],
+    ] as $tutorialKey => $spec) {
+        $add("POST /me/tutorials/{$tutorialKey}/complete", [
+            'method' => 'POST', 'uri' => "/api/v1/me/tutorials/{{$spec['token']}}/complete",
+            'spec' => 'Fase 16 §5.1 auth (propio rol)',
+            'payload' => ['channel' => 'tour'],
+            ...authzAccess($spec['actors']),
+        ]);
+        $add("POST /me/tutorials/{$tutorialKey}/skip", [
+            'method' => 'POST', 'uri' => "/api/v1/me/tutorials/{{$spec['token']}}/skip",
+            'spec' => 'Fase 16 §5.1 auth (propio rol)',
+            ...authzAccess($spec['actors']),
+        ]);
+    }
 
     // -------------------------------------------------------- Directorio (§5.5)
     $add('GET /directory/candidates', [
