@@ -80,6 +80,22 @@ class VacancyAssignmentPolicy
     }
 
     /**
+     * Propose an interview for an assignment.
+     *
+     * `vacancy_assignment_id` arrives in the request body, so the company can
+     * name any row she likes. Membership over the vacancy is not enough: an
+     * interview echoes the candidate back in its response, which would turn
+     * this endpoint into a reader for the recruiter's internal short list. The
+     * candidate must have been presented first (§6).
+     */
+    public function scheduleInterview(User $user, VacancyAssignment $assignment): bool
+    {
+        return $this->isInternalStaff($user)
+            || ($this->isVisibleToCompany($assignment)
+                && $this->isCompanyMember($user, $assignment));
+    }
+
+    /**
      * Read the note thread of an assignment. A company member only reaches the
      * thread of a candidate that was actually presented to it, and the
      * controller still filters the thread down to `visibility=company`.

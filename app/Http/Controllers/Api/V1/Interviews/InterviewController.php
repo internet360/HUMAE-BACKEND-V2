@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Interviews;
 
+use App\Enums\AssignmentStage;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Interviews\CompleteInterviewRequest;
@@ -72,34 +73,15 @@ class InterviewController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $isStaff = $user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value]);
-        $isCompany = $user->hasRole(UserRole::CompanyUser->value);
-
-        if (! $isStaff && ! $isCompany) {
-            return $this->error(
-                'No tienes permiso para proponer entrevistas.',
-                status: HttpStatus::HTTP_FORBIDDEN,
-            );
-        }
-
         /** @var array<string, mixed> $data */
         $data = $request->validated();
 
-        $assignment = VacancyAssignment::with('vacancy')
+        $assignment = VacancyAssignment::with('vacancy.company')
             ->findOrFail((int) $data['vacancy_assignment_id']);
 
-        // Company_user sólo puede proponer entrevistas para asignaciones de su propia empresa.
-        if (! $isStaff && $isCompany) {
-            $companyId = $assignment->vacancy?->company_id;
-            $belongs = $companyId !== null
-                && $user->companyMemberships()->where('company_id', $companyId)->exists();
-            if (! $belongs) {
-                return $this->error(
-                    'No puedes proponer entrevistas para esta asignación.',
-                    status: HttpStatus::HTTP_FORBIDDEN,
-                );
-            }
-        }
+        // VacancyAssignmentPolicy checks the stage, not just the tenancy: a
+        // company may only propose interviews for candidates HUMAE presented.
+        $this->authorize('scheduleInterview', $assignment);
 
         try {
             $interview = $this->service->schedule($assignment, $user, $data);
@@ -285,8 +267,14 @@ class InterviewController extends Controller
 
         if ($user->hasRole(UserRole::CompanyUser->value)) {
             $companyIds = $user->companyMemberships()->pluck('company_id');
-            $query->whereHas('assignment.vacancy', function ($q) use ($companyIds): void {
-                $q->whereIn('company_id', $companyIds);
+            // Tenancy AND confidentiality: the company reads the interviews of
+            // her own vacancies, and only for candidates HUMAE presented to her.
+            // Mirrors InterviewPolicy::view for the collection.
+            $query->whereHas('assignment', function ($q) use ($companyIds): void {
+                $q->whereIn('stage', AssignmentStage::visibleToCompanyValues())
+                    ->whereHas('vacancy', function ($v) use ($companyIds): void {
+                        $v->whereIn('company_id', $companyIds);
+                    });
             });
 
             return;
@@ -298,35 +286,7 @@ class InterviewController extends Controller
 
     private function authorizeAccess(Request $request, Interview $interview): void
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            return;
-        }
-
-        $assignment = $interview->assignment;
-        if ($assignment === null) {
-            abort(HttpStatus::HTTP_NOT_FOUND);
-        }
-
-        // Candidate: solo sus entrevistas
-        if ($user->hasRole(UserRole::Candidate->value)) {
-            if ($assignment->candidateProfile?->user_id === $user->id) {
-                return;
-            }
-        }
-
-        // Company_user: solo si pertenece a la empresa de la vacante
-        if ($user->hasRole(UserRole::CompanyUser->value)) {
-            $companyId = $assignment->vacancy?->company_id;
-            if ($companyId !== null
-                && $user->companyMemberships()->where('company_id', $companyId)->exists()) {
-                return;
-            }
-        }
-
-        abort(HttpStatus::HTTP_FORBIDDEN);
+        $this->authorize('view', $interview);
     }
 
     private function authorizeRecruiter(Request $request): void
@@ -342,62 +302,15 @@ class InterviewController extends Controller
      * Quién puede escoger el slot de la entrevista:
      * - El candidato dueño de la asignación (caso típico).
      * - Recruiter / admin (por soporte / corrección).
-     * - Company owner/manager (por si la empresa decide en nombre de su flujo
-     *   interno; mantenemos consistencia con el resto de Policies).
+     * - Company owner/manager, sólo sobre un candidato ya presentado.
      */
     private function authorizeSlotSelection(Request $request, Interview $interview): void
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            return;
-        }
-
-        $assignment = $interview->assignment;
-        if ($assignment === null) {
-            abort(HttpStatus::HTTP_NOT_FOUND);
-        }
-
-        if ($user->hasRole(UserRole::Candidate->value)
-            && $assignment->candidateProfile?->user_id === $user->id) {
-            return;
-        }
-
-        if ($user->hasRole(UserRole::CompanyUser->value)) {
-            $companyId = $assignment->vacancy?->company_id;
-            if ($companyId !== null
-                && $user->companyMemberships()
-                    ->where('company_id', $companyId)
-                    ->whereIn('role', ['owner', 'manager'])
-                    ->exists()) {
-                return;
-            }
-        }
-
-        abort(HttpStatus::HTTP_FORBIDDEN);
+        $this->authorize('selectSlot', $interview);
     }
 
     private function authorizeReschedule(Request $request, Interview $interview): void
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        if ($user->hasAnyRole([UserRole::Recruiter->value, UserRole::Admin->value])) {
-            return;
-        }
-
-        if ($user->hasRole(UserRole::CompanyUser->value)) {
-            $companyId = $interview->assignment?->vacancy?->company_id;
-            if ($companyId !== null
-                && $user->companyMemberships()
-                    ->where('company_id', $companyId)
-                    ->whereIn('role', ['owner', 'manager'])
-                    ->exists()) {
-                return;
-            }
-        }
-
-        abort(HttpStatus::HTTP_FORBIDDEN);
+        $this->authorize('reschedule', $interview);
     }
 }
