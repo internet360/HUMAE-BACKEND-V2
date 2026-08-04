@@ -40,12 +40,18 @@ it('registers a recruiter as pending_approval and notifies admins', function ():
     $response
         ->assertCreated()
         ->assertJsonPath('data.pending_approval', true)
-        ->assertJsonPath('data.user.email', 'recluta@humae.test');
+        ->assertJsonPath('data.user.email', 'recluta@humae.test')
+        // F-17: this endpoint never issued a token. Pinned so it cannot start —
+        // the account is both unverified and unapproved at this point.
+        ->assertJsonMissingPath('data.token')
+        ->assertJsonMissingPath('data.token_type');
 
     $user = User::where('email', 'recluta@humae.test')->firstOrFail();
 
     expect($user->status)->toBe(UserStatus::PendingApproval->value)
-        ->and($user->hasRole(UserRole::Recruiter->value))->toBeTrue();
+        ->and($user->hasRole(UserRole::Recruiter->value))->toBeTrue()
+        ->and($user->email_verified_at)->toBeNull()
+        ->and($user->tokens()->count())->toBe(0);
 
     Event::assertDispatched(Registered::class);
 
