@@ -20,8 +20,18 @@ use Illuminate\Support\Carbon;
  */
 class TutorialService
 {
-    /** Maps the Spatie role that owns each home tutorial. */
-    private const array ROLE_KEYS = [
+    /**
+     * Maps the Spatie role that owns each home tutorial.
+     *
+     * Sin tipo en la constante a propósito: las constantes de clase tipadas son
+     * PHP 8.3+, y `composer.json` declara `^8.2`. El servidor de develop corre
+     * 8.2.32, así que `private const array` era un parse error ahí y tumbaba con
+     * 500 todo request que tocara esta clase — mientras en local (PHP 8.5) pasaba
+     * desapercibido.
+     *
+     * @var array<string, string>
+     */
+    private const ROLE_KEYS = [
         UserRole::Candidate->value => 'candidate_home',
         UserRole::Recruiter->value => 'recruiter_home',
         UserRole::CompanyUser->value => 'company_home',
