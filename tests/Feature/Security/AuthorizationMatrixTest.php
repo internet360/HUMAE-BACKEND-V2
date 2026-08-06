@@ -872,7 +872,7 @@ function authzMatrixRows(): array
     ]);
 
     // -------------------------------------------------- Catálogos (UNSPECIFIED)
-    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'vacancy-types'] as $catalog) {
+    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'positions', 'vacancy-types'] as $catalog) {
         $add("GET /catalogs/{$catalog}", [
             'method' => 'GET', 'uri' => "/api/v1/catalogs/{$catalog}", 'spec' => 'UNSPECIFIED — inferido: cualquier usuario autenticado (datos maestros)',
             ...authzAccess($authenticated),

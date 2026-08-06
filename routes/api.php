@@ -104,6 +104,7 @@ Route::middleware($authenticated)->prefix('catalogs')->name('catalogs.')->group(
     Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
     Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
     Route::get('/functional-areas', [CatalogController::class, 'functionalAreas'])->name('functional-areas');
+    Route::get('/positions', [CatalogController::class, 'positions'])->name('positions');
     Route::get('/vacancy-types', [CatalogController::class, 'vacancyTypes'])->name('vacancy-types');
 });
 
