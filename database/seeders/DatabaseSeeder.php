@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
             StateSeeder::class,
             CompanyTaxonomySeeder::class,
             JobTaxonomySeeder::class,
+            // Después de JobTaxonomySeeder: resuelve functional_area_id contra
+            // las áreas que ese seeder crea.
+            PositionSeeder::class,
             TalentTaxonomySeeder::class,
             MembershipPlanSeeder::class,
             PsychometricBigFiveSeeder::class,
