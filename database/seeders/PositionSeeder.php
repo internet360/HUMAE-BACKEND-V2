@@ -7,181 +7,247 @@ namespace Database\Seeders;
 use App\Models\FunctionalArea;
 use App\Models\Position;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use JsonException;
 use RuntimeException;
 
 /**
- * Catálogo maestro de puestos (`positions`).
+ * Catálogo maestro de puestos (`positions`), leído de un JSON editable.
  *
- * Fuente de verdad: documento del cliente `PUESTOS DE BUSQUEDA.docx`
- * ("Listado maestro estructurado por Áreas Macro y sus Puestos Estandarizados
- * más demandados") — 7 áreas macro / 60 puestos.
+ * El JSON vive en `database/seeders/data/positions.json` y NO se versiona: se
+ * sube a mano al servidor y el seeder se corre desde WHM, para poder cambiar
+ * el catálogo sin un deploy. Por eso este seeder es tolerante a que el archivo
+ * no exista (dev y CI no lo tienen) pero intolerante a que exista y esté mal:
+ * un catálogo a medio cargar es peor que ninguno.
  *
- * Reglas aplicadas al importar el documento:
+ * Formato:
  *
- * 1. Los nombres son los canónicos del cliente, tal cual el documento. Única
- *    excepción: "Gerente Administración y Fianzas" → "…y Finanzas" (errata
- *    evidente del documento; "Fianzas" es otra cosa).
- * 2. Cuando un puesto del documento ya existía en el catálogo se REUSA su
- *    `code` en lugar de crear un duplicado, porque `candidate_profiles.
- *    position_id` y `vacancies.position_id` ya pueden apuntar a él. Solo se
- *    actualiza el nombre al del cliente. Son 7: software_engineer,
- *    data_analyst, accountant, customer_service, sales_representative,
- *    marketing_specialist, recruiter.
- * 3. Las áreas macro del documento son más gruesas que el catálogo
- *    `functional_areas` (que ya distingue Calidad, Mantenimiento, Almacén,
- *    Compras…). Cada puesto se asocia al área MÁS PRECISA que exista, y el
- *    área macro del documento queda como encabezado de sección. Así el
- *    filtro Área → Puesto es útil y no se pierde la estructura del doc.
+ *   {
+ *     "positions": [
+ *       { "code": "quality_engineer", "name": "Ingeniero de Calidad", "area": "quality" },
+ *       { "code": "frontend_developer", "name": "…", "area": "it_systems", "legacy": true }
+ *     ]
+ *   }
+ *
+ * - `area` es el `code` de una fila de `functional_areas`.
+ * - `legacy: true` marca puestos que no vienen del documento del cliente; se
+ *   conservan porque perfiles y vacantes guardados apuntan a ellos y se ordenan
+ *   al final.
+ * - El orden del array es el orden de despliegue en los selectores.
+ *
+ * Correr solo este seeder: `php artisan db:seed --class=PositionSeeder`
  */
 class PositionSeeder extends Seeder
 {
-    /**
-     * Puestos del documento del cliente, en orden de documento.
-     *
-     * @var array<int, array{code: string, name: string, area: string}>
-     */
-    private const CLIENT_POSITIONS = [
-        // ── 1. Tecnología y Sistemas (IT) ────────────────────────────────
-        ['code' => 'software_developer', 'name' => 'Desarrollador/Diseño de Software', 'area' => 'it_systems'],
-        ['code' => 'software_engineer', 'name' => 'Ingeniero de Software / Sistemas', 'area' => 'it_systems'],
-        ['code' => 'data_analyst', 'name' => 'Analista de Datos', 'area' => 'data'],
-        ['code' => 'network_administrator', 'name' => 'Administrador de Redes y Soporte TI', 'area' => 'it_systems'],
-        ['code' => 'cybersecurity_specialist', 'name' => 'Especialista en Ciberseguridad', 'area' => 'it_systems'],
-        ['code' => 'technical_support', 'name' => 'Soporte Técnico', 'area' => 'it_systems'],
-        ['code' => 'it_project_manager', 'name' => 'Gerente de Proyectos TI', 'area' => 'it_systems'],
-        ['code' => 'it_intern', 'name' => 'Practicante Sistemas', 'area' => 'it_systems'],
-
-        // ── 2. Ingeniería, Manufactura y Operaciones ─────────────────────
-        ['code' => 'industrial_maintenance_technician', 'name' => 'Técnico en Mantenimiento Industrial', 'area' => 'maintenance'],
-        ['code' => 'mechatronics_technician', 'name' => 'Técnico en Mecatrónica / Automatización', 'area' => 'maintenance'],
-        ['code' => 'cnc_machine_operator', 'name' => 'Operador de Maquinaria CNC / Inyección', 'area' => 'manufacturing'],
-        ['code' => 'production_supervisor', 'name' => 'Supervisor de Producción / Planta', 'area' => 'manufacturing'],
-        ['code' => 'quality_engineer', 'name' => 'Ingeniero de Calidad', 'area' => 'quality'],
-        ['code' => 'process_engineer', 'name' => 'Ingeniero de Procesos / Manufactura', 'area' => 'engineering'],
-        ['code' => 'plant_manager', 'name' => 'Gerente Planta', 'area' => 'manufacturing'],
-        ['code' => 'safety_hygiene_specialist', 'name' => 'Especialista en Seguridad e Higiene', 'area' => 'industrial_safety'],
-        ['code' => 'engineering_intern', 'name' => 'Practicante Ingeniería', 'area' => 'engineering'],
-
-        // ── 3. Logística, Cadena de Suministro y Compras ─────────────────
-        ['code' => 'warehouse_assistant', 'name' => 'Auxiliar de Almacén / Inventarios', 'area' => 'warehouse'],
-        ['code' => 'warehouse_supervisor', 'name' => 'Supervisor de Almacén / Bodega', 'area' => 'warehouse'],
-        ['code' => 'logistics_analyst', 'name' => 'Analista de Logística y Distribución', 'area' => 'logistics'],
-        ['code' => 'buyer', 'name' => 'Comprador', 'area' => 'purchasing'],
-        ['code' => 'logistics_coordinator', 'name' => 'Coordinador de Logística / Distribución', 'area' => 'logistics'],
-        ['code' => 'operations_manager', 'name' => 'Gerente de Operaciones', 'area' => 'operations'],
-        ['code' => 'logistics_intern', 'name' => 'Practicante Logística', 'area' => 'logistics'],
-
-        // ── 4. Administración, Finanzas y Legal ──────────────────────────
-        ['code' => 'executive_assistant', 'name' => 'Asistente Ejecutivo', 'area' => 'admin'],
-        ['code' => 'accounting_assistant', 'name' => 'Auxiliar Contable / Facturista', 'area' => 'finance'],
-        ['code' => 'accountant', 'name' => 'Contador Público / Auditor', 'area' => 'finance'],
-        ['code' => 'accounts_receivable_payable', 'name' => 'Cuentas por Cobrar y Pagar', 'area' => 'finance'],
-        ['code' => 'general_accountant', 'name' => 'Contador General', 'area' => 'finance'],
-        ['code' => 'admin_finance_manager', 'name' => 'Gerente Administración y Finanzas', 'area' => 'admin'],
-        ['code' => 'financial_analyst', 'name' => 'Analista Financiero / de Presupuestos', 'area' => 'finance'],
-        ['code' => 'business_administrator', 'name' => 'Administrador de Empresas / Generalista', 'area' => 'admin'],
-        ['code' => 'auditor', 'name' => 'Auditor', 'area' => 'finance'],
-        ['code' => 'legal_counsel', 'name' => 'Asesor Legal / Abogado Corporativo', 'area' => 'legal'],
-        ['code' => 'accounting_intern', 'name' => 'Practicantes Contables', 'area' => 'finance'],
-
-        // ── 5. Comercial, Ventas y Marketing Digital ─────────────────────
-        ['code' => 'sales_executive', 'name' => 'Ejecutivo de Ventas', 'area' => 'sales'],
-        ['code' => 'customer_service', 'name' => 'Asesor Comercial / Atención al Cliente', 'area' => 'customer'],
-        ['code' => 'sales_representative', 'name' => 'Representante de Ventas', 'area' => 'sales'],
-        ['code' => 'account_manager', 'name' => 'Gerente de Cuenta', 'area' => 'sales'],
-        ['code' => 'marketing_specialist', 'name' => 'Especialista en Marketing Digital', 'area' => 'marketing'],
-        ['code' => 'creative_director', 'name' => 'Director Creativo', 'area' => 'design'],
-        ['code' => 'community_manager', 'name' => 'Community Manager', 'area' => 'marketing'],
-        ['code' => 'graphic_designer', 'name' => 'Diseñador Gráfico', 'area' => 'design'],
-        ['code' => 'public_relations', 'name' => 'Relaciones Públicas', 'area' => 'marketing'],
-        ['code' => 'marketing_intern', 'name' => 'Practicantes MKT', 'area' => 'marketing'],
-
-        // ── 6. Recursos Humanos y Talento ────────────────────────────────
-        ['code' => 'recruiter', 'name' => 'Reclutador', 'area' => 'hr'],
-        ['code' => 'hr_generalist', 'name' => 'Generalista de Recursos Humanos', 'area' => 'hr'],
-        ['code' => 'hr_coordinator', 'name' => 'Coordinador / Jefe Recursos Humanos', 'area' => 'hr'],
-        ['code' => 'payroll_analyst', 'name' => 'Analista de Nómina y Compensaciones', 'area' => 'hr'],
-        ['code' => 'training_development_specialist', 'name' => 'Especialista en Capacitación y Desarrollo Organizacional', 'area' => 'hr'],
-        ['code' => 'hr_manager', 'name' => 'Gerente Recursos Humanos', 'area' => 'hr'],
-        ['code' => 'hr_director', 'name' => 'Director Recursos Humanos', 'area' => 'hr'],
-        ['code' => 'hr_intern', 'name' => 'Practicante Recursos Humanos', 'area' => 'hr'],
-
-        // ── 7. Salud, Laboratorio y Biotecnología ────────────────────────
-        ['code' => 'nursing_technician', 'name' => 'Técnico en Enfermería', 'area' => 'health'],
-        ['code' => 'registered_nurse', 'name' => 'Licenciado en Enfermería', 'area' => 'health'],
-        ['code' => 'lab_technician', 'name' => 'Técnico de Laboratorio Clínico / Químico', 'area' => 'health'],
-        ['code' => 'physician', 'name' => 'Médico General / Especialista', 'area' => 'health'],
-        ['code' => 'medical_sales_representative', 'name' => 'Representante Médico / Ventas', 'area' => 'health'],
-        ['code' => 'healthcare_administrator', 'name' => 'Administrador de Centros de Salud / Hospitales', 'area' => 'health'],
-        ['code' => 'health_intern', 'name' => 'Practicantes Salud', 'area' => 'health'],
-    ];
-
-    /**
-     * Puestos que ya existían en el catálogo y NO están en el documento del
-     * cliente. Se conservan porque perfiles y vacantes guardados pueden
-     * apuntar a ellos; solo se les asigna área para que no queden sin
-     * clasificar en el selector Área → Puesto. Van al final del orden.
-     *
-     * @var array<int, array{code: string, name: string, area: string}>
-     */
-    private const LEGACY_POSITIONS = [
-        ['code' => 'frontend_developer', 'name' => 'Desarrollador/a Frontend', 'area' => 'it_systems'],
-        ['code' => 'backend_developer', 'name' => 'Desarrollador/a Backend', 'area' => 'it_systems'],
-        ['code' => 'fullstack_developer', 'name' => 'Desarrollador/a Full Stack', 'area' => 'it_systems'],
-        ['code' => 'mobile_developer', 'name' => 'Desarrollador/a Mobile', 'area' => 'it_systems'],
-        ['code' => 'devops_engineer', 'name' => 'DevOps / SRE', 'area' => 'it_systems'],
-        ['code' => 'qa_engineer', 'name' => 'QA Engineer', 'area' => 'it_systems'],
-        ['code' => 'data_scientist', 'name' => 'Científico/a de Datos', 'area' => 'data'],
-        ['code' => 'product_manager', 'name' => 'Product Manager', 'area' => 'product'],
-        ['code' => 'ux_designer', 'name' => 'Diseñador/a UX/UI', 'area' => 'design'],
-        ['code' => 'project_manager', 'name' => 'Project Manager', 'area' => 'operations'],
-        ['code' => 'account_executive', 'name' => 'Ejecutivo/a de Cuentas', 'area' => 'sales'],
-        ['code' => 'hr_specialist', 'name' => 'Especialista de RH', 'area' => 'hr'],
-        ['code' => 'administrative_assistant', 'name' => 'Asistente Administrativo', 'area' => 'admin'],
-    ];
+    private const DATA_FILE = 'seeders/data/positions.json';
 
     /** Offset de `sort_order` para que los puestos legacy queden al final. */
     private const LEGACY_SORT_OFFSET = 900;
 
+    /**
+     * Ruta del catálogo. Method y no constante para que los tests puedan
+     * apuntar a un archivo temporal en lugar de pisar el del desarrollador.
+     */
+    protected function dataPath(): string
+    {
+        return database_path(self::DATA_FILE);
+    }
+
     public function run(): void
     {
+        $path = $this->dataPath();
+
+        if (! is_file($path)) {
+            $this->warn(sprintf(
+                'PositionSeeder: no se encontró %s — se omite el catálogo de puestos. '
+                .'Súbelo al servidor y vuelve a correr `php artisan db:seed --class=PositionSeeder`.',
+                self::DATA_FILE,
+            ));
+
+            return;
+        }
+
+        $rows = $this->readCatalog($path);
+
         /** @var array<string, int> $areaIds */
         $areaIds = FunctionalArea::query()->pluck('id', 'code')->all();
 
-        foreach (self::CLIENT_POSITIONS as $i => $position) {
-            $this->upsert($position, $i + 1, $areaIds);
-        }
+        // Todas las áreas se resuelven ANTES de escribir, y la escritura va en
+        // transacción: un archivo con un área mal tipeada no debe dejar medio
+        // catálogo cargado.
+        $this->assertAreasExist($rows, $areaIds);
 
-        foreach (self::LEGACY_POSITIONS as $i => $position) {
-            $this->upsert($position, self::LEGACY_SORT_OFFSET + $i + 1, $areaIds);
-        }
+        $clientSort = 0;
+        $legacySort = 0;
+
+        DB::transaction(function () use ($rows, $areaIds, &$clientSort, &$legacySort): void {
+            foreach ($rows as $row) {
+                $sortOrder = $row['legacy']
+                    ? self::LEGACY_SORT_OFFSET + (++$legacySort)
+                    : ++$clientSort;
+
+                Position::updateOrCreate(
+                    ['code' => $row['code']],
+                    [
+                        'name' => $row['name'],
+                        'functional_area_id' => $areaIds[$row['area']],
+                        'sort_order' => $sortOrder,
+                        'is_active' => true,
+                    ],
+                );
+            }
+        });
+
+        $this->warn(sprintf(
+            'PositionSeeder: %d puestos cargados (%d del catálogo del cliente, %d legacy).',
+            count($rows),
+            $clientSort,
+            $legacySort,
+        ));
     }
 
     /**
-     * @param  array{code: string, name: string, area: string}  $position
+     * Reporta TODAS las áreas desconocidas de una vez. Ir de a una obliga a
+     * subir el archivo, correr el seeder y esperar por cada typo.
+     *
+     * @param  array<int, array{code: string, name: string, area: string, legacy: bool}>  $rows
      * @param  array<string, int>  $areaIds
      */
-    private function upsert(array $position, int $sortOrder, array $areaIds): void
+    private function assertAreasExist(array $rows, array $areaIds): void
     {
-        $areaId = $areaIds[$position['area']] ?? null;
+        $unknown = [];
 
-        if ($areaId === null) {
+        foreach ($rows as $row) {
+            if (! isset($areaIds[$row['area']])) {
+                $unknown[$row['area']][] = $row['code'];
+            }
+        }
+
+        if ($unknown === []) {
+            return;
+        }
+
+        $detail = implode('; ', array_map(
+            static fn (string $area, array $codes): string => sprintf('"%s" (%s)', $area, implode(', ', $codes)),
+            array_keys($unknown),
+            $unknown,
+        ));
+
+        throw new RuntimeException(sprintf(
+            'PositionSeeder: %s referencia áreas que no existen en functional_areas: %s. '
+            .'Corrige el campo "area" o corre JobTaxonomySeeder antes. '
+            .'No se escribió ningún puesto.',
+            self::DATA_FILE,
+            $detail,
+        ));
+    }
+
+    /**
+     * Lee y valida el JSON. Falla fuerte y con el índice de la fila culpable:
+     * el archivo se edita a mano, así que un mensaje genérico obliga a alguien
+     * a revisar 73 filas para encontrar la letra que sobra.
+     *
+     * @return array<int, array{code: string, name: string, area: string, legacy: bool}>
+     */
+    private function readCatalog(string $path): array
+    {
+        $raw = file_get_contents($path);
+
+        if ($raw === false) {
+            throw new RuntimeException(sprintf('PositionSeeder: no se pudo leer %s.', $path));
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new RuntimeException(
+                sprintf('PositionSeeder: %s no es JSON válido — %s', self::DATA_FILE, $e->getMessage()),
+                previous: $e,
+            );
+        }
+
+        if (! is_array($decoded) || ! isset($decoded['positions']) || ! is_array($decoded['positions'])) {
             throw new RuntimeException(sprintf(
-                'El área funcional "%s" (puesto "%s") no existe en el catálogo. '
-                .'JobTaxonomySeeder debe correr antes de PositionSeeder.',
-                $position['area'],
-                $position['code'],
+                'PositionSeeder: %s debe ser un objeto con la clave "positions" conteniendo un arreglo.',
+                self::DATA_FILE,
             ));
         }
 
-        Position::updateOrCreate(
-            ['code' => $position['code']],
-            [
-                'name' => $position['name'],
-                'functional_area_id' => $areaId,
-                'sort_order' => $sortOrder,
-                'is_active' => true,
-            ],
-        );
+        $rows = [];
+        $seen = [];
+
+        /** @var mixed $entry */
+        foreach (array_values($decoded['positions']) as $i => $entry) {
+            $row = $this->parseRow($entry, $i);
+
+            if (isset($seen[$row['code']])) {
+                throw new RuntimeException(sprintf(
+                    'PositionSeeder: el código "%s" está repetido en %s (filas %d y %d). '
+                    .'Los códigos son la llave del catálogo y deben ser únicos.',
+                    $row['code'],
+                    self::DATA_FILE,
+                    $seen[$row['code']],
+                    $i,
+                ));
+            }
+
+            $seen[$row['code']] = $i;
+            $rows[] = $row;
+        }
+
+        if ($rows === []) {
+            throw new RuntimeException(sprintf(
+                'PositionSeeder: %s no tiene ningún puesto. Si la intención era vaciar el '
+                .'catálogo, desactiva los puestos desde el panel admin en lugar de borrarlos: '
+                .'perfiles y vacantes guardados apuntan a ellos.',
+                self::DATA_FILE,
+            ));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array{code: string, name: string, area: string, legacy: bool}
+     */
+    private function parseRow(mixed $entry, int $index): array
+    {
+        if (! is_array($entry)) {
+            throw new RuntimeException(sprintf(
+                'PositionSeeder: la fila %d de %s no es un objeto.',
+                $index,
+                self::DATA_FILE,
+            ));
+        }
+
+        $row = [];
+
+        foreach (['code', 'name', 'area'] as $field) {
+            $value = $entry[$field] ?? null;
+
+            if (! is_string($value) || trim($value) === '') {
+                throw new RuntimeException(sprintf(
+                    'PositionSeeder: la fila %d de %s no tiene un "%s" válido (debe ser texto no vacío).',
+                    $index,
+                    self::DATA_FILE,
+                    $field,
+                ));
+            }
+
+            $row[$field] = trim($value);
+        }
+
+        return [
+            'code' => $row['code'],
+            'name' => $row['name'],
+            'area' => $row['area'],
+            'legacy' => ($entry['legacy'] ?? false) === true,
+        ];
+    }
+
+    private function warn(string $message): void
+    {
+        $this->command->warn($message);
     }
 }
