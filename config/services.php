@@ -40,4 +40,18 @@ return [
         'currency' => env('STRIPE_CURRENCY', 'mxn'),
     ],
 
+    /*
+    | CINCEL — constancia de conservación de mensajes de datos NOM-151-SCFI-2016.
+    | Sella la integridad del PDF del contrato ya firmado; no emite la firma.
+    */
+    'cincel' => [
+        'jwt' => env('CINCEL_JWT'),
+        'base_url' => env('CINCEL_BASE_URL', 'https://api.cincel.digital/v3'),
+        // La constancia no se emite al instante: la API responde 202 mientras la
+        // prepara, así que hay que reintentar (mismos valores que RED1A1).
+        'max_retries' => env('CINCEL_MAX_RETRIES', 5),
+        'retry_delay_ms' => env('CINCEL_RETRY_DELAY_MS', 1500),
+        'timeout_seconds' => env('CINCEL_TIMEOUT_SECONDS', 20),
+    ],
+
 ];

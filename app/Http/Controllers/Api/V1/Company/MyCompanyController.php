@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1\Company;
 
-use App\Enums\CompanyMemberRole;
-use App\Enums\UserRole;
+use App\Http\Concerns\ResolvesMyCompany;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Companies\CompanyRequest;
 use App\Http\Resources\V1\Companies\CompanyResource;
-use App\Models\Company;
-use App\Models\CompanyMember;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,19 +19,23 @@ use Symfony\Component\HttpFoundation\Response as HttpStatus;
  */
 class MyCompanyController extends Controller
 {
+    use ResolvesMyCompany;
+
     public function show(Request $request): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        if (! $user->hasAnyRole([UserRole::CompanyUser->value, UserRole::Admin->value])) {
+        if (! $this->mayActAsCompany($user)) {
             return $this->error(
                 'No tienes acceso a este recurso.',
                 status: HttpStatus::HTTP_FORBIDDEN,
             );
         }
 
-        [$company, $member] = $this->resolveCompany($user);
+        // `latestContract` viaja aquí para que el gate de firma del frontend
+        // resuelva con este mismo request en vez de pedir /contract aparte.
+        [$company, $member] = $this->resolveCompany($user, ['latestContract']);
 
         if ($company === null) {
             return $this->error(
@@ -66,7 +67,7 @@ class MyCompanyController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if (! $user->hasAnyRole([UserRole::CompanyUser->value, UserRole::Admin->value])) {
+        if (! $this->mayActAsCompany($user)) {
             return $this->error(
                 'No tienes acceso a este recurso.',
                 status: HttpStatus::HTTP_FORBIDDEN,
@@ -101,33 +102,5 @@ class MyCompanyController extends Controller
                 'can_edit' => true,
             ],
         );
-    }
-
-    /**
-     * @return array{0: Company|null, 1: CompanyMember|null}
-     */
-    private function resolveCompany(User $user): array
-    {
-        /** @var CompanyMember|null $member */
-        $member = $user->companyMemberships()
-            ->with('company')
-            ->orderBy('id')
-            ->first();
-
-        return [$member?->company, $member];
-    }
-
-    private function canEdit(User $user, ?CompanyMember $member): bool
-    {
-        if ($user->hasRole(UserRole::Admin->value)) {
-            return true;
-        }
-
-        return $member !== null
-            && in_array(
-                $member->role,
-                [CompanyMemberRole::Owner, CompanyMemberRole::Manager],
-                true,
-            );
     }
 }

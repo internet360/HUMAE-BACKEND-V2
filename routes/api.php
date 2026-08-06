@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\V1\Candidate\PsychometricController;
 use App\Http\Controllers\Api\V1\Candidate\ReferenceController;
 use App\Http\Controllers\Api\V1\Candidate\SkillController;
 use App\Http\Controllers\Api\V1\Company\CompanyVacancyController;
+use App\Http\Controllers\Api\V1\Company\MyCompanyContractController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyMemberController;
 use App\Http\Controllers\Api\V1\Interviews\InterviewController;
@@ -396,6 +397,17 @@ Route::middleware($authenticated)->group(function (): void {
 Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->group(function (): void {
     Route::get('/', [MyCompanyController::class, 'show'])->name('show');
     Route::patch('/', [MyCompanyController::class, 'update'])->name('update');
+
+    // Contrato de prestación de servicios. Sin él la empresa no debería operar:
+    // la cláusula Primera prohíbe contactar candidatos antes de firmarlo.
+    Route::get('/contract', [MyCompanyContractController::class, 'show'])
+        ->name('contract.show');
+    Route::post('/contract', [MyCompanyContractController::class, 'store'])
+        ->name('contract.store');
+    Route::get('/contract/preview', [MyCompanyContractController::class, 'preview'])
+        ->name('contract.preview');
+    Route::get('/contract/download', [MyCompanyContractController::class, 'download'])
+        ->name('contract.download');
 
     Route::get('/members', [MyCompanyMemberController::class, 'index'])
         ->name('members.index');

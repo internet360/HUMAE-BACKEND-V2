@@ -1278,6 +1278,33 @@ function authzMatrixRows(): array
         'allow_not_found' => true,
         ...authzAccess(['company_owner', 'company_other', 'admin']),
     ]);
+    $add('GET /me/company/contract', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract', 'spec' => 'UNSPECIFIED — inferido: contrato de la propia empresa',
+        // El admin no es miembro de ninguna empresa: alcanza el endpoint y
+        // responde 404 al no resolver una.
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('POST /me/company/contract', [
+        'method' => 'POST', 'uri' => '/api/v1/me/company/contract', 'spec' => 'UNSPECIFIED — inferido: owner/manager de la propia empresa firma el contrato',
+        // Esta matriz sondea con JSON, no multipart, así que un actor autorizado
+        // llega a la validación y recibe 422 — que es acceso concedido. Lo que se
+        // verifica acá es la frontera: quien no puede firmar recibe 403 *antes*
+        // de que se valide el payload (ver SignCompanyContractRequest::authorize).
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('GET /me/company/contract/preview', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract/preview', 'spec' => 'UNSPECIFIED — inferido: borrador del contrato de la propia empresa',
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('GET /me/company/contract/download', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract/download', 'spec' => 'UNSPECIFIED — inferido: contrato de la propia empresa',
+        // Las empresas de los fixtures no tienen contrato firmado: 404.
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
     $add('GET /me/company/members', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/members', 'spec' => 'UNSPECIFIED — inferido: miembros de la propia empresa',
         ...authzAccess(['company_owner', 'company_other']),
