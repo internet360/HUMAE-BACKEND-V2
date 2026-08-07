@@ -1440,6 +1440,48 @@ function authzMatrixRows(): array
         ...authzAccess($staff),
     ]);
 
+    // ------------------------------- Admin: condiciones del contrato (admin only)
+    $add('GET /admin/contract-settings', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/contract-settings',
+        'spec' => 'UNSPECIFIED — inferido: condiciones comerciales globales, solo admin',
+        ...authzAccess(['admin']),
+    ]);
+    $add('PUT /admin/contract-settings', [
+        'method' => 'PUT', 'uri' => '/api/v1/admin/contract-settings',
+        'spec' => 'UNSPECIFIED — inferido: cambiar honorarios y fuero es solo de admin',
+        'payload' => [
+            'provider_name' => 'Humae Consultoría de RH',
+            'signatory_name' => 'Apoderado HUMAE',
+            'signatory_title' => 'Representante Legal',
+            'fee_kind' => 'percentage_annual_gross',
+            'fee_value' => 12,
+            'payment_days' => 5,
+            'payment_day_kind' => 'habiles',
+            'warranty_days' => 90,
+            'jurisdiction' => 'la Ciudad de México',
+        ],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/contract-settings/signature', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: la firma del apoderado no se expone fuera de admin',
+        // Los fixtures no cargan firma: 404 para el admin.
+        'allow_not_found' => true,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/contract-settings/signature', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: solo admin carga la firma del apoderado',
+        // Sin multipart la validación responde 422, que cuenta como acceso: lo que
+        // se verifica es que nadie más alcance el endpoint.
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/contract-settings/signature', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: solo admin quita la firma del apoderado',
+        ...authzAccess(['admin']),
+    ]);
+
     // --------------------------------------------------- Admin usuarios (§5.10)
     $add('GET /admin/users', ['method' => 'GET', 'uri' => '/api/v1/admin/users', 'spec' => '§5.10 admin only', ...authzAccess(['admin'])]);
     $add('POST /admin/users', [

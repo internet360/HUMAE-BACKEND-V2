@@ -8,6 +8,7 @@ use App\Exceptions\CincelTimestampException;
 use App\Helpers\LocalFileStorage;
 use App\Models\Company;
 use App\Models\CompanyContract;
+use App\Models\ContractSetting;
 use App\Models\User;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -158,71 +159,61 @@ class CompanyContractService
     }
 
     /**
-     * Copia de los términos vigentes. Se valida aquí y no en el Blade porque un
-     * contrato sin honorarios o sin apoderado que lo firme no debe existir.
+     * Copia de los términos vigentes, tal como quedarán congelados en el contrato.
+     *
+     * La fuente de verdad es `contract_settings` (editable desde el panel de
+     * admin), sembrada la primera vez desde `config/contracts.php` para que los
+     * deploys existentes no cambien de comportamiento.
+     *
+     * Se valida acá y no en el Blade porque un contrato sin honorarios o sin
+     * apoderado que lo firme no debe existir.
      *
      * @return array<string, mixed>
      */
     public function currentTerms(): array
     {
-        /** @var array<string, mixed> $config */
-        $config = config('contracts');
+        $settings = ContractSetting::current();
+        $missing = $settings->missingToIssue();
 
-        $feeKind = $config['fee_kind'] ?? null;
-        $feeValue = $config['fee_value'] ?? null;
-
-        if (! in_array($feeKind, ['percentage_annual_gross', 'monthly_salary_multiple', 'fixed_amount'], true)) {
+        if ($missing !== []) {
             throw new RuntimeException(
-                'config/contracts.php: fee_kind inválido («'.(is_scalar($feeKind) ? (string) $feeKind : 'null').'»).'
+                'Faltan condiciones del contrato ('.implode(', ', $missing).
+                '). Complétalas en Administración → Contrato.'
             );
         }
 
-        if (! is_numeric($feeValue) || (float) $feeValue <= 0) {
-            throw new RuntimeException('config/contracts.php: fee_value debe ser un número mayor a cero.');
+        if (! in_array($settings->fee_kind, ContractSetting::FEE_KINDS, true)) {
+            throw new RuntimeException("Forma de honorarios inválida: «{$settings->fee_kind}».");
         }
 
-        if ($feeKind === 'fixed_amount' && ! is_string($config['fee_amount_words'] ?? null)) {
-            throw new RuntimeException(
-                'config/contracts.php: fee_kind «fixed_amount» exige fee_amount_words (el monto en letra).'
-            );
+        if ($settings->payment_days <= 0 || $settings->warranty_days <= 0) {
+            throw new RuntimeException('El plazo de pago y la garantía deben ser mayores a cero.');
         }
 
-        foreach (['warranty_days', 'payment_days'] as $key) {
-            if (! is_numeric($config[$key] ?? null) || (int) $config[$key] <= 0) {
-                throw new RuntimeException("config/contracts.php: {$key} debe ser un entero mayor a cero.");
-            }
-        }
-
-        foreach (['provider_name', 'jurisdiction'] as $key) {
-            if (! is_string($config[$key] ?? null) || trim((string) $config[$key]) === '') {
-                throw new RuntimeException("config/contracts.php: {$key} no puede estar vacío.");
-            }
-        }
-
-        $signatory = is_array($config['signatory'] ?? null) ? $config['signatory'] : [];
-        foreach (['name', 'title'] as $key) {
-            if (! is_string($signatory[$key] ?? null) || trim((string) $signatory[$key]) === '') {
-                throw new RuntimeException(
-                    "config/contracts.php: signatory.{$key} es obligatorio — sin apoderado el contrato saldría firmado por una sola parte."
-                );
-            }
+        if (trim($settings->provider_name) === '') {
+            throw new RuntimeException('El nombre del prestador no puede estar vacío.');
         }
 
         return [
-            'version' => $config['version'] ?? null,
-            'provider_name' => $config['provider_name'],
-            'fee_kind' => $feeKind,
-            'fee_value' => (float) $feeValue,
-            'fee_amount_words' => $config['fee_amount_words'] ?? null,
-            'payment_days' => (int) $config['payment_days'],
-            'payment_day_kind' => $config['payment_day_kind'] ?? 'habiles',
-            'warranty_days' => (int) $config['warranty_days'],
-            'city' => $config['city'] ?? null,
-            'jurisdiction' => $config['jurisdiction'],
+            // Versión de los términos: permite responder "¿qué condiciones
+            // aceptó esta empresa?" sin comparar campo por campo.
+            'version' => $settings->version,
+            'provider_name' => $settings->provider_name,
+            'fee_kind' => $settings->fee_kind,
+            'fee_value' => $settings->fee_value,
+            'fee_amount_words' => $settings->fee_amount_words,
+            'payment_days' => $settings->payment_days,
+            'payment_day_kind' => $settings->payment_day_kind,
+            'warranty_days' => $settings->warranty_days,
+            'city' => $settings->city,
+            'jurisdiction' => $settings->jurisdiction,
             'signatory' => [
-                'name' => $signatory['name'],
-                'title' => $signatory['title'],
+                'name' => $settings->signatory_name,
+                'title' => $settings->signatory_title,
             ],
+            // La ruta de la firma viaja en el snapshot para que reimprimir un
+            // contrato viejo use la firma que tenía, no la que esté cargada hoy.
+            'signature_path' => $settings->signature_path,
         ];
     }
 
@@ -268,10 +259,10 @@ class CompanyContractService
                 ? null
                 : $this->diskImageDataUri($signaturePath),
             'humaeSignature' => [
-                'src' => $this->resourceImageDataUri(
-                    is_string(config('contracts.signatory.signature_path'))
-                        ? (string) config('contracts.signatory.signature_path')
-                        : null,
+                // Del snapshot: reimprimir un contrato viejo debe usar la firma
+                // que tenía cuando se firmó, no la que esté cargada hoy.
+                'src' => $this->signatoryImageDataUri(
+                    is_string($terms['signature_path'] ?? null) ? $terms['signature_path'] : null,
                 ),
                 'name' => $signatory['name'] ?? null,
                 'title' => $signatory['title'] ?? null,
@@ -360,6 +351,37 @@ class CompanyContractService
         $mime = $disk->mimeType($path) ?: 'image/png';
 
         return 'data:'.$mime.';base64,'.base64_encode($contents);
+    }
+
+    /**
+     * Firma del apoderado como data URI.
+     *
+     * Primero el archivo que el admin cargó desde el panel (disco privado). Si no
+     * hay, se cae al PNG que vivía en `resources/` — así los despliegues que ya
+     * tenían la firma ahí siguen imprimiéndola sin recargarla.
+     *
+     * Devuelve `null` si no hay ninguno: el contrato se genera igual, con la
+     * línea del prestador vacía.
+     */
+    private function signatoryImageDataUri(?string $storagePath): ?string
+    {
+        if ($storagePath !== null && $storagePath !== '') {
+            $disk = Storage::disk('local');
+
+            if ($disk->exists($storagePath)) {
+                $contents = (string) $disk->get($storagePath);
+
+                if ($contents !== '') {
+                    $mime = $disk->mimeType($storagePath) ?: 'image/png';
+
+                    return 'data:'.$mime.';base64,'.base64_encode($contents);
+                }
+            }
+        }
+
+        $fallback = config('contracts.signatory.signature_path');
+
+        return $this->resourceImageDataUri(is_string($fallback) ? $fallback : null);
     }
 
     private function resourceImageDataUri(?string $relativePath): ?string

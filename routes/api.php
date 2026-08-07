@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\FunctionalAreaController as Admin
 use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
+use App\Http\Controllers\Api\V1\Admin\ContractSettingController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
@@ -460,6 +461,25 @@ Route::middleware($authenticated)->prefix('admin/reports')->name('admin.reports.
 | Admin: gestión de usuarios (recruiters, company_users, admins)
 |--------------------------------------------------------------------------
 */
+/*
+|--------------------------------------------------------------------------
+| Admin: condiciones comerciales del contrato
+|--------------------------------------------------------------------------
+| Aplican a los contratos que se firmen desde el cambio. Los ya firmados
+| conservan su copia en `company_contracts.terms` y no se pueden alterar.
+*/
+Route::middleware($authenticated)->prefix('admin/contract-settings')->name('admin.contract-settings.')->group(function (): void {
+    Route::get('/', [ContractSettingController::class, 'show'])->name('show');
+    Route::put('/', [ContractSettingController::class, 'update'])->name('update');
+
+    Route::get('/signature', [ContractSettingController::class, 'showSignature'])
+        ->name('signature.show');
+    Route::post('/signature', [ContractSettingController::class, 'uploadSignature'])
+        ->name('signature.store');
+    Route::delete('/signature', [ContractSettingController::class, 'destroySignature'])
+        ->name('signature.destroy');
+});
+
 Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {
     Route::get('/', [AdminUserController::class, 'index'])->name('index');
     Route::post('/', [AdminUserController::class, 'store'])->name('store');
