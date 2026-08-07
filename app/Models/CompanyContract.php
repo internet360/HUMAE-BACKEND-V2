@@ -10,6 +10,7 @@ use Database\Factories\CompanyContractFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
@@ -46,6 +47,13 @@ class CompanyContract extends Model implements CompanyOwned
 
     /** @use HasFactory<CompanyContractFactory> */
     use HasFactory;
+
+    /**
+     * Anular ≠ borrar. Un contrato anulado sale de `Company::latestContract()`
+     * —lo que habilita a la empresa a firmar de nuevo— pero conserva el PDF, la
+     * huella y la constancia, que son la evidencia de lo que se aceptó.
+     */
+    use SoftDeletes;
 
     protected $fillable = [
         'company_id',
@@ -111,5 +119,25 @@ class CompanyContract extends Model implements CompanyOwned
     public function isTimestamped(): bool
     {
         return $this->timestamp_path !== null;
+    }
+
+    /**
+     * Todo lo que este contrato tiene guardado en el disco privado.
+     *
+     * Centralizado acá para que quien limpie archivos no tenga que recordar la
+     * lista: olvidarse uno deja datos personales (INE, selfie) huérfanos en el
+     * servidor después de borrar la fila.
+     *
+     * @return list<string>
+     */
+    public function storedPaths(): array
+    {
+        return array_values(array_filter([
+            $this->signature_path,
+            $this->identity_path,
+            $this->selfie_path,
+            $this->pdf_path,
+            $this->timestamp_path,
+        ], static fn (?string $path): bool => is_string($path) && $path !== ''));
     }
 }

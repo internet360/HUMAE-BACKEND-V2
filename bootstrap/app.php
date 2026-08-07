@@ -36,6 +36,15 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->job(new ExpireMembershipsJob)->daily()->name('memberships:expire');
+
+        // Los contratos se firman aunque CINCEL esté caído (quedan sin
+        // constancia); esto los sella cuando el proveedor vuelve.
+        // `withoutOverlapping` porque cada constancia reintenta hasta 5 veces
+        // con espera, y dos corridas simultáneas pelearían por los mismos.
+        $schedule->command('contracts:retry-timestamps')
+            ->hourly()
+            ->withoutOverlapping()
+            ->name('contracts:retry-timestamps');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
