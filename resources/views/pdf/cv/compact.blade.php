@@ -81,6 +81,12 @@
             font-size: 7.5px;
             color: #9ca3af;
         }
+
+        /* Sólo para la vista previa; ver la nota en classic.blade.php. */
+        @media screen {
+            body { padding: 26px 34px 32px 34px; }
+            .footer { bottom: 10px; }
+        }
     </style>
 </head>
 <body>

@@ -113,6 +113,20 @@
             font-size: 8px;
             color: #9ca3af;
         }
+
+        /*
+         * Sólo para la vista previa. DomPDF renderiza con media "print" (se
+         * fija en CvGenerationService), así que este bloque no toca el PDF: en
+         * el navegador repone el margen de @page —que la pantalla ignora— y
+         * sube el pie, que en papel vive dentro del margen inferior.
+         *
+         * Va al final del stylesheet a propósito: comparte especificidad con
+         * las reglas que corrige, así que gana por orden.
+         */
+        @media screen {
+            body { padding: 28px 32px 36px 32px; }
+            .footer { bottom: 10px; }
+        }
     </style>
 </head>
 <body>

@@ -37,6 +37,11 @@ class CvGenerationService
         $options->setChroot([resource_path(), base_path('public')]);
         $options->set('isRemoteEnabled', false);
         $options->set('defaultFont', 'DejaVu Sans');
+        // DomPDF asume media "screen" por default. Al fijarlo en "print", las
+        // plantillas pueden usar @media screen para lo que sólo tiene sentido
+        // en la vista previa —reponer el margen de @page, que el navegador
+        // ignora— sin que eso ensucie el PDF.
+        $options->set('defaultMediaType', 'print');
 
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html, 'UTF-8');
