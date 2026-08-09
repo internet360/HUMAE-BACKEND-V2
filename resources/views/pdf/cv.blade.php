@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CV — {{ $profile->first_name }} {{ $profile->last_name }}</title>
+    <title>CV — {{ $cv->fullName }}</title>
     <style>
         @page { margin: 28px 32px 36px 32px; }
 
@@ -113,28 +113,15 @@
 <body>
 
 @php
-    $fullName = trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? ''));
-    $contactPieces = array_filter([
-        $profile->contact_email ?? $user->email,
-        $profile->contact_phone,
-        $profile->linkedin_url,
-        $profile->portfolio_url,
-    ]);
+    $profile = $cv->profile;
 
     // El separador lleva entidades HTML, así que la línea de contacto se
     // imprime sin escapar. Cada dato viene del propio candidato, por lo que
     // se escapa pieza por pieza antes de unirlas.
     $contactHtml = implode(' &nbsp;·&nbsp; ', array_map(
         static fn (string $piece): string => e($piece),
-        $contactPieces,
+        $cv->contactPieces,
     ));
-
-    $initials = '';
-    foreach (preg_split('/\s+/', trim($fullName !== '' ? $fullName : (string) $user->name)) ?: [] as $part) {
-        if ($part !== '' && mb_strlen($initials) < 2) {
-            $initials .= mb_strtoupper(mb_substr($part, 0, 1));
-        }
-    }
 @endphp
 
 <div class="header">
@@ -142,15 +129,15 @@
         <tr>
             <td class="avatar">
                 <div class="avatar-frame">
-                    @if (! empty($avatarSrc))
-                        <img src="{{ $avatarSrc }}" alt="" />
+                    @if (! empty($cv->avatarSrc))
+                        <img src="{{ $cv->avatarSrc }}" alt="" />
                     @else
-                        {{ $initials !== '' ? $initials : '?' }}
+                        {{ $cv->initials !== '' ? $cv->initials : '?' }}
                     @endif
                 </div>
             </td>
             <td>
-                <div class="name">{{ $fullName ?: $user->name }}</div>
+                <div class="name">{{ $cv->fullName }}</div>
                 @if ($profile->headline)
                     <div class="headline">{{ $profile->headline }}</div>
                 @endif
@@ -159,8 +146,8 @@
                 </div>
             </td>
             <td class="logo">
-                @if (file_exists($logoPath))
-                    <img src="{{ $logoPath }}" alt="HUMAE" />
+                @if ($cv->logoSrc !== null)
+                    <img src="{{ $cv->logoSrc }}" alt="HUMAE" />
                 @else
                     <strong style="color:#314259;">HUMAE</strong>
                 @endif
@@ -273,7 +260,7 @@
 </table>
 
 <div class="footer">
-    Generado por HUMAE · {{ $generatedAt->translatedFormat('d \\d\\e F \\d\\e Y') }}
+    Generado por HUMAE · {{ $cv->generatedAt->translatedFormat('d \\d\\e F \\d\\e Y') }}
 </div>
 
 </body>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\CandidateProfile;
 use App\Models\User;
+use App\Services\CvGenerationService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\View;
 use Laravel\Sanctum\Sanctum;
@@ -50,21 +51,30 @@ it('escapes candidate-supplied contact data in the CV template', function (): vo
     $payload = '<img src=x onerror=alert(1)>';
 
     $user = User::factory()->create(['name' => 'Ana Pérez']);
-    $profile = CandidateProfile::factory()->create([
+    CandidateProfile::factory()->create([
         'user_id' => $user->id,
         'first_name' => 'Ana',
         'last_name' => 'Pérez',
         'contact_phone' => $payload,
     ]);
 
-    $html = View::make('pdf.cv', [
-        'user' => $user,
-        'profile' => $profile,
-        'logoPath' => resource_path('views/pdf/humae-logo.png'),
-        'avatarSrc' => null,
-        'generatedAt' => now(),
-    ])->render();
+    $cv = app(CvGenerationService::class)->buildViewData($user);
+    $html = View::make('pdf.cv', ['cv' => $cv])->render();
 
     expect($html)->not->toContain($payload)
         ->and($html)->toContain('&lt;img src=x onerror=alert(1)&gt;');
+});
+
+it('inlines the HUMAE logo as a data URI so it renders outside DomPDF', function (): void {
+    $user = User::factory()->create(['name' => 'Ana Pérez']);
+    CandidateProfile::factory()->create(['user_id' => $user->id]);
+
+    $cv = app(CvGenerationService::class)->buildViewData($user);
+
+    expect($cv->logoSrc)->toStartWith('data:image/png;base64,');
+
+    $html = View::make('pdf.cv', ['cv' => $cv])->render();
+
+    expect($html)->toContain('data:image/png;base64,')
+        ->and($html)->not->toContain(resource_path('views/pdf/humae-logo.png'));
 });

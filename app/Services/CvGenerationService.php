@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\CandidateProfile;
 use App\Models\User;
+use App\Support\CvViewData;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\Storage;
@@ -25,24 +26,10 @@ class CvGenerationService
      */
     public function generate(User $user): array
     {
-        $profile = $this->profiles->findOrCreate($user);
+        $data = $this->buildViewData($user);
+        $profile = $data->profile;
 
-        $profile->load([
-            'experiences' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('start_date'),
-            'educations' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('end_date'),
-            'courses' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('completed_at'),
-            'certifications' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('issued_at'),
-            'skills',
-            'languages',
-        ]);
-
-        $html = View::make('pdf.cv', [
-            'user' => $user,
-            'profile' => $profile,
-            'logoPath' => resource_path('views/pdf/humae-logo.png'),
-            'avatarSrc' => $this->avatarDataUri($user),
-            'generatedAt' => now(),
-        ])->render();
+        $html = View::make('pdf.cv', ['cv' => $data])->render();
 
         $options = new Options;
         $options->setChroot([resource_path(), base_path('public')]);
@@ -60,6 +47,91 @@ class CvGenerationService
         $filename = 'cv-humae-'.$slug.'.pdf';
 
         return ['filename' => $filename, 'pdf' => $pdf];
+    }
+
+    /**
+     * Resuelve todo lo que las plantillas necesitan imprimir.
+     *
+     * Es público porque la vista previa del selector de plantillas renderiza
+     * el mismo Blade sin pasar por DomPDF.
+     */
+    public function buildViewData(User $user): CvViewData
+    {
+        $profile = $this->profiles->findOrCreate($user);
+
+        $profile->load([
+            'experiences' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('start_date'),
+            'educations' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('end_date'),
+            'courses' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('completed_at'),
+            'certifications' => fn ($q) => $q->orderBy('sort_order')->orderByDesc('issued_at'),
+            'skills',
+            'languages',
+        ]);
+
+        $fullName = trim(($profile->first_name ?? '').' '.($profile->last_name ?? ''));
+        $displayName = $fullName !== '' ? $fullName : (string) $user->name;
+
+        return new CvViewData(
+            profile: $profile,
+            fullName: $displayName,
+            initials: $this->initials($displayName),
+            contactPieces: $this->contactPieces($user, $profile),
+            avatarSrc: $this->avatarDataUri($user),
+            logoSrc: $this->logoDataUri(),
+            generatedAt: now(),
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function contactPieces(User $user, CandidateProfile $profile): array
+    {
+        $pieces = [
+            $profile->contact_email ?? $user->email,
+            $profile->contact_phone,
+            $profile->linkedin_url,
+            $profile->portfolio_url,
+        ];
+
+        return array_values(array_filter(
+            $pieces,
+            static fn (?string $piece): bool => $piece !== null && trim($piece) !== '',
+        ));
+    }
+
+    private function initials(string $name): string
+    {
+        $initials = '';
+
+        foreach (preg_split('/\s+/', trim($name)) ?: [] as $part) {
+            if ($part !== '' && mb_strlen($initials) < 2) {
+                $initials .= mb_strtoupper(mb_substr($part, 0, 1));
+            }
+        }
+
+        return $initials;
+    }
+
+    /**
+     * Inlinea el logo como data URI. Además de servir en el navegador para la
+     * vista previa, evita que el render dependa del chroot de DomPDF.
+     */
+    private function logoDataUri(): ?string
+    {
+        $path = resource_path('views/pdf/humae-logo.png');
+
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $contents = @file_get_contents($path);
+
+        if ($contents === false || $contents === '') {
+            return null;
+        }
+
+        return 'data:image/png;base64,'.base64_encode($contents);
     }
 
     /**
