@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CvTemplate;
 use App\Models\CandidateProfile;
 use App\Models\User;
 use App\Support\CvViewData;
@@ -29,7 +30,7 @@ class CvGenerationService
         $data = $this->buildViewData($user);
         $profile = $data->profile;
 
-        $html = View::make('pdf.cv', ['cv' => $data])->render();
+        $html = View::make($this->resolveTemplate($profile)->view(), ['cv' => $data])->render();
 
         $options = new Options;
         $options->setChroot([resource_path(), base_path('public')]);
@@ -80,6 +81,15 @@ class CvGenerationService
             logoSrc: $this->logoDataUri(),
             generatedAt: now(),
         );
+    }
+
+    /**
+     * La columna trae siempre un valor válido, pero un perfil recién creado
+     * puede no tenerla cargada todavía. Ante la duda, la plantilla por default.
+     */
+    private function resolveTemplate(CandidateProfile $profile): CvTemplate
+    {
+        return $profile->cv_template ?? CvTemplate::default();
     }
 
     /**

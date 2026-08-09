@@ -56,9 +56,14 @@
             display: block;
         }
 
+        /*
+         * Sin page-break-inside acá a propósito: una sección con muchas
+         * entradas es más alta que la página y DomPDF, al no poder respetar
+         * el avoid, deja hojas en blanco y desborda el contenido. El avoid
+         * vive en .item, que sí entra siempre en una página.
+         */
         .section {
             margin-bottom: 14px;
-            page-break-inside: avoid;
         }
         .section-title {
             font-size: 11.5px;
@@ -114,14 +119,6 @@
 
 @php
     $profile = $cv->profile;
-
-    // El separador lleva entidades HTML, así que la línea de contacto se
-    // imprime sin escapar. Cada dato viene del propio candidato, por lo que
-    // se escapa pieza por pieza antes de unirlas.
-    $contactHtml = implode(' &nbsp;·&nbsp; ', array_map(
-        static fn (string $piece): string => e($piece),
-        $cv->contactPieces,
-    ));
 @endphp
 
 <div class="header">
@@ -142,7 +139,7 @@
                     <div class="headline">{{ $profile->headline }}</div>
                 @endif
                 <div class="contact">
-                    {!! $contactHtml !!}
+                    @include('pdf.cv.partials.contact-line', ['pieces' => $cv->contactPieces])
                 </div>
             </td>
             <td class="logo">
