@@ -208,6 +208,16 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
             ->middleware('throttle:30,1')
             ->name('profile.cv');
 
+        // Plantillas del CV. El {template} se resuelve contra el enum, así que
+        // una llave inexistente devuelve 404 sin llegar al controller.
+        Route::get('/profile/cv/templates', [CvController::class, 'templates'])
+            ->name('profile.cv.templates');
+        Route::get('/profile/cv/templates/{template}/preview', [CvController::class, 'preview'])
+            ->middleware('throttle:60,1')
+            ->name('profile.cv.templates.preview');
+        Route::put('/profile/cv/template', [CvController::class, 'updateTemplate'])
+            ->name('profile.cv.template.update');
+
         // Experiencia laboral
         Route::apiResource('profile/experiences', ExperienceController::class)
             ->only(['index', 'store', 'update', 'destroy'])

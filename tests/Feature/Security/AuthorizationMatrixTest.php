@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\AssignmentStage;
 use App\Enums\AttemptStatus;
 use App\Enums\CompanyMemberRole;
+use App\Enums\CvTemplate;
 use App\Enums\DocumentType;
 use App\Enums\InterviewMode;
 use App\Enums\InterviewState;
@@ -676,6 +677,8 @@ function authzBuildFixtures(): array
             'admin' => $admin,
         ],
         'tokens' => [
+            // No es un id: el binding de esta ruta se resuelve contra el enum.
+            'template' => CvTemplate::default()->value,
             'company' => $companyA->id,
             'company_b' => $companyB->id,
             'company_member_user' => $companyViewer->id,
@@ -892,6 +895,19 @@ function authzMatrixRows(): array
     ]);
     $add('GET /me/profile/cv.pdf', [
         'method' => 'GET', 'uri' => '/api/v1/me/profile/cv.pdf', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/profile/cv/templates', [
+        'method' => 'GET', 'uri' => '/api/v1/me/profile/cv/templates', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/profile/cv/templates/{template}/preview', [
+        'method' => 'GET', 'uri' => '/api/v1/me/profile/cv/templates/{template}/preview', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('PUT /me/profile/cv/template', [
+        'method' => 'PUT', 'uri' => '/api/v1/me/profile/cv/template', 'spec' => '§5.2 role: candidate',
+        'payload' => ['template' => 'modern'],
         ...authzCandidateSelfService(),
     ]);
 

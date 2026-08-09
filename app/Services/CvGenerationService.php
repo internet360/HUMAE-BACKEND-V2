@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\CvTemplate;
 use App\Models\CandidateProfile;
 use App\Models\User;
+use App\Support\CvSampleProfile;
 use App\Support\CvViewData;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -48,6 +49,59 @@ class CvGenerationService
         $filename = 'cv-humae-'.$slug.'.pdf';
 
         return ['filename' => $filename, 'pdf' => $pdf];
+    }
+
+    /**
+     * Renderiza una plantilla como HTML, sin pasar por DomPDF.
+     *
+     * Es lo que consume la vista previa del selector: el navegador muestra
+     * exactamente el mismo Blade que después imprime el PDF.
+     */
+    /**
+     * @return array{html: string, is_sample: bool}
+     */
+    public function renderHtml(User $user, CvTemplate $template): array
+    {
+        $real = $this->buildViewData($user);
+        $isSample = CvSampleProfile::isNeededFor($real->profile);
+        $data = $isSample ? $this->withSampleContent($real) : $real;
+
+        return [
+            'html' => View::make($template->view(), ['cv' => $data])->render(),
+            'is_sample' => $isSample,
+        ];
+    }
+
+    public function selectedTemplate(User $user): CvTemplate
+    {
+        return $this->resolveTemplate($this->profiles->findOrCreate($user));
+    }
+
+    public function selectTemplate(User $user, CvTemplate $template): void
+    {
+        $this->profiles->findOrCreate($user)->update(['cv_template' => $template]);
+    }
+
+    /**
+     * Reemplaza el cuerpo del CV por contenido de ejemplo, conservando lo que
+     * sí es del candidato: su nombre, su foto y su resumen si lo escribió.
+     */
+    private function withSampleContent(CvViewData $data): CvViewData
+    {
+        $sample = CvSampleProfile::make();
+        $sample->summary = $data->profile->summary ?: $sample->summary;
+
+        return new CvViewData(
+            profile: $sample,
+            fullName: $data->fullName,
+            initials: $data->initials,
+            contactPieces: $data->contactPieces !== []
+                ? $data->contactPieces
+                : ['tu@correo.com', '+52 55 0000 0000'],
+            avatarSrc: $data->avatarSrc,
+            logoSrc: $data->logoSrc,
+            generatedAt: $data->generatedAt,
+        );
     }
 
     /**
