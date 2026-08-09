@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\CandidateKind;
 use App\Enums\CandidateState;
+use App\Enums\CvTemplate;
 use Database\Factories\CandidateProfileFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $last_name
  * @property string|null $headline
  * @property string|null $summary
+ * @property CvTemplate|null $cv_template NOT NULL en DB; null sólo en instancias sin refrescar
  * @property Carbon|null $birth_date
  * @property string|null $gender
  * @property string|null $contact_email
@@ -56,6 +58,7 @@ class CandidateProfile extends Model
         'last_name',
         'headline',
         'summary',
+        'cv_template',
         'birth_date',
         'gender',
         'curp',
@@ -107,6 +110,7 @@ class CandidateProfile extends Model
             'expected_salary_max' => 'decimal:2',
             'state' => CandidateState::class,
             'candidate_kind' => CandidateKind::class,
+            'cv_template' => CvTemplate::class,
         ];
     }
 
