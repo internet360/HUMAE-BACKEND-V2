@@ -121,6 +121,14 @@
         $profile->portfolio_url,
     ]);
 
+    // El separador lleva entidades HTML, así que la línea de contacto se
+    // imprime sin escapar. Cada dato viene del propio candidato, por lo que
+    // se escapa pieza por pieza antes de unirlas.
+    $contactHtml = implode(' &nbsp;·&nbsp; ', array_map(
+        static fn (string $piece): string => e($piece),
+        $contactPieces,
+    ));
+
     $initials = '';
     foreach (preg_split('/\s+/', trim($fullName !== '' ? $fullName : (string) $user->name)) ?: [] as $part) {
         if ($part !== '' && mb_strlen($initials) < 2) {
@@ -147,7 +155,7 @@
                     <div class="headline">{{ $profile->headline }}</div>
                 @endif
                 <div class="contact">
-                    {!! implode(' &nbsp;·&nbsp; ', $contactPieces) !!}
+                    {!! $contactHtml !!}
                 </div>
             </td>
             <td class="logo">
