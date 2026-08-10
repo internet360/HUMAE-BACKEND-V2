@@ -216,7 +216,7 @@
                 <div class="section">
                     <div class="section-title">Habilidades</div>
                     @foreach ($profile->skills as $skill)
-                        <span class="pill">{{ $skill->name }}@if ($skill->pivot?->level) · {{ $skill->pivot->level }}@endif</span>
+                        <span class="pill">{{ $skill->name }}@if ($skill->pivot?->level) · {{ \App\Enums\SkillLevel::labelFor($skill->pivot->level) }}@endif</span>
                     @endforeach
                 </div>
             @endif
@@ -225,7 +225,7 @@
                 <div class="section">
                     <div class="section-title">Idiomas</div>
                     @foreach ($profile->languages as $lang)
-                        <span class="pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ strtoupper((string) $lang->pivot->level) }}@endif</span>
+                        <span class="pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ \App\Enums\LanguageLevel::labelFor($lang->pivot->level) }}@endif</span>
                     @endforeach
                 </div>
             @endif

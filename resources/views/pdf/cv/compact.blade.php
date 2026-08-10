@@ -95,11 +95,15 @@
     $profile = $cv->profile;
 
     $skillList = $profile->skills
-        ->map(fn ($skill) => $skill->name.($skill->pivot?->level ? ' ('.$skill->pivot->level.')' : ''))
+        ->map(fn ($skill) => $skill->name.($skill->pivot?->level
+            ? ' ('.\App\Enums\SkillLevel::labelFor($skill->pivot->level).')'
+            : ''))
         ->all();
 
     $languageList = $profile->languages
-        ->map(fn ($lang) => $lang->name.($lang->pivot?->level ? ' ('.strtoupper((string) $lang->pivot->level).')' : ''))
+        ->map(fn ($lang) => $lang->name.($lang->pivot?->level
+            ? ' ('.\App\Enums\LanguageLevel::labelFor($lang->pivot->level).')'
+            : ''))
         ->all();
 @endphp
 

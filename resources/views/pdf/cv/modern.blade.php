@@ -158,7 +158,7 @@
             <div class="side-block">
                 <div class="side-title">Idiomas</div>
                 @foreach ($profile->languages as $lang)
-                    <span class="side-pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ strtoupper((string) $lang->pivot->level) }}@endif</span>
+                    <span class="side-pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ \App\Enums\LanguageLevel::labelFor($lang->pivot->level) }}@endif</span>
                 @endforeach
             </div>
         @endif
