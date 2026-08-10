@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $expires_at
  * @property Carbon|null $cancelled_at
  * @property string|null $cancel_reason
+ * @property Carbon|null $expiry_warning_sent_at
+ * @property Carbon|null $expired_notice_sent_at
  * @property bool $auto_renew
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -39,6 +41,8 @@ class Membership extends Model
         'expires_at',
         'cancelled_at',
         'cancel_reason',
+        'expiry_warning_sent_at',
+        'expired_notice_sent_at',
         'auto_renew',
     ];
 
@@ -49,6 +53,8 @@ class Membership extends Model
             'started_at' => 'datetime',
             'expires_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'expiry_warning_sent_at' => 'datetime',
+            'expired_notice_sent_at' => 'datetime',
             'auto_renew' => 'boolean',
         ];
     }

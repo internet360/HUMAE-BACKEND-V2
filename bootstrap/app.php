@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Middleware\EnsureActiveMembership;
 use App\Http\Middleware\EnsureVerifiedEmail;
 use App\Jobs\ExpireMembershipsJob;
+use App\Jobs\NotifyMembershipExpirationsJob;
 use App\Support\ApiExceptionHandler;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -36,6 +37,19 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->job(new ExpireMembershipsJob)->daily()->name('memberships:expire');
+
+        // Una hora después de `memberships:expire` a propósito: el aviso de
+        // "ya expiró" se dispara por status, así que necesita que la corrida
+        // que marca `expired` haya terminado. Ambos son jobs en cola, y el
+        // scheduler no garantiza el orden de dos tareas del mismo minuto.
+        //
+        // El offset es comodidad, no correctitud: los sellos
+        // `expiry_warning_sent_at` / `expired_notice_sent_at` hacen el proceso
+        // idempotente, así que en el peor caso el aviso sale al día siguiente
+        // en lugar de perderse o duplicarse.
+        $schedule->job(new NotifyMembershipExpirationsJob)
+            ->dailyAt('01:00')
+            ->name('memberships:notify-expirations');
 
         // Los contratos se firman aunque CINCEL esté caído (quedan sin
         // constancia); esto los sella cuando el proveedor vuelve.

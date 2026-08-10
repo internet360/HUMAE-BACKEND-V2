@@ -44,16 +44,9 @@
             background: #e5e7eb;
             border: 2px solid #314259;
             overflow: hidden;
-            text-align: center;
-            line-height: 66px;
             color: #314259;
             font-weight: bold;
             font-size: 22px;
-        }
-        .header .avatar-frame img {
-            width: 70px;
-            height: 70px;
-            display: block;
         }
 
         /*
@@ -140,11 +133,11 @@
         <tr>
             <td class="avatar">
                 <div class="avatar-frame">
-                    @if (! empty($cv->avatarSrc))
-                        <img src="{{ $cv->avatarSrc }}" alt="" />
-                    @else
-                        {{ $cv->initials !== '' ? $cv->initials : '?' }}
-                    @endif
+                    @include('pdf.cv.partials.avatar', [
+                        'initials' => $cv->initials,
+                        'src' => $cv->avatarSrc,
+                        'size' => 70,
+                    ])
                 </div>
             </td>
             <td>

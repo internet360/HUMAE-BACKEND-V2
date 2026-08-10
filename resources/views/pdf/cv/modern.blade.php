@@ -49,14 +49,11 @@
             border-radius: 46px;
             background: #41556f;
             overflow: hidden;
-            text-align: center;
-            line-height: 88px;
             color: #ffffff;
             font-weight: bold;
             font-size: 28px;
             margin-bottom: 18px;
         }
-        .avatar-frame img { width: 92px; height: 92px; display: block; }
 
         .side-title {
             font-size: 9.5px;
@@ -126,11 +123,11 @@
 <div class="side">
     <div class="side-inner">
         <div class="avatar-frame">
-            @if (! empty($cv->avatarSrc))
-                <img src="{{ $cv->avatarSrc }}" alt="" />
-            @else
-                {{ $cv->initials !== '' ? $cv->initials : '?' }}
-            @endif
+            @include('pdf.cv.partials.avatar', [
+                'initials' => $cv->initials,
+                'src' => $cv->avatarSrc,
+                'size' => 92,
+            ])
         </div>
 
         @if ($cv->contactPieces !== [])

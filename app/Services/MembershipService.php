@@ -15,12 +15,25 @@ use App\Models\MembershipPlan;
 use App\Models\Payment;
 use App\Models\User;
 use App\Notifications\MembershipActivatedNotification;
+use App\Notifications\MembershipExpiredNotification;
+use App\Notifications\MembershipExpiringNotification;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
 
 class MembershipService
 {
+    /**
+     * Días de anticipación con los que se avisa que la membresía va a vencer.
+     *
+     * La ventana es `(now, now + N días]`: arranca N días antes y llega hasta
+     * el mismo día del vencimiento. El aviso sale una única vez dentro de esa
+     * ventana, no una vez por día.
+     */
+    public const EXPIRY_WARNING_DAYS = 3;
+
     public function __construct(
         private readonly StripeClient $stripe,
         private readonly ProfileService $profiles,
@@ -229,6 +242,104 @@ class MembershipService
         }
 
         return $count;
+    }
+
+    /**
+     * Avisa que la membresía está por vencer, una sola vez por membresía.
+     *
+     * Ventana `(now, now + $daysBefore]`: sólo membresías todavía activas cuyo
+     * vencimiento cae dentro de los próximos N días. El límite inferior
+     * `expires_at > now` deja fuera a las que ya vencieron — de esas se ocupa
+     * `notifyExpired()`, con la otra plantilla.
+     *
+     * El candado es `expiry_warning_sent_at`, no un cálculo de fechas: el job
+     * corre a diario y la ventana dura varios días, así que sin marca
+     * persistida el mismo candidato recibiría el aviso cada mañana.
+     *
+     * El sello se escribe DESPUÉS de notificar a propósito. Si el envío falla,
+     * la marca queda nula y la corrida de mañana lo reintenta; al revés
+     * perderíamos el aviso en silencio.
+     *
+     * @return int cuántos avisos se enviaron
+     */
+    public function notifyExpiring(int $daysBefore = self::EXPIRY_WARNING_DAYS): int
+    {
+        $memberships = Membership::query()
+            ->where('status', MembershipStatus::Active->value)
+            ->whereNull('expiry_warning_sent_at')
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '>', now())
+            ->where('expires_at', '<=', now()->addDays($daysBefore))
+            ->with('user')
+            ->get();
+
+        return $this->dispatchNotices(
+            $memberships,
+            fn (Membership $m) => new MembershipExpiringNotification($m),
+            'expiry_warning_sent_at',
+        );
+    }
+
+    /**
+     * Avisa que la membresía ya expiró, una sola vez por membresía.
+     *
+     * Se apoya en el status y no en la fecha: `expireStale()` es quien decide
+     * que una membresía está vencida, y el middleware `EnsureActiveMembership`
+     * corta el acceso por el mismo status. Mandar "ya expiró" mientras el
+     * candidato todavía entra a la plataforma sería contradecirnos.
+     *
+     * Por eso el job corre después de `ExpireMembershipsJob` (ver
+     * `bootstrap/app.php`). Si algún día se invirtiera el orden, el sello hace
+     * que el aviso simplemente salga en la corrida siguiente, no que se pierda.
+     *
+     * @return int cuántos avisos se enviaron
+     */
+    public function notifyExpired(): int
+    {
+        $memberships = Membership::query()
+            ->where('status', MembershipStatus::Expired->value)
+            ->whereNull('expired_notice_sent_at')
+            ->with('user')
+            ->get();
+
+        return $this->dispatchNotices(
+            $memberships,
+            fn (Membership $m) => new MembershipExpiredNotification($m),
+            'expired_notice_sent_at',
+        );
+    }
+
+    /**
+     * Notifica y sella. Compartido por los dos avisos porque la mecánica
+     * —notificar, marcar, contar, saltar las huérfanas— es idéntica y sólo
+     * cambian la plantilla y la columna del candado.
+     *
+     * @param  EloquentCollection<int, Membership>  $memberships
+     * @param  callable(Membership): Notification  $notification
+     */
+    private function dispatchNotices(
+        EloquentCollection $memberships,
+        callable $notification,
+        string $sentAtColumn,
+    ): int {
+        $sent = 0;
+
+        foreach ($memberships as $membership) {
+            $user = $membership->user;
+
+            // Sin usuario no hay a quién escribirle. Se deja el sello nulo por
+            // si el dato se repara más adelante.
+            if ($user === null) {
+                continue;
+            }
+
+            $user->notify($notification($membership));
+
+            $membership->forceFill([$sentAtColumn => now()])->save();
+            $sent++;
+        }
+
+        return $sent;
     }
 
     public function cancel(Membership $membership, ?string $reason = null): Membership
