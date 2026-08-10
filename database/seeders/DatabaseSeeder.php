@@ -41,6 +41,9 @@ class DatabaseSeeder extends Seeder
                 PdfDemoSeeder::class,
                 TestAccountsSeeder::class,
                 DemoRelationalSeeder::class,
+                // Después de PdfDemoSeeder, que es quien crea el perfil que
+                // este llena con la trayectoria para el CV.
+                CandidateCvDemoSeeder::class,
             ]);
         }
     }
