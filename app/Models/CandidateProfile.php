@@ -215,6 +215,12 @@ class CandidateProfile extends Model
         return $this->hasMany(CandidateDocument::class);
     }
 
+    /** @return HasMany<PsychometricAttempt, $this> */
+    public function attempts(): HasMany
+    {
+        return $this->hasMany(PsychometricAttempt::class);
+    }
+
     /** @return BelongsToMany<Skill, $this> */
     public function skills(): BelongsToMany
     {

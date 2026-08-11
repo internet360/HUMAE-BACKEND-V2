@@ -51,6 +51,42 @@ class CandidateProfilePolicy
     }
 
     /**
+     * Read the psychometric results of a candidate.
+     *
+     * Internal staff only, and deliberately NOT folded into `view()`: the
+     * expediente and the psychometric profile are different sensitivities. A
+     * personality measurement says things about a person that a CV does not, so
+     * it gets its own ability and can be narrowed later (e.g. only the recruiter
+     * assigned to the vacancy) without touching the rest of the directory.
+     *
+     * The candidate reads their own results through
+     * `/me/psychometrics/results/{attempt}`, not here.
+     *
+     * The company client never reaches this ability: it sees results only for
+     * candidates HUMAE presented to it, via
+     * `VacancyAssignmentPolicy::viewPsychometrics()`.
+     */
+    public function viewPsychometrics(User $user, CandidateProfile $profile): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
+     * Anotar la interpretación de un resultado psicométrico.
+     *
+     * Ability propia y no `viewPsychometrics`: leer una medición y dejar escrito
+     * un juicio sobre la persona son actos distintos, y el segundo queda firmado
+     * con quién lo hizo. Separarlos permite además abrir la lectura a más gente
+     * sin abrir la escritura.
+     *
+     * Sólo HUMAE. La empresa cliente ni ve estas notas: su recurso las excluye.
+     */
+    public function reviewPsychometrics(User $user, CandidateProfile $profile): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
      * Download the generated CV of an arbitrary candidate. Internal staff only.
      */
     public function downloadCv(User $user, CandidateProfile $profile): bool
