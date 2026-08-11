@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
             StateSeeder::class,
             CompanyTaxonomySeeder::class,
             JobTaxonomySeeder::class,
+            // Después de JobTaxonomySeeder: resuelve functional_area_id contra
+            // las áreas que ese seeder crea.
+            PositionSeeder::class,
             TalentTaxonomySeeder::class,
             MembershipPlanSeeder::class,
             PsychometricBigFiveSeeder::class,
@@ -38,6 +41,9 @@ class DatabaseSeeder extends Seeder
                 PdfDemoSeeder::class,
                 TestAccountsSeeder::class,
                 DemoRelationalSeeder::class,
+                // Después de PdfDemoSeeder, que es quien crea el perfil que
+                // este llena con la trayectoria para el CV.
+                CandidateCvDemoSeeder::class,
             ]);
         }
     }

@@ -57,6 +57,28 @@ class CompanyResource extends JsonResource
             'members' => CompanyMemberResource::collection(
                 $this->whenLoaded('members'),
             ),
+            /*
+             * Presente sólo si el consumidor precargó `latestContract`. El gate
+             * del frontend lo lee de aquí para no pedir un segundo request en
+             * cada carga del área de empresa.
+             *
+             * Va con `when(relationLoaded(...))` y no con `whenLoaded()`: cuando
+             * la relación está cargada pero vacía —justo el caso de la empresa
+             * que no ha firmado— `whenLoaded()` devuelve null sin llamar al
+             * callback, y el gate recibiría `contract: null` en vez de
+             * `is_signed: false`.
+             */
+            'contract' => $this->when(
+                $this->resource->relationLoaded('latestContract'),
+                fn () => $this->latestContract === null
+                    ? ['is_signed' => false]
+                    : [
+                        'is_signed' => true,
+                        'folio' => $this->latestContract->folio,
+                        'signed_at' => $this->latestContract->signed_at->toIso8601String(),
+                        'is_timestamped' => $this->latestContract->isTimestamped(),
+                    ],
+            ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

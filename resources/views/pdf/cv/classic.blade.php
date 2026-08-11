@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CV — {{ $profile->first_name }} {{ $profile->last_name }}</title>
+    <title>CV — {{ $cv->fullName }}</title>
     <style>
         @page { margin: 28px 32px 36px 32px; }
 
@@ -44,21 +44,19 @@
             background: #e5e7eb;
             border: 2px solid #314259;
             overflow: hidden;
-            text-align: center;
-            line-height: 66px;
             color: #314259;
             font-weight: bold;
             font-size: 22px;
         }
-        .header .avatar-frame img {
-            width: 70px;
-            height: 70px;
-            display: block;
-        }
 
+        /*
+         * Sin page-break-inside acá a propósito: una sección con muchas
+         * entradas es más alta que la página y DomPDF, al no poder respetar
+         * el avoid, deja hojas en blanco y desborda el contenido. El avoid
+         * vive en .item, que sí entra siempre en una página.
+         */
         .section {
             margin-bottom: 14px;
-            page-break-inside: avoid;
         }
         .section-title {
             font-size: 11.5px;
@@ -108,25 +106,26 @@
             font-size: 8px;
             color: #9ca3af;
         }
+
+        /*
+         * Sólo para la vista previa. DomPDF renderiza con media "print" (se
+         * fija en CvGenerationService), así que este bloque no toca el PDF: en
+         * el navegador repone el margen de @page —que la pantalla ignora— y
+         * sube el pie, que en papel vive dentro del margen inferior.
+         *
+         * Va al final del stylesheet a propósito: comparte especificidad con
+         * las reglas que corrige, así que gana por orden.
+         */
+        @media screen {
+            body { padding: 28px 32px 36px 32px; }
+            .footer { bottom: 10px; }
+        }
     </style>
 </head>
 <body>
 
 @php
-    $fullName = trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? ''));
-    $contactPieces = array_filter([
-        $profile->contact_email ?? $user->email,
-        $profile->contact_phone,
-        $profile->linkedin_url,
-        $profile->portfolio_url,
-    ]);
-
-    $initials = '';
-    foreach (preg_split('/\s+/', trim($fullName !== '' ? $fullName : (string) $user->name)) ?: [] as $part) {
-        if ($part !== '' && mb_strlen($initials) < 2) {
-            $initials .= mb_strtoupper(mb_substr($part, 0, 1));
-        }
-    }
+    $profile = $cv->profile;
 @endphp
 
 <div class="header">
@@ -134,25 +133,25 @@
         <tr>
             <td class="avatar">
                 <div class="avatar-frame">
-                    @if (! empty($avatarSrc))
-                        <img src="{{ $avatarSrc }}" alt="" />
-                    @else
-                        {{ $initials !== '' ? $initials : '?' }}
-                    @endif
+                    @include('pdf.cv.partials.avatar', [
+                        'initials' => $cv->initials,
+                        'src' => $cv->avatarSrc,
+                        'size' => 70,
+                    ])
                 </div>
             </td>
             <td>
-                <div class="name">{{ $fullName ?: $user->name }}</div>
+                <div class="name">{{ $cv->fullName }}</div>
                 @if ($profile->headline)
                     <div class="headline">{{ $profile->headline }}</div>
                 @endif
                 <div class="contact">
-                    {!! implode(' &nbsp;·&nbsp; ', $contactPieces) !!}
+                    @include('pdf.cv.partials.contact-line', ['pieces' => $cv->contactPieces])
                 </div>
             </td>
             <td class="logo">
-                @if (file_exists($logoPath))
-                    <img src="{{ $logoPath }}" alt="HUMAE" />
+                @if ($cv->logoSrc !== null)
+                    <img src="{{ $cv->logoSrc }}" alt="HUMAE" />
                 @else
                     <strong style="color:#314259;">HUMAE</strong>
                 @endif
@@ -217,7 +216,7 @@
                 <div class="section">
                     <div class="section-title">Habilidades</div>
                     @foreach ($profile->skills as $skill)
-                        <span class="pill">{{ $skill->name }}@if ($skill->pivot?->level) · {{ $skill->pivot->level }}@endif</span>
+                        <span class="pill">{{ $skill->name }}@if ($skill->pivot?->level) · {{ \App\Enums\SkillLevel::labelFor($skill->pivot->level) }}@endif</span>
                     @endforeach
                 </div>
             @endif
@@ -226,7 +225,7 @@
                 <div class="section">
                     <div class="section-title">Idiomas</div>
                     @foreach ($profile->languages as $lang)
-                        <span class="pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ strtoupper((string) $lang->pivot->level) }}@endif</span>
+                        <span class="pill">{{ $lang->name }}@if ($lang->pivot?->level) · {{ \App\Enums\LanguageLevel::labelFor($lang->pivot->level) }}@endif</span>
                     @endforeach
                 </div>
             @endif
@@ -265,7 +264,7 @@
 </table>
 
 <div class="footer">
-    Generado por HUMAE · {{ $generatedAt->translatedFormat('d \\d\\e F \\d\\e Y') }}
+    Generado por HUMAE · {{ $cv->generatedAt->translatedFormat('d \\d\\e F \\d\\e Y') }}
 </div>
 
 </body>

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -178,5 +179,27 @@ class Company extends Model implements CompanyOwned
     public function vacancies(): HasMany
     {
         return $this->hasMany(Vacancy::class);
+    }
+
+    /**
+     * Historial de contratos firmados, del más reciente al más antiguo. Una
+     * renegociación de términos emite un contrato nuevo, no edita el anterior.
+     *
+     * @return HasMany<CompanyContract, $this>
+     */
+    public function contracts(): HasMany
+    {
+        return $this->hasMany(CompanyContract::class)->orderByDesc('signed_at');
+    }
+
+    /**
+     * El contrato vigente: el último firmado. Es lo que consulta el gate del
+     * frontend para decidir si la empresa puede operar.
+     *
+     * @return HasOne<CompanyContract, $this>
+     */
+    public function latestContract(): HasOne
+    {
+        return $this->hasOne(CompanyContract::class)->latestOfMany('signed_at');
     }
 }

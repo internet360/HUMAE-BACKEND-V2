@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\AssignmentStage;
 use App\Enums\AttemptStatus;
 use App\Enums\CompanyMemberRole;
+use App\Enums\CvTemplate;
 use App\Enums\DocumentType;
 use App\Enums\InterviewMode;
 use App\Enums\InterviewState;
@@ -676,6 +677,8 @@ function authzBuildFixtures(): array
             'admin' => $admin,
         ],
         'tokens' => [
+            // No es un id: el binding de esta ruta se resuelve contra el enum.
+            'template' => CvTemplate::default()->value,
             'company' => $companyA->id,
             'company_b' => $companyB->id,
             'company_member_user' => $companyViewer->id,
@@ -872,7 +875,7 @@ function authzMatrixRows(): array
     ]);
 
     // -------------------------------------------------- Catálogos (UNSPECIFIED)
-    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'vacancy-types'] as $catalog) {
+    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'positions', 'vacancy-types'] as $catalog) {
         $add("GET /catalogs/{$catalog}", [
             'method' => 'GET', 'uri' => "/api/v1/catalogs/{$catalog}", 'spec' => 'UNSPECIFIED — inferido: cualquier usuario autenticado (datos maestros)',
             ...authzAccess($authenticated),
@@ -892,6 +895,19 @@ function authzMatrixRows(): array
     ]);
     $add('GET /me/profile/cv.pdf', [
         'method' => 'GET', 'uri' => '/api/v1/me/profile/cv.pdf', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/profile/cv/templates', [
+        'method' => 'GET', 'uri' => '/api/v1/me/profile/cv/templates', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/profile/cv/templates/{template}/preview', [
+        'method' => 'GET', 'uri' => '/api/v1/me/profile/cv/templates/{template}/preview', 'spec' => '§5.2 role: candidate',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('PUT /me/profile/cv/template', [
+        'method' => 'PUT', 'uri' => '/api/v1/me/profile/cv/template', 'spec' => '§5.2 role: candidate',
+        'payload' => ['template' => 'modern'],
         ...authzCandidateSelfService(),
     ]);
 
@@ -1278,6 +1294,33 @@ function authzMatrixRows(): array
         'allow_not_found' => true,
         ...authzAccess(['company_owner', 'company_other', 'admin']),
     ]);
+    $add('GET /me/company/contract', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract', 'spec' => 'UNSPECIFIED — inferido: contrato de la propia empresa',
+        // El admin no es miembro de ninguna empresa: alcanza el endpoint y
+        // responde 404 al no resolver una.
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('POST /me/company/contract', [
+        'method' => 'POST', 'uri' => '/api/v1/me/company/contract', 'spec' => 'UNSPECIFIED — inferido: owner/manager de la propia empresa firma el contrato',
+        // Esta matriz sondea con JSON, no multipart, así que un actor autorizado
+        // llega a la validación y recibe 422 — que es acceso concedido. Lo que se
+        // verifica acá es la frontera: quien no puede firmar recibe 403 *antes*
+        // de que se valide el payload (ver SignCompanyContractRequest::authorize).
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('GET /me/company/contract/preview', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract/preview', 'spec' => 'UNSPECIFIED — inferido: borrador del contrato de la propia empresa',
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    $add('GET /me/company/contract/download', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/contract/download', 'spec' => 'UNSPECIFIED — inferido: contrato de la propia empresa',
+        // Las empresas de los fixtures no tienen contrato firmado: 404.
+        'allow_not_found' => true,
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
     $add('GET /me/company/members', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/members', 'spec' => 'UNSPECIFIED — inferido: miembros de la propia empresa',
         ...authzAccess(['company_owner', 'company_other']),
@@ -1411,6 +1454,48 @@ function authzMatrixRows(): array
         'method' => 'GET', 'uri' => '/api/v1/admin/reports/recruiter-effectiveness',
         'spec' => '§6 Ver reportes — Reclutador ✅ (su propia fila), Admin ✅; la empresa no audita a su proveedor',
         ...authzAccess($staff),
+    ]);
+
+    // ------------------------------- Admin: condiciones del contrato (admin only)
+    $add('GET /admin/contract-settings', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/contract-settings',
+        'spec' => 'UNSPECIFIED — inferido: condiciones comerciales globales, solo admin',
+        ...authzAccess(['admin']),
+    ]);
+    $add('PUT /admin/contract-settings', [
+        'method' => 'PUT', 'uri' => '/api/v1/admin/contract-settings',
+        'spec' => 'UNSPECIFIED — inferido: cambiar honorarios y fuero es solo de admin',
+        'payload' => [
+            'provider_name' => 'Humae Consultoría de RH',
+            'signatory_name' => 'Apoderado HUMAE',
+            'signatory_title' => 'Representante Legal',
+            'fee_kind' => 'percentage_annual_gross',
+            'fee_value' => 12,
+            'payment_days' => 5,
+            'payment_day_kind' => 'habiles',
+            'warranty_days' => 90,
+            'jurisdiction' => 'la Ciudad de México',
+        ],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/contract-settings/signature', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: la firma del apoderado no se expone fuera de admin',
+        // Los fixtures no cargan firma: 404 para el admin.
+        'allow_not_found' => true,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/contract-settings/signature', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: solo admin carga la firma del apoderado',
+        // Sin multipart la validación responde 422, que cuenta como acceso: lo que
+        // se verifica es que nadie más alcance el endpoint.
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/contract-settings/signature', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/contract-settings/signature',
+        'spec' => 'UNSPECIFIED — inferido: solo admin quita la firma del apoderado',
+        ...authzAccess(['admin']),
     ]);
 
     // --------------------------------------------------- Admin usuarios (§5.10)

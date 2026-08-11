@@ -155,6 +155,7 @@ return [
     'uuid' => 'El campo :attribute debe ser un UUID válido.',
 
     'attributes' => [
+        'template' => 'plantilla',
         'title' => 'título',
         'description' => 'descripción',
         'responsibilities' => 'responsabilidades',

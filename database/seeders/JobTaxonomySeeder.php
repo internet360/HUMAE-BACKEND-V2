@@ -7,7 +7,6 @@ namespace Database\Seeders;
 use App\Models\CareerLevel;
 use App\Models\DegreeLevel;
 use App\Models\FunctionalArea;
-use App\Models\Position;
 use App\Models\VacancyCategory;
 use App\Models\VacancyShift;
 use App\Models\VacancyTag;
@@ -66,6 +65,13 @@ class JobTaxonomySeeder extends Seeder
             ['code' => 'data', 'name' => 'Datos / Analítica'],
             ['code' => 'marketing', 'name' => 'Marketing'],
             ['code' => 'legal', 'name' => 'Legal / Compliance'],
+            // Área macro 7 de "PUESTOS DE BUSQUEDA.docx", que no existía en el
+            // catálogo original del PDF.
+            [
+                'code' => 'health',
+                'name' => 'Salud, Laboratorio y Biotecnología',
+                'description' => 'Un sector con altas regulaciones donde la formación académica suele estar muy estipulada legalmente.',
+            ],
             ['code' => 'other', 'name' => 'Otra'],
         ]);
 
@@ -105,33 +111,13 @@ class JobTaxonomySeeder extends Seeder
             ['code' => 'travel', 'name' => 'Con viajes'],
         ]);
 
-        $this->seedList(Position::class, [
-            ['code' => 'software_engineer', 'name' => 'Ingeniero/a de Software'],
-            ['code' => 'frontend_developer', 'name' => 'Desarrollador/a Frontend'],
-            ['code' => 'backend_developer', 'name' => 'Desarrollador/a Backend'],
-            ['code' => 'fullstack_developer', 'name' => 'Desarrollador/a Full Stack'],
-            ['code' => 'mobile_developer', 'name' => 'Desarrollador/a Mobile'],
-            ['code' => 'devops_engineer', 'name' => 'DevOps / SRE'],
-            ['code' => 'data_analyst', 'name' => 'Analista de Datos'],
-            ['code' => 'data_scientist', 'name' => 'Científico/a de Datos'],
-            ['code' => 'product_manager', 'name' => 'Product Manager'],
-            ['code' => 'ux_designer', 'name' => 'Diseñador/a UX/UI'],
-            ['code' => 'qa_engineer', 'name' => 'QA Engineer'],
-            ['code' => 'project_manager', 'name' => 'Project Manager'],
-            ['code' => 'account_executive', 'name' => 'Ejecutivo/a de Cuentas'],
-            ['code' => 'sales_representative', 'name' => 'Representante de Ventas'],
-            ['code' => 'marketing_specialist', 'name' => 'Especialista de Marketing'],
-            ['code' => 'hr_specialist', 'name' => 'Especialista de RH'],
-            ['code' => 'recruiter', 'name' => 'Reclutador/a'],
-            ['code' => 'accountant', 'name' => 'Contador/a'],
-            ['code' => 'customer_service', 'name' => 'Atención al Cliente'],
-            ['code' => 'administrative_assistant', 'name' => 'Asistente Administrativo'],
-        ]);
+        // El catálogo de puestos (`positions`) vive en PositionSeeder: necesita
+        // que las áreas funcionales existan para resolver functional_area_id.
     }
 
     /**
      * @param  class-string  $model
-     * @param  array<int, array{code: string, name: string}>  $items
+     * @param  array<int, array{code: string, name: string, description?: string}>  $items
      */
     private function seedList(string $model, array $items): void
     {

@@ -8,6 +8,7 @@ use App\Models\Concerns\IsCatalog;
 use Database\Factories\FunctionalAreaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -35,5 +36,11 @@ class FunctionalArea extends Model
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];
+    }
+
+    /** @return HasMany<Position, $this> */
+    public function positions(): HasMany
+    {
+        return $this->hasMany(Position::class);
     }
 }

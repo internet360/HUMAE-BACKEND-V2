@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\FunctionalAreaController as Admin
 use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLanguageController;
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
+use App\Http\Controllers\Api\V1\Admin\ContractSettingController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\Api\V1\Candidate\PsychometricController;
 use App\Http\Controllers\Api\V1\Candidate\ReferenceController;
 use App\Http\Controllers\Api\V1\Candidate\SkillController;
 use App\Http\Controllers\Api\V1\Company\CompanyVacancyController;
+use App\Http\Controllers\Api\V1\Company\MyCompanyContractController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyMemberController;
 use App\Http\Controllers\Api\V1\Interviews\InterviewController;
@@ -104,6 +106,7 @@ Route::middleware($authenticated)->prefix('catalogs')->name('catalogs.')->group(
     Route::get('/languages', [CatalogController::class, 'languages'])->name('languages');
     Route::get('/degree-levels', [CatalogController::class, 'degreeLevels'])->name('degree-levels');
     Route::get('/functional-areas', [CatalogController::class, 'functionalAreas'])->name('functional-areas');
+    Route::get('/positions', [CatalogController::class, 'positions'])->name('positions');
     Route::get('/vacancy-types', [CatalogController::class, 'vacancyTypes'])->name('vacancy-types');
 });
 
@@ -204,6 +207,16 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
         Route::get('/profile/cv.pdf', [CvController::class, 'download'])
             ->middleware('throttle:30,1')
             ->name('profile.cv');
+
+        // Plantillas del CV. El {template} se resuelve contra el enum, así que
+        // una llave inexistente devuelve 404 sin llegar al controller.
+        Route::get('/profile/cv/templates', [CvController::class, 'templates'])
+            ->name('profile.cv.templates');
+        Route::get('/profile/cv/templates/{template}/preview', [CvController::class, 'preview'])
+            ->middleware('throttle:60,1')
+            ->name('profile.cv.templates.preview');
+        Route::put('/profile/cv/template', [CvController::class, 'updateTemplate'])
+            ->name('profile.cv.template.update');
 
         // Experiencia laboral
         Route::apiResource('profile/experiences', ExperienceController::class)
@@ -396,6 +409,17 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
     Route::get('/', [MyCompanyController::class, 'show'])->name('show');
     Route::patch('/', [MyCompanyController::class, 'update'])->name('update');
 
+    // Contrato de prestación de servicios. Sin él la empresa no debería operar:
+    // la cláusula Primera prohíbe contactar candidatos antes de firmarlo.
+    Route::get('/contract', [MyCompanyContractController::class, 'show'])
+        ->name('contract.show');
+    Route::post('/contract', [MyCompanyContractController::class, 'store'])
+        ->name('contract.store');
+    Route::get('/contract/preview', [MyCompanyContractController::class, 'preview'])
+        ->name('contract.preview');
+    Route::get('/contract/download', [MyCompanyContractController::class, 'download'])
+        ->name('contract.download');
+
     Route::get('/members', [MyCompanyMemberController::class, 'index'])
         ->name('members.index');
     Route::post('/members', [MyCompanyMemberController::class, 'store'])
@@ -447,6 +471,25 @@ Route::middleware($authenticated)->prefix('admin/reports')->name('admin.reports.
 | Admin: gestión de usuarios (recruiters, company_users, admins)
 |--------------------------------------------------------------------------
 */
+/*
+|--------------------------------------------------------------------------
+| Admin: condiciones comerciales del contrato
+|--------------------------------------------------------------------------
+| Aplican a los contratos que se firmen desde el cambio. Los ya firmados
+| conservan su copia en `company_contracts.terms` y no se pueden alterar.
+*/
+Route::middleware($authenticated)->prefix('admin/contract-settings')->name('admin.contract-settings.')->group(function (): void {
+    Route::get('/', [ContractSettingController::class, 'show'])->name('show');
+    Route::put('/', [ContractSettingController::class, 'update'])->name('update');
+
+    Route::get('/signature', [ContractSettingController::class, 'showSignature'])
+        ->name('signature.show');
+    Route::post('/signature', [ContractSettingController::class, 'uploadSignature'])
+        ->name('signature.store');
+    Route::delete('/signature', [ContractSettingController::class, 'destroySignature'])
+        ->name('signature.destroy');
+});
+
 Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {
     Route::get('/', [AdminUserController::class, 'index'])->name('index');
     Route::post('/', [AdminUserController::class, 'store'])->name('store');

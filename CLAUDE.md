@@ -17,7 +17,7 @@
 
 | Componente | Versión | Paquete |
 |---|---|---|
-| PHP | 8.3+ | — |
+| PHP | **8.2+** (`composer.json`: `^8.2`) | — |
 | Framework | 12.x | `laravel/framework` |
 | Auth | 4.x | `laravel/sanctum` |
 | Roles/Permisos | 7.x | `spatie/laravel-permission` |
@@ -36,6 +36,17 @@
 | IDE | 3.x | `barryvdh/laravel-ide-helper` |
 
 DB: **MySQL 8**. Para tests se usa SQLite in-memory (ver `phpunit.xml`).
+
+> ⚠️ **No uses sintaxis posterior a 8.2.** Este archivo decía "8.3+" mientras
+> `composer.json` declara `^8.2`, y esa contradicción produjo un bug real: una
+> constante de clase tipada (`private const array ROLE_KEYS`, PHP 8.3+) en
+> `TutorialService` pasó pint, phpstan y 602 tests en local —donde el PHP de
+> desarrollo es 8.5— y tumbó con 500 el servidor de develop, que sirve PHP 8.2.
+>
+> `phpstan.neon` ahora fija `phpVersion.min: 80200`, así que `composer analyse`
+> marca este tipo de incompatibilidad antes del deploy. Si algún día se sube el
+> piso a 8.3, hay que cambiarlo en `composer.json`, acá y en `phpstan.neon` —los
+> tres— y confirmar la versión que sirve cPanel en **MultiPHP Manager**.
 
 ## 3. Arquitectura y convenciones
 

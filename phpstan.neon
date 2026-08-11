@@ -4,6 +4,18 @@ includes:
 parameters:
     level: 8
 
+    # Analizar contra la versión MÍNIMA que declara composer.json (^8.2), no
+    # contra el PHP del que corre el análisis.
+    #
+    # Sin esto, una máquina de desarrollo con PHP 8.5 acepta sintaxis que el
+    # servidor no puede parsear y el error aparece recién en producción. Pasó
+    # con `private const array ROLE_KEYS` en TutorialService (constantes
+    # tipadas: 8.3+): pint, phpstan y 602 tests en verde, y 500 en develop
+    # porque cPanel sirve PHP 8.2.
+    phpVersion:
+        min: 80200
+        max: 80399
+
     paths:
         - app
         - database/factories
