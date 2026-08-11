@@ -13,6 +13,7 @@ use App\Notifications\MembershipExpiredNotification;
 use App\Notifications\MembershipExpiringNotification;
 use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification;
 
 beforeEach(function (): void {
@@ -97,6 +98,40 @@ it('never sends the expiring warning twice, no matter how many times the job run
         MembershipExpiringNotification::class,
         1,
     );
+});
+
+/**
+ * El requerimiento dice "a partir de 3 días antes", y el job corre a una hora
+ * fija (01:00). Comparando instantes, una membresía que vence a las 09:00
+ * quedaba fuera de la ventana en E-3 y sólo entraba en E-2: el aviso salía con
+ * dos días de anticipación, no tres.
+ */
+it('warns a full three calendar days ahead, whatever hour the membership expires', function (
+    string $expiresAt,
+): void {
+    Notification::fake();
+    $this->travelTo(Carbon::parse('2026-08-10 01:00:00'));
+
+    $membership = membershipExpiringAt($expiresAt);
+
+    runNotifyJob();
+
+    Notification::assertSentTo($membership->user, MembershipExpiringNotification::class);
+})->with([
+    'vence de madrugada' => ['2026-08-13 00:30:00'],
+    'vence a media mañana' => ['2026-08-13 09:00:00'],
+    'vence casi a medianoche' => ['2026-08-13 23:59:00'],
+]);
+
+it('still ignores memberships four calendar days out', function (): void {
+    Notification::fake();
+    $this->travelTo(Carbon::parse('2026-08-10 01:00:00'));
+
+    membershipExpiringAt('2026-08-14 00:30:00');
+
+    runNotifyJob();
+
+    Notification::assertNothingSent();
 });
 
 it('leaves alone memberships that expire beyond the window', function (): void {
@@ -192,6 +227,49 @@ it('sends each template exactly once across the full lifecycle', function (): vo
     expect($fresh->status)->toBe(MembershipStatus::Expired);
     expect($fresh->expiry_warning_sent_at)->not->toBeNull();
     expect($fresh->expired_notice_sent_at)->not->toBeNull();
+});
+
+/**
+ * El plazo se cuenta en días de calendario. Estos casos usan una hora de
+ * vencimiento temprana (00:30) porque es donde el cálculo por intervalo
+ * truncaba hacia abajo: el job corre a la 01:00, así que faltan N días menos
+ * unas horas y `(int)` se comía un día entero.
+ */
+it('counts the deadline in calendar days, not truncated intervals', function (
+    int $daysAhead,
+    string $expected,
+): void {
+    $membership = membershipExpiringAt(
+        now()->addDays($daysAhead)->startOfDay()->addMinutes(30),
+    );
+
+    $body = (new MembershipExpiringNotification($membership))
+        ->toArray($membership->user)['body'];
+
+    expect($body)->toBe($expected);
+})->with([
+    'tres días' => [3, 'Tu membresía de candidato vence en 3 días.'],
+    'dos días' => [2, 'Tu membresía de candidato vence en 2 días.'],
+    'un día — singular, y NO "hoy"' => [1, 'Tu membresía de candidato vence en 1 día.'],
+]);
+
+it('says "vence hoy" only when it really expires today', function (): void {
+    $membership = membershipExpiringAt(now()->endOfDay());
+
+    $body = (new MembershipExpiringNotification($membership))
+        ->toArray($membership->user)['body'];
+
+    expect($body)->toBe('Tu membresía de candidato vence hoy.');
+});
+
+it('does not mutate expires_at while formatting the deadline', function (): void {
+    $expiresAt = now()->addDays(2)->startOfDay()->addMinutes(30);
+    $membership = membershipExpiringAt($expiresAt);
+
+    (new MembershipExpiringNotification($membership))->toArray($membership->user);
+
+    // `startOfDay()` muta; si faltara el `copy()` esto vendría en 00:00.
+    expect($membership->expires_at->format('H:i'))->toBe('00:30');
 });
 
 it('stores an in-app notification alongside each email', function (): void {

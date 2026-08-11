@@ -247,10 +247,20 @@ class MembershipService
     /**
      * Avisa que la membresía está por vencer, una sola vez por membresía.
      *
-     * Ventana `(now, now + $daysBefore]`: sólo membresías todavía activas cuyo
-     * vencimiento cae dentro de los próximos N días. El límite inferior
-     * `expires_at > now` deja fuera a las que ya vencieron — de esas se ocupa
-     * `notifyExpired()`, con la otra plantilla.
+     * Ventana en días de CALENDARIO: vence hoy o dentro de los próximos N
+     * días. El límite inferior `expires_at > now` deja fuera a las que ya
+     * vencieron — de esas se ocupa `notifyExpired()`, con la otra plantilla.
+     *
+     * El corte superior va por fecha (`whereDate`) y no por instante, porque el
+     * job corre a una hora fija. Con `expires_at <= now()->addDays(3)`, una
+     * membresía que vence el día E a las 09:00 seguía fuera de la ventana en la
+     * corrida de E-3 a la 01:00 y sólo entraba en E-2: el aviso salía dos días
+     * antes en lugar de tres, incumpliendo el requerimiento. Comparar fechas lo
+     * ancla al día calendario, igual que la copia del correo.
+     *
+     * Cuesta el índice de `expires_at` (la función sobre la columna lo
+     * inutiliza). Es un job diario sobre una tabla chica: se prefiere que la
+     * regla de negocio sea correcta.
      *
      * El candado es `expiry_warning_sent_at`, no un cálculo de fechas: el job
      * corre a diario y la ventana dura varios días, así que sin marca
@@ -269,7 +279,7 @@ class MembershipService
             ->whereNull('expiry_warning_sent_at')
             ->whereNotNull('expires_at')
             ->where('expires_at', '>', now())
-            ->where('expires_at', '<=', now()->addDays($daysBefore))
+            ->whereDate('expires_at', '<=', now()->addDays($daysBefore)->toDateString())
             ->with('user')
             ->get();
 

@@ -73,6 +73,17 @@ class MembershipExpiringNotification extends Notification
      * Se separa del cuerpo del correo porque la reusa la notificación en app.
      * El caso `<= 0` existe de verdad: la ventana llega hasta el mismo día de
      * vencimiento, y ahí "vence en 0 días" sería una redacción rota.
+     *
+     * Se comparan días de CALENDARIO (`startOfDay` en ambos lados), no el
+     * intervalo entre instantes. En Carbon 3 `diffInDays()` devuelve float y el
+     * cast a int trunca: con el job corriendo a la 01:00 y una membresía que
+     * vence pasado mañana a las 00:30, el intervalo es 2.97 días → decía
+     * "vence en 2 días" cuando faltaban 3. Peor todavía en el borde: una que
+     * vencía mañana imprimía "vence hoy", que es falso.
+     *
+     * `copy()` no es opcional: `startOfDay()` muta la instancia, y `expires_at`
+     * es el atributo casteado del modelo — sin la copia le arrastraríamos la
+     * hora a cero también a `translatedFormat()` y a `toArray()`.
      */
     private function deadlineLine(): string
     {
@@ -82,7 +93,10 @@ class MembershipExpiringNotification extends Notification
             return 'Tu membresía de candidato está por vencer.';
         }
 
-        $daysLeft = (int) now()->diffInDays($expiresAt, absolute: true);
+        $daysLeft = (int) now()->startOfDay()->diffInDays(
+            $expiresAt->copy()->startOfDay(),
+            absolute: true,
+        );
 
         if ($daysLeft <= 0) {
             return 'Tu membresía de candidato vence hoy.';
