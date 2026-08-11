@@ -31,6 +31,12 @@ class TestResource extends JsonResource
             'time_limit_minutes' => $this->time_limit_minutes,
             'instructions' => $this->instructions,
             'is_required' => $this->is_required,
+
+            // Lo calcula `PsychometricTestService::canStart()`. Puede ser null si
+            // el recurso se serializa fuera del listado del candidato, donde no
+            // hay un candidato contra el que evaluarlo.
+            'can_start' => $this->resource->can_start ?? null,
+
             'questions' => QuestionResource::collection($this->whenLoaded('questions')),
             'question_count' => $this->whenLoaded(
                 'questions',

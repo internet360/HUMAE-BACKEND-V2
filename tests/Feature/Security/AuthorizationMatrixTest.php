@@ -32,7 +32,10 @@ use App\Models\Language;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
 use App\Models\PsychometricAttempt;
+use App\Models\PsychometricQuestion;
+use App\Models\PsychometricQuestionOption;
 use App\Models\PsychometricTest;
+use App\Models\PsychometricTestSection;
 use App\Models\Skill;
 use App\Models\User;
 use App\Models\Vacancy;
@@ -158,6 +161,8 @@ const AUTHZ_POLICY_INVENTORY = [
     'CandidateProfilePolicy' => [
         'viewAny' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'view' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'viewPsychometrics' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'reviewPsychometrics' => 'Http/Controllers/Api/V1/Psychometrics/AttemptReviewController.php',
         'downloadCv' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
@@ -183,6 +188,7 @@ const AUTHZ_POLICY_INVENTORY = [
         'delete' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
         'selectFinalist' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
         'scheduleInterview' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
+        'viewPsychometrics' => 'Http/Controllers/Api/V1/Company/CandidatePsychometricController.php',
         'viewNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
         'createNote' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
         'viewInternalNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
@@ -656,6 +662,27 @@ function authzBuildFixtures(): array
         'status' => AttemptStatus::InProgress,
     ]);
 
+    /*
+     * Prueba de autoría SIN intentos.
+     *
+     * `$test` ya tiene un intento, así que su estructura está congelada
+     * (`PsychometricAuthoringService`) y los endpoints de admin le responderían
+     * 409. La matriz cuenta el 409 como "allow" —no es 401/403/404— pero
+     * sondearía un camino que nunca llega a escribir. Este árbol aparte deja que
+     * el actor autorizado ejercite el éxito real.
+     */
+    $authoringTest = PsychometricTest::factory()->create(['is_active' => false]);
+    $authoringSection = PsychometricTestSection::factory()->create([
+        'psychometric_test_id' => $authoringTest->id,
+    ]);
+    $authoringQuestion = PsychometricQuestion::factory()->create([
+        'psychometric_test_id' => $authoringTest->id,
+        'psychometric_test_section_id' => $authoringSection->id,
+    ]);
+    $authoringOption = PsychometricQuestionOption::factory()->create([
+        'psychometric_question_id' => $authoringQuestion->id,
+    ]);
+
     $notificationId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     DB::table('notifications')->insert([
         'id' => $notificationId,
@@ -704,6 +731,10 @@ function authzBuildFixtures(): array
             'functional_area' => $functionalArea->id,
             'attempt' => $attempt->id,
             'test' => $test->id,
+            'psycho_test' => $authoringTest->id,
+            'psycho_section' => $authoringSection->id,
+            'psycho_question' => $authoringQuestion->id,
+            'psycho_option' => $authoringOption->id,
             'user' => $invitee->id,
             'invitation_token' => $invitationToken,
             'verify_id' => $candidateOwner->id,
@@ -1555,6 +1586,145 @@ function authzMatrixRows(): array
             ...authzAccess(['admin']),
         ]);
     }
+
+    /*
+     * ------------------------------------- Admin autoría de psicométricos
+     *
+     * Permiso Spatie `psychometric.manage`, sólo rol admin. El reclutador queda
+     * afuera a propósito: puede leer resultados de candidatos, no reescribir el
+     * instrumento con el que se midieron.
+     */
+    $psychoSpec = 'UNSPECIFIED — inferido: admin only (permiso psychometric.manage)';
+
+    /*
+     * Lectura de resultados por terceros. Tres alcances distintos:
+     *  - directorio: HUMAE (reclutador + admin), ability `viewPsychometrics`
+     *    sobre el candidato.
+     *  - asignación: la empresa DUEÑA de la vacante, y sólo si el candidato está
+     *    en etapa visible. `company_other` es de otra empresa: debe recibir
+     *    negación, y ese es el caso que importa.
+     *  - consola admin: `psychometric.manage`.
+     */
+    $add('GET /directory/candidates/{candidate}/psychometrics', [
+        'method' => 'GET', 'uri' => '/api/v1/directory/candidates/{candidate}/psychometrics',
+        'spec' => '§6 Ver expediente completo — Empresa ❌; psicométricos = staff HUMAE',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('GET /psychometrics/attempts/{attempt}/answers', [
+        'method' => 'GET', 'uri' => '/api/v1/psychometrics/attempts/{attempt}/answers',
+        'spec' => 'UNSPECIFIED — inferido: staff HUMAE; el cuestionario respondido no sale del equipo',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('PATCH /psychometrics/attempts/{attempt}/review', [
+        'method' => 'PATCH', 'uri' => '/api/v1/psychometrics/attempts/{attempt}/review',
+        'spec' => 'UNSPECIFIED — inferido: staff HUMAE; la interpretación queda firmada',
+        'payload' => ['recommendations' => 'Nota de sondeo.'],
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('GET /me/company/assignments/{assignment}/psychometrics', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/assignments/{assignment}/psychometrics',
+        'spec' => 'UNSPECIFIED — inferido: staff + empresa dueña, sólo candidato presentado',
+        ...authzAccess(['recruiter', 'admin', 'company_owner']),
+    ]);
+    $add('POST /admin/psychometrics/attempts/{attempt}/cancel', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/attempts/{attempt}/cancel',
+        'spec' => $psychoSpec,
+        'payload' => ['reason' => 'Anulación de sondeo con motivo suficiente.'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/psychometrics/candidates', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/candidates', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/psychometrics/candidates/{candidate}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/candidates/{candidate}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+
+    $add('GET /admin/psychometrics/tests', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/tests', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/psychometrics/tests', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/tests', 'spec' => $psychoSpec,
+        'payload' => ['code' => 'sondeo-prueba', 'name' => 'Prueba de sondeo'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/psychometrics/tests/{test}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/psychometrics/tests/{test}', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}', 'spec' => $psychoSpec,
+        'payload' => ['name' => 'Renombrada en el sondeo'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/psychometrics/tests/{test}', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/psychometrics/tests/{test}/duplicate', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}/duplicate', 'spec' => $psychoSpec,
+        'payload' => ['code' => 'sondeo-copia'],
+        ...authzAccess(['admin']),
+    ]);
+
+    $add('GET /admin/psychometrics/tests/{test}/sections', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}/sections', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/psychometrics/tests/{test}/sections', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}/sections', 'spec' => $psychoSpec,
+        'payload' => ['code' => 'sondeo-seccion', 'name' => 'Sección de sondeo'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/psychometrics/sections/{section}', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/psychometrics/sections/{psycho_section}', 'spec' => $psychoSpec,
+        'payload' => ['name' => 'Sección renombrada'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/psychometrics/sections/{section}', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/psychometrics/sections/{psycho_section}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+
+    $add('GET /admin/psychometrics/tests/{test}/questions', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}/questions', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/psychometrics/tests/{test}/questions', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/tests/{psycho_test}/questions', 'spec' => $psychoSpec,
+        'payload' => ['type' => 'likert_5', 'prompt' => 'Ítem de sondeo'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/psychometrics/questions/{question}', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/psychometrics/questions/{psycho_question}', 'spec' => $psychoSpec,
+        'payload' => ['prompt' => 'Ítem reescrito'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/psychometrics/questions/{question}', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/psychometrics/questions/{psycho_question}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+
+    $add('GET /admin/psychometrics/questions/{question}/options', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/psychometrics/questions/{psycho_question}/options', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/psychometrics/questions/{question}/options', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/psychometrics/questions/{psycho_question}/options', 'spec' => $psychoSpec,
+        'payload' => ['label' => 'Opción de sondeo', 'value' => '3', 'score' => 3],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/psychometrics/options/{option}', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/psychometrics/options/{psycho_option}', 'spec' => $psychoSpec,
+        'payload' => ['label' => 'Opción renombrada'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('DELETE /admin/psychometrics/options/{option}', [
+        'method' => 'DELETE', 'uri' => '/api/v1/admin/psychometrics/options/{psycho_option}', 'spec' => $psychoSpec,
+        ...authzAccess(['admin']),
+    ]);
 
     // --------------------------------------------------------- Salud / webhooks
     $add('GET /health', [

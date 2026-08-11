@@ -7,12 +7,14 @@ namespace App\Http\Controllers\Api\V1\Recruiter;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\Directory\DirectoryCandidateDetailResource;
 use App\Http\Resources\V1\Directory\DirectoryCandidateResource;
+use App\Http\Resources\V1\Psychometric\StaffAttemptResultResource;
 use App\Models\CandidateDocument;
 use App\Models\CandidateProfile;
 use App\Models\DirectoryFavorite;
 use App\Models\User;
 use App\Services\CvGenerationService;
 use App\Services\DirectorySearchService;
+use App\Services\PsychometricReportingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -77,6 +79,27 @@ class DirectoryController extends Controller
         return $this->success(
             message: 'Expediente.',
             data: DirectoryCandidateDetailResource::make($candidate),
+        );
+    }
+
+    /**
+     * Resultados psicométricos de un candidato del directorio.
+     *
+     * Endpoint aparte y no embebido en `show()` por dos razones: la
+     * autorización queda explícita (`viewPsychometrics` tiene su propia ability,
+     * distinta de `view`, porque un perfil de personalidad y un CV no tienen la
+     * misma sensibilidad), y el expediente no carga un árbol que la mayoría de
+     * las vistas no mira. Mismo patrón que `cv.pdf` y `documents`.
+     */
+    public function psychometrics(Request $request, CandidateProfile $candidate): JsonResponse
+    {
+        $this->authorize('viewPsychometrics', $candidate);
+
+        $attempts = app(PsychometricReportingService::class)->scoredAttempts($candidate);
+
+        return $this->success(
+            message: 'Resultados psicométricos del candidato.',
+            data: StaffAttemptResultResource::collection($attempts),
         );
     }
 

@@ -20,6 +20,9 @@ use Illuminate\Support\Carbon;
  * @property AttemptStatus|null $status
  * @property Carbon|null $started_at
  * @property Carbon|null $submitted_at
+ * @property Carbon|null $cancelled_at
+ * @property string|null $cancelled_reason
+ * @property int|null $cancelled_by
  * @property int|null $duration_seconds
  * @property string|null $ip_address
  * @property string|null $user_agent
@@ -37,6 +40,9 @@ class PsychometricAttempt extends Model
         'status',
         'started_at',
         'submitted_at',
+        'cancelled_at',
+        'cancelled_reason',
+        'cancelled_by',
         'duration_seconds',
         'ip_address',
         'user_agent',
@@ -48,8 +54,19 @@ class PsychometricAttempt extends Model
             'status' => AttemptStatus::class,
             'started_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'duration_seconds' => 'integer',
         ];
+    }
+
+    /**
+     * Quién anuló el intento. Nulo mientras no se haya anulado.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function canceller(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
     /** @return BelongsTo<CandidateProfile, $this> */

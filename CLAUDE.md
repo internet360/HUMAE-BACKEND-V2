@@ -210,6 +210,11 @@ Todos los env vars están documentados en `.env.example` con valor vacío. Nunca
 - **Fase 7** ✅ — Profile (candidate) — 22 endpoints, ProfileService + LocalFileStorage (Laravel Storage + Intervention Image)
 - **Fase 8** ✅ — Psychometrics — 6 endpoints, scoring con reverse-scored, Big Five seeder (25 ítems ES), 47 tests
 - **Fase 9** ✅ — **CV PDF Generator** — endpoint `GET /me/profile/cv.pdf`, `CvGenerationService` + Blade template con tokens HUMAE (logo, paleta brand), **49 tests feature** verdes
+- **Fase 8.1** ✅ — **Psicométricos: blindaje + autoría admin**
+  - El puntaje ya NO se acepta del cliente: se deriva del `score` de la opción en el servidor (`SavePsychometricAnswersRequest` + `PsychometricScoringService::rawScore()`). Antes había tres caminos para inflarlo (`score`, `value` numérico, `option_id` de otra pregunta).
+  - `max_attempts` por prueba (default 1) y `time_limit_minutes` ahora se aplican de verdad.
+  - CRUD admin en `/admin/psychometrics/*` bajo el permiso `psychometric.manage`: pruebas, secciones, preguntas y opciones.
+  - **Regla clave**: una prueba con intentos tiene la estructura CONGELADA para no invalidar resultados emitidos. Se versiona con `POST /admin/psychometrics/tests/{test}/duplicate`. Ver `PsychometricAuthoringService`.
 - **Fase 10** ⏳ — Companies + Vacancies
 - **Fase 11–15** — Directory/Pipeline/Interviews/Notifications/Reports
 - **Fase Final** — Hardening (cobertura, E2E, Docker, CI, security audit)

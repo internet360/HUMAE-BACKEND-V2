@@ -9,6 +9,12 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLangua
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
 use App\Http\Controllers\Api\V1\Admin\ContractSettingController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\AttemptController as AdminPsychometricAttemptController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\CandidateResultsController as AdminPsychometricCandidateResultsController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\OptionController as AdminPsychometricOptionController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\QuestionController as AdminPsychometricQuestionController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\SectionController as AdminPsychometricSectionController;
+use App\Http\Controllers\Api\V1\Admin\Psychometrics\TestController as AdminPsychometricTestController;
 use App\Http\Controllers\Api\V1\Admin\ReportsController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
@@ -30,11 +36,14 @@ use App\Http\Controllers\Api\V1\Candidate\PaymentController;
 use App\Http\Controllers\Api\V1\Candidate\PsychometricController;
 use App\Http\Controllers\Api\V1\Candidate\ReferenceController;
 use App\Http\Controllers\Api\V1\Candidate\SkillController;
+use App\Http\Controllers\Api\V1\Company\CandidatePsychometricController as CompanyCandidatePsychometricController;
 use App\Http\Controllers\Api\V1\Company\CompanyVacancyController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyContractController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyMemberController;
 use App\Http\Controllers\Api\V1\Interviews\InterviewController;
+use App\Http\Controllers\Api\V1\Psychometrics\AnswerSheetController;
+use App\Http\Controllers\Api\V1\Psychometrics\AttemptReviewController;
 use App\Http\Controllers\Api\V1\Recruiter\AssignmentController;
 use App\Http\Controllers\Api\V1\Recruiter\AssignmentNoteController;
 use App\Http\Controllers\Api\V1\Recruiter\CompanyController;
@@ -354,6 +363,23 @@ Route::middleware($authenticated)->group(function (): void {
         Route::get('/directory/candidates/{candidate}/documents/{document}/download', [DirectoryController::class, 'downloadDocument'])
             ->middleware('throttle:60,1')
             ->name('directory.candidates.documents.download');
+
+        // Perfil psicométrico del candidato. Ability propia
+        // (`viewPsychometrics`), distinta de `view`: una medición de
+        // personalidad no tiene la misma sensibilidad que un CV.
+        Route::get('/directory/candidates/{candidate}/psychometrics', [DirectoryController::class, 'psychometrics'])
+            ->name('directory.candidates.psychometrics');
+
+        // Hoja de respuestas ítem por ítem. Sólo HUMAE: la empresa cliente ve el
+        // agregado y nada más. Ver el docblock del controller.
+        Route::get('/psychometrics/attempts/{attempt}/answers', [AnswerSheetController::class, 'index'])
+            ->name('psychometrics.attempts.answers');
+
+        // Interpretación firmada del resultado. Ability propia
+        // (`reviewPsychometrics`): leer una medición y dejar escrito un juicio
+        // sobre la persona son actos distintos.
+        Route::patch('/psychometrics/attempts/{attempt}/review', [AttemptReviewController::class, 'update'])
+            ->name('psychometrics.attempts.review');
     });
 
     // Pipeline: assignments (recruiter / admin — ARCHITECTURE.md §5.7).
@@ -441,6 +467,14 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
         ->name('vacancies.transition');
     Route::get('/vacancies/{vacancy}/assignments', [CompanyVacancyController::class, 'assignments'])
         ->name('vacancies.assignments');
+
+    // Perfil psicométrico de un candidato PRESENTADO. Se direcciona por
+    // asignación y no por candidato a propósito: la empresa no navega el
+    // directorio (§6), así que el único id que puede nombrar legítimamente es el
+    // de una asignación de sus propias vacantes. Con `{candidate}` se podría
+    // enumerar la base de talento probando ids.
+    Route::get('/assignments/{assignment}/psychometrics', [CompanyCandidatePsychometricController::class, 'index'])
+        ->name('assignments.psychometrics');
 });
 
 /*
@@ -539,6 +573,78 @@ Route::middleware($authenticated)
         Route::apiResource('functional-areas', AdminFunctionalAreaController::class)
             ->except(['show'])
             ->parameters(['functional-areas' => 'functionalArea']);
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Admin: autoría de pruebas psicométricas
+|--------------------------------------------------------------------------
+| Protegido por el permiso Spatie `psychometric.manage` (rol admin), que ya
+| existía en el seeder sin que nada lo consumiera: crear una prueba era escribir
+| un seeder y desplegar.
+|
+| Secciones, preguntas y opciones se anidan bajo la prueba para CREAR (el padre
+| es contexto necesario) y se direccionan planas para editar y borrar (el id del
+| hijo ya identifica al padre). Anidar todo obligaría a mandar ids redundantes
+| que además habría que verificar entre sí.
+|
+| La estructura de una prueba con intentos está congelada; `POST .../duplicate`
+| es la vía para versionarla. Ver `PsychometricAuthoringService`.
+*/
+Route::middleware($authenticated)
+    ->prefix('admin/psychometrics')
+    ->name('admin.psychometrics.')
+    ->group(function (): void {
+        // Pruebas
+        Route::get('/tests', [AdminPsychometricTestController::class, 'index'])->name('tests.index');
+        Route::post('/tests', [AdminPsychometricTestController::class, 'store'])->name('tests.store');
+        Route::get('/tests/{test}', [AdminPsychometricTestController::class, 'show'])->name('tests.show');
+        Route::patch('/tests/{test}', [AdminPsychometricTestController::class, 'update'])->name('tests.update');
+        Route::delete('/tests/{test}', [AdminPsychometricTestController::class, 'destroy'])->name('tests.destroy');
+        Route::post('/tests/{test}/duplicate', [AdminPsychometricTestController::class, 'duplicate'])
+            ->name('tests.duplicate');
+
+        // Secciones
+        Route::get('/tests/{test}/sections', [AdminPsychometricSectionController::class, 'index'])
+            ->name('sections.index');
+        Route::post('/tests/{test}/sections', [AdminPsychometricSectionController::class, 'store'])
+            ->name('sections.store');
+        Route::patch('/sections/{section}', [AdminPsychometricSectionController::class, 'update'])
+            ->name('sections.update');
+        Route::delete('/sections/{section}', [AdminPsychometricSectionController::class, 'destroy'])
+            ->name('sections.destroy');
+
+        // Preguntas
+        Route::get('/tests/{test}/questions', [AdminPsychometricQuestionController::class, 'index'])
+            ->name('questions.index');
+        Route::post('/tests/{test}/questions', [AdminPsychometricQuestionController::class, 'store'])
+            ->name('questions.store');
+        Route::patch('/questions/{question}', [AdminPsychometricQuestionController::class, 'update'])
+            ->name('questions.update');
+        Route::delete('/questions/{question}', [AdminPsychometricQuestionController::class, 'destroy'])
+            ->name('questions.destroy');
+
+        // Anular un intento: le devuelve el cupo al candidato sin borrar nada.
+        // Es la vía de reparación de soporte — ver el docblock del controller.
+        Route::post('/attempts/{attempt}/cancel', [AdminPsychometricAttemptController::class, 'cancel'])
+            ->name('attempts.cancel');
+
+        // Consola de rendiciones: buscar un candidato y ver todo lo que rindió,
+        // incluidos los intentos vencidos y en curso, que el reclutador no ve.
+        Route::get('/candidates', [AdminPsychometricCandidateResultsController::class, 'index'])
+            ->name('candidates.index');
+        Route::get('/candidates/{candidate}', [AdminPsychometricCandidateResultsController::class, 'show'])
+            ->name('candidates.show');
+
+        // Opciones
+        Route::get('/questions/{question}/options', [AdminPsychometricOptionController::class, 'index'])
+            ->name('options.index');
+        Route::post('/questions/{question}/options', [AdminPsychometricOptionController::class, 'store'])
+            ->name('options.store');
+        Route::patch('/options/{option}', [AdminPsychometricOptionController::class, 'update'])
+            ->name('options.update');
+        Route::delete('/options/{option}', [AdminPsychometricOptionController::class, 'destroy'])
+            ->name('options.destroy');
     });
 
 /*

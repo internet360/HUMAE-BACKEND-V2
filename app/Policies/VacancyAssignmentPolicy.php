@@ -113,6 +113,26 @@ class VacancyAssignmentPolicy
     }
 
     /**
+     * Read the psychometric results of the candidate on this assignment.
+     *
+     * Misma forma que `viewNotes()` y por la misma razón: la empresa sólo alcanza
+     * al candidato que HUMAE le PRESENTÓ. `isVisibleToCompany()` es el candado —
+     * sin él, la empresa leería el perfil psicométrico de la lista interna del
+     * reclutador (`sourced`) y de sus descartes (`rejected`), que es
+     * exactamente lo que §6 le cierra.
+     *
+     * Se ancla en la asignación y no en el candidato a propósito: la empresa no
+     * tiene ninguna vía para nombrar un `candidate_profile_id` suelto, y así el
+     * alcance queda atado a la vacante por la que lo conoció.
+     */
+    public function viewPsychometrics(User $user, VacancyAssignment $assignment): bool
+    {
+        return $this->isInternalStaff($user)
+            || ($this->isVisibleToCompany($assignment)
+                && $this->isCompanyMember($user, $assignment));
+    }
+
+    /**
      * Read notes flagged `visibility=internal`. Staff only.
      */
     public function viewInternalNotes(User $user, VacancyAssignment $assignment): bool
