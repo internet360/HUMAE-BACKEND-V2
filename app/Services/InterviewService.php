@@ -8,9 +8,12 @@ use App\Enums\InterviewMode;
 use App\Enums\InterviewState;
 use App\Enums\UserRole;
 use App\Enums\VacancyState;
+use App\Exceptions\ContractNotSignedException;
+use App\Models\CompanyContract;
 use App\Models\Interview;
 use App\Models\InterviewReschedule;
 use App\Models\User;
+use App\Models\Vacancy;
 use App\Models\VacancyAssignment;
 use App\Notifications\InterviewCancelledNotification;
 use App\Notifications\InterviewConfirmedNotification;
@@ -52,6 +55,8 @@ class InterviewService
             );
         }
 
+        $this->guardSignedContract($vacancy);
+
         return DB::transaction(function () use ($assignment, $scheduledBy, $data, $vacancy): Interview {
             $round = (int) ($data['round'] ?? ($assignment->interviews()->max('round') ?? 0) + 1);
 
@@ -87,6 +92,43 @@ class InterviewService
 
             return $interview;
         });
+    }
+
+    /**
+     * Sin contrato firmado no se programa la entrevista.
+     *
+     * El requisito pedía que el contrato se «generara o activara» justo al
+     * programar la primera entrevista. No se puede: `CompanyContractService::sign()`
+     * exige el trazo de la firma, la INE y una selfie, tres archivos que sube
+     * una persona. Quien programa es HUMAE y quien firma es el empleador — son
+     * dos actores distintos, así que el contrato no puede ser un efecto
+     * secundario del agendado. Sólo puede ser su condición.
+     *
+     * Se comprueba en cada agendado, no sólo en el primero. La comprobación
+     * cara ya la hizo el flujo la primera vez; repetirla cuesta un `exists()` y
+     * cierra la ventana de un contrato anulado a mitad de proceso. Anular es un
+     * soft delete (ver `CompanyContract`), así que el contrato anulado sale
+     * solo de esta consulta.
+     *
+     * Mira el contrato MAESTRO, no cualquiera. Una adenda de honorarios para
+     * una vacante también es un `company_contract` firmado y sellado, pero no
+     * rige la relación: la cláusula Primera —la que prohíbe a la empresa
+     * contactar candidatos por fuera— vive en el maestro. Aceptar una adenda
+     * aquí habilitaría a entrevistar a una empresa que sólo firmó cuánto paga,
+     * nunca cómo se comporta.
+     *
+     * `masterFor()` consulta con `acrossCompanies()` por dentro, y eso es
+     * deliberado: la pregunta es «¿esta empresa tiene contrato?», no «¿el que
+     * llama puede ver el contrato?». Confundirlas dejaría agendar libremente a
+     * cualquier actor que no alcance a ver contratos, porque para él la
+     * consulta scopeada devuelve vacío y el gate leería «sin contrato» como
+     * vía libre por el camino equivocado.
+     */
+    private function guardSignedContract(Vacancy $vacancy): void
+    {
+        if (CompanyContract::masterFor($vacancy->company_id) === null) {
+            throw ContractNotSignedException::cannotScheduleInterview();
+        }
     }
 
     /**

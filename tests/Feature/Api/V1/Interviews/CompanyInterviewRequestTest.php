@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\CompanyMember;
 use App\Models\Interview;
 use App\Models\User;
@@ -26,6 +27,10 @@ function companyOwnerWithAssignment(
     $user = User::factory()->create();
     $user->assignRole(UserRole::CompanyUser->value);
     $company = Company::factory()->create();
+    // Contrato firmado: sin él `InterviewService::schedule()` rechaza el
+    // agendado. No es decoración del fixture, es la regla — una entrevista sin
+    // contrato vigente no debe poder existir.
+    CompanyContract::factory()->create(['company_id' => $company->id]);
     CompanyMember::create([
         'company_id' => $company->id,
         'user_id' => $user->id,

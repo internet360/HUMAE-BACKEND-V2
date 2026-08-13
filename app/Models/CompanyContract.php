@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $company_id
+ * @property int|null $vacancy_id null = contrato maestro; con valor = adenda de esa vacante
  * @property int $signed_by_user_id
  * @property string $folio
  * @property string $signer_title
@@ -57,6 +58,7 @@ class CompanyContract extends Model implements CompanyOwned
 
     protected $fillable = [
         'company_id',
+        'vacancy_id',
         'signed_by_user_id',
         'folio',
         'signer_title',
@@ -97,6 +99,46 @@ class CompanyContract extends Model implements CompanyOwned
             'terms_accepted_at' => 'datetime',
             'privacy_accepted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * El contrato maestro vigente de una empresa, o null.
+     *
+     * Maestro = `vacancy_id` nulo. Es el que rige la relación completa —la
+     * cláusula Primera, la que prohíbe contactar candidatos por fuera— y por eso
+     * es el que consulta el gate de entrevistas. Una adenda de vacante no lo
+     * sustituye: sólo cambia honorarios de esa colocación.
+     */
+    public static function masterFor(int $companyId): ?self
+    {
+        return self::acrossCompanies()
+            ->where('company_id', $companyId)
+            ->whereNull('vacancy_id')
+            ->orderByDesc('signed_at')
+            ->first();
+    }
+
+    /**
+     * La adenda firmada de una vacante, o null si esa vacante se factura con el
+     * contrato maestro.
+     */
+    public static function addendumFor(int $vacancyId): ?self
+    {
+        return self::acrossCompanies()
+            ->where('vacancy_id', $vacancyId)
+            ->orderByDesc('signed_at')
+            ->first();
+    }
+
+    public function isAddendum(): bool
+    {
+        return $this->vacancy_id !== null;
+    }
+
+    /** @return BelongsTo<Vacancy, $this> */
+    public function vacancy(): BelongsTo
+    {
+        return $this->belongsTo(Vacancy::class);
     }
 
     /** @return BelongsTo<Company, $this> */

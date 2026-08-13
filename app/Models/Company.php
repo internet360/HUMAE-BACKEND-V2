@@ -193,13 +193,23 @@ class Company extends Model implements CompanyOwned
     }
 
     /**
-     * El contrato vigente: el último firmado. Es lo que consulta el gate del
-     * frontend para decidir si la empresa puede operar.
+     * El contrato MAESTRO vigente: el último firmado que no es adenda de una
+     * vacante. Es lo que consulta el gate del frontend para decidir si la
+     * empresa puede operar.
+     *
+     * El `whereNull('vacancy_id')` es la parte que importa. Una adenda de
+     * honorarios para una vacante concreta también es un `company_contract`
+     * firmado y sellado, pero no rige la relación: si se colara aquí, una
+     * empresa sin contrato maestro pero con una adenda parecería habilitada
+     * para operar, y la cláusula Primera —la que le prohíbe contactar
+     * candidatos por fuera— no estaría firmada por nadie.
      *
      * @return HasOne<CompanyContract, $this>
      */
     public function latestContract(): HasOne
     {
-        return $this->hasOne(CompanyContract::class)->latestOfMany('signed_at');
+        return $this->hasOne(CompanyContract::class)
+            ->whereNull('vacancy_id')
+            ->latestOfMany('signed_at');
     }
 }

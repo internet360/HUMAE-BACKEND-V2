@@ -16,10 +16,18 @@ use App\Models\User;
  * expediente completo de candidato: Empresa ❌", "Descargar CV de cualquier
  * candidato: Empresa ❌", "Marcar favoritos: Empresa ❌".
  *
- * A client company never browses HUMAE's talent base. She sees only the
- * candidates HUMAE presented to her own vacancy, through the pipeline
- * (`GET /me/company/vacancies/{id}/assignments`). That boundary is the product
- * premise in §1: curation by HUMAE is what the fee pays for.
+ * Those rows still hold: a client company never reaches the internal directory.
+ * What changed is that it now browses an ANONYMOUS preview of the talent base
+ * through `viewAnonymousDirectory()` — a professional silhouette with no
+ * identity and no files — so it can pick who it wants to meet before there is a
+ * vacancy. Identity, CV, documents and psychometrics are revealed by HUMAE when
+ * the interview is confirmed.
+ *
+ * The premise in §1 is intact and this is precisely how: curation is what the
+ * fee pays for, and a company that cannot identify a candidate cannot go around
+ * HUMAE to hire them. The two surfaces are different endpoints on purpose —
+ * `tests/Feature/Security/CompanyUserDirectoryAccessTest.php` guards the
+ * internal one and must stay green.
  */
 class CandidateProfilePolicy
 {
@@ -35,6 +43,25 @@ class CandidateProfilePolicy
     public function viewAny(User $user): bool
     {
         return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
+     * Browse the anonymous preview of the talent base.
+     *
+     * A separate ability from `viewAny()`, not a relaxation of it, and the
+     * difference is the whole point. `viewAny()` opens the internal directory:
+     * names, contact data, CV, documents, psychometrics. This one opens a
+     * professional silhouette — role, area, seniority, city, expected range,
+     * skills — addressed by an opaque reference, with no way to reach a file.
+     *
+     * The client company gets this one so it can pick who it wants to meet. It
+     * still never gets `viewAny()`: identity is revealed by HUMAE when the
+     * interview is confirmed, which is what keeps the intermediation —and the
+     * placement fee that pays for it— from being trivially bypassed.
+     */
+    public function viewAnonymousDirectory(User $user): bool
+    {
+        return $user->hasRole(UserRole::CompanyUser->value);
     }
 
     /**

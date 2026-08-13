@@ -37,7 +37,16 @@ class HireService
 
     private const AUTO_WITHDRAW_REASON = 'Vacante cubierta por otro candidato';
 
-    public function hire(VacancyAssignment $assignment): VacancyAssignment
+    public function __construct(
+        private readonly PlacementChargeService $charges,
+    ) {}
+
+    /**
+     * @param  User  $actor  quién cierra la colocación — la empresa o HUMAE.
+     *                       Obligatorio: el cargo devengado lleva su firma, y un
+     *                       cobro sin responsable identificado no se sostiene.
+     */
+    public function hire(VacancyAssignment $assignment, User $actor): VacancyAssignment
     {
         $vacancy = $assignment->vacancy;
         if ($vacancy === null) {
@@ -51,7 +60,17 @@ class HireService
             );
         }
 
-        return DB::transaction(function () use ($assignment, $vacancy): VacancyAssignment {
+        return DB::transaction(function () use ($assignment, $vacancy, $actor): VacancyAssignment {
+            // 0) Devengar los honorarios ANTES de tocar la etapa.
+            //
+            // El orden importa. `PlacementChargeService` exige sueldo final
+            // confirmado y contrato firmado; si algo falta, la transacción se
+            // cae con el candidato todavía en `finalist`. Al revés —contratar y
+            // luego intentar devengar— dejaría la colocación cerrada, la vacante
+            // cubierta y el resto de candidatos auto-retirados, todo sin cargo
+            // registrado y sin forma limpia de deshacerlo.
+            $this->charges->accrue($assignment, $actor);
+
             // 1) Marcar el assignment como hired.
             $assignment->forceFill([
                 'stage' => AssignmentStage::Hired->value,

@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\InterviewReschedule;
 use App\Models\User;
 use App\Models\Vacancy;
@@ -32,6 +33,10 @@ function serviceInterviewSetup(VacancyState $state = VacancyState::ConCandidatos
         'state' => CandidateState::Activo->value,
     ]);
     $company = Company::factory()->create();
+    // Contrato firmado: sin él `InterviewService::schedule()` rechaza el
+    // agendado. No es decoración del fixture, es la regla — una entrevista sin
+    // contrato vigente no debe poder existir.
+    CompanyContract::factory()->create(['company_id' => $company->id]);
     $vacancy = Vacancy::factory()->create([
         'company_id' => $company->id,
         'state' => $state,

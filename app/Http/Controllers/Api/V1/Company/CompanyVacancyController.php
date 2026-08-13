@@ -14,8 +14,8 @@ use App\Http\Resources\V1\Pipeline\CompanyAssignmentResource;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Models\VacancyAssignment;
+use App\Services\VacancyIdentifierService;
 use App\Services\VacancyStateMachine;
-use Cocur\Slugify\Slugify;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -27,6 +27,10 @@ use Symfony\Component\HttpFoundation\Response as HttpStatus;
  */
 class CompanyVacancyController extends Controller
 {
+    public function __construct(
+        private readonly VacancyIdentifierService $identifiers,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         /** @var User $user */
@@ -86,8 +90,8 @@ class CompanyVacancyController extends Controller
             'created_by' => $user->id,
             'state' => VacancyState::Borrador->value,
             'published_at' => null,
-            'slug' => $this->uniqueSlug((string) $data['title']),
-            'code' => $this->nextVacancyCode(),
+            'slug' => $this->identifiers->uniqueSlug((string) $data['title']),
+            'code' => $this->identifiers->nextCode(),
         ]);
 
         $vacancy->load('company');
@@ -218,40 +222,5 @@ class CompanyVacancyController extends Controller
             message: 'Candidatos en el flujo de selección.',
             data: CompanyAssignmentResource::collection($assignments),
         );
-    }
-
-    private function uniqueSlug(string $title): string
-    {
-        $slugify = new Slugify;
-        $base = $slugify->slugify($title) ?: 'vacante';
-        $slug = $base;
-        $i = 1;
-        // Slugs and codes are unique platform-wide, so uniqueness has to be
-        // checked across every tenant — a tenant-scoped count would happily
-        // mint a duplicate.
-        while (Vacancy::acrossCompanies()->where('slug', $slug)->exists()) {
-            $i++;
-            $slug = $base.'-'.$i;
-        }
-
-        return $slug;
-    }
-
-    private function nextVacancyCode(): string
-    {
-        $year = (int) now()->format('Y');
-        $prefix = "HUM-{$year}-";
-
-        $last = Vacancy::acrossCompanies()->where('code', 'like', $prefix.'%')
-            ->orderByDesc('code')
-            ->value('code');
-
-        $next = 1;
-        if ($last !== null) {
-            $segment = substr((string) $last, strlen($prefix));
-            $next = ((int) $segment) + 1;
-        }
-
-        return $prefix.str_pad((string) $next, 4, '0', STR_PAD_LEFT);
     }
 }

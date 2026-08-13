@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\CompanyMember;
 use App\Models\Interview;
 use App\Models\User;
@@ -41,6 +42,10 @@ beforeEach(function (): void {
     $this->owner->assignRole(UserRole::CompanyUser->value);
 
     $this->company = Company::factory()->create();
+    // Contrato firmado: sin él `InterviewService::schedule()` rechaza el
+    // agendado. No es decoración del fixture, es la regla — una entrevista sin
+    // contrato vigente no debe poder existir.
+    CompanyContract::factory()->create(['company_id' => $this->company->id]);
     CompanyMember::create([
         'company_id' => $this->company->id,
         'user_id' => $this->owner->id,

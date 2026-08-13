@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Interviews;
 
 use App\Enums\AssignmentStage;
 use App\Enums\UserRole;
+use App\Exceptions\ContractNotSignedException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Interviews\CompleteInterviewRequest;
 use App\Http\Requests\Interviews\ScheduleInterviewRequest;
@@ -85,6 +86,15 @@ class InterviewController extends Controller
 
         try {
             $interview = $this->service->schedule($assignment, $user, $data);
+        } catch (ContractNotSignedException $e) {
+            // Se distingue del resto a propósito: no es un error de quien
+            // agenda, es un trámite pendiente de la empresa. El frontend lee
+            // `errors.contract` para ofrecer la firma en vez de un toast rojo.
+            return $this->error(
+                $e->getMessage(),
+                errors: ['contract' => ['unsigned']],
+                status: HttpStatus::HTTP_CONFLICT,
+            );
         } catch (Throwable $e) {
             return $this->error($e->getMessage(), status: HttpStatus::HTTP_CONFLICT);
         }

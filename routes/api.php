@@ -36,11 +36,14 @@ use App\Http\Controllers\Api\V1\Candidate\PaymentController;
 use App\Http\Controllers\Api\V1\Candidate\PsychometricController;
 use App\Http\Controllers\Api\V1\Candidate\ReferenceController;
 use App\Http\Controllers\Api\V1\Candidate\SkillController;
+use App\Http\Controllers\Api\V1\Company\AnonymousDirectoryController;
 use App\Http\Controllers\Api\V1\Company\CandidatePsychometricController as CompanyCandidatePsychometricController;
 use App\Http\Controllers\Api\V1\Company\CompanyVacancyController;
+use App\Http\Controllers\Api\V1\Company\InterviewRequestController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyContractController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyController;
 use App\Http\Controllers\Api\V1\Company\MyCompanyMemberController;
+use App\Http\Controllers\Api\V1\Company\VacancyContractAddendumController;
 use App\Http\Controllers\Api\V1\Interviews\InterviewController;
 use App\Http\Controllers\Api\V1\Psychometrics\AnswerSheetController;
 use App\Http\Controllers\Api\V1\Psychometrics\AttemptReviewController;
@@ -49,6 +52,8 @@ use App\Http\Controllers\Api\V1\Recruiter\AssignmentNoteController;
 use App\Http\Controllers\Api\V1\Recruiter\CompanyController;
 use App\Http\Controllers\Api\V1\Recruiter\CompanyMemberController;
 use App\Http\Controllers\Api\V1\Recruiter\DirectoryController;
+use App\Http\Controllers\Api\V1\Recruiter\InterviewRequestController as StaffInterviewRequestController;
+use App\Http\Controllers\Api\V1\Recruiter\PlacementChargeController;
 use App\Http\Controllers\Api\V1\Recruiter\VacancyController;
 use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\ContactSubmissionController;
@@ -117,6 +122,8 @@ Route::middleware($authenticated)->prefix('catalogs')->name('catalogs.')->group(
     Route::get('/functional-areas', [CatalogController::class, 'functionalAreas'])->name('functional-areas');
     Route::get('/positions', [CatalogController::class, 'positions'])->name('positions');
     Route::get('/vacancy-types', [CatalogController::class, 'vacancyTypes'])->name('vacancy-types');
+    Route::get('/salary-currencies', [CatalogController::class, 'salaryCurrencies'])
+        ->name('salary-currencies');
 });
 
 Route::prefix('auth')->name('auth.')->group(function (): void {
@@ -396,9 +403,26 @@ Route::middleware($authenticated)->group(function (): void {
             ->name('assignments.destroy');
     });
 
-    // Única acción del pipeline que decide la empresa cliente (§5.7, §6).
+    // Sueldo final confirmado: base del cargo por colocación, así que lo captura
+    // HUMAE. La empresa conoce el número pero no lo escribe — quien paga no fija
+    // la base de lo que se le cobra. Lo resuelve `confirmFinalSalary` en la Policy.
+    Route::post('/assignments/{assignment}/final-salary', [AssignmentController::class, 'confirmFinalSalary'])
+        ->name('assignments.final-salary');
+
+    // Cerrar la colocación. Las dos partes pueden: el checklist pide «desde el
+    // dashboard del empleador, o desde el panel del reclutador». Endpoint propio
+    // para que la empresa no gane de paso el resto de `PATCH /assignments/{id}`.
+    Route::post('/assignments/{assignment}/hire', [AssignmentController::class, 'hire'])
+        ->name('assignments.hire');
+
+    // Acciones del pipeline que decide la empresa cliente (§5.7, §6).
     Route::patch('/assignments/{assignment}/select-finalist', [AssignmentController::class, 'selectFinalist'])
         ->name('assignments.select-finalist');
+
+    // Cartera de honorarios devengados. Sólo lectura y sólo HUMAE.
+    Route::get('/placement-charges', [PlacementChargeController::class, 'index'])
+        ->middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))
+        ->name('placement-charges.index');
 
     // Notas de asignación: la empresa sólo alcanza las notas `company` de un
     // candidato ya presentado. Lo resuelve VacancyAssignmentPolicy.
@@ -406,6 +430,21 @@ Route::middleware($authenticated)->group(function (): void {
         ->name('assignments.notes.index');
     Route::post('/assignments/{assignment}/notes', [AssignmentNoteController::class, 'store'])
         ->name('assignments.notes.store');
+
+    // Bandeja de solicitudes del flujo del empleador. Aceptar y vetar son la
+    // curación de HUMAE y por eso viven en el grupo de staff: si la empresa
+    // pudiera resolver su propia solicitud, el filtro que paga no existiría.
+    // Autorizado por `InterviewRequestPolicy::resolve`.
+    Route::middleware(RoleMiddleware::using([UserRole::Recruiter, UserRole::Admin]))->group(function (): void {
+        Route::get('/interview-requests', [StaffInterviewRequestController::class, 'index'])
+            ->name('interview-requests.index');
+        Route::get('/interview-requests/{interviewRequest}', [StaffInterviewRequestController::class, 'show'])
+            ->name('interview-requests.show');
+        Route::post('/interview-requests/{interviewRequest}/candidates/{candidate}/accept', [StaffInterviewRequestController::class, 'accept'])
+            ->name('interview-requests.candidates.accept');
+        Route::post('/interview-requests/{interviewRequest}/candidates/{candidate}/reject', [StaffInterviewRequestController::class, 'reject'])
+            ->name('interview-requests.candidates.reject');
+    });
 
     // Interviews (disponible para recruiter, candidate, company_user con scoping)
     Route::get('/interviews', [InterviewController::class, 'index'])->name('interviews.index');
@@ -446,6 +485,24 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
     Route::get('/contract/download', [MyCompanyContractController::class, 'download'])
         ->name('contract.download');
 
+    // Navegación anónima del talento. Es la contracara del bloque de
+    // `/directory/candidates`: allí la empresa no entra, aquí sí, porque lo que
+    // se sirve es una silueta profesional sin identidad ni archivos, dirigida
+    // por una referencia opaca. La identidad la revela HUMAE al confirmarse la
+    // entrevista. Autorizado por `CandidateProfilePolicy::viewAnonymousDirectory`.
+    Route::get('/directory/candidates', [AnonymousDirectoryController::class, 'index'])
+        ->name('directory.candidates.index');
+
+    // Solicitudes de entrevistas: el paso donde la selección anónima se
+    // convierte en un pedido concreto a HUMAE. Crea la vacante breve, guarda
+    // los dos horarios y avisa al equipo, todo en una escritura.
+    Route::get('/interview-requests', [InterviewRequestController::class, 'index'])
+        ->name('interview-requests.index');
+    Route::post('/interview-requests', [InterviewRequestController::class, 'store'])
+        ->name('interview-requests.store');
+    Route::get('/interview-requests/{interviewRequest}', [InterviewRequestController::class, 'show'])
+        ->name('interview-requests.show');
+
     Route::get('/members', [MyCompanyMemberController::class, 'index'])
         ->name('members.index');
     Route::post('/members', [MyCompanyMemberController::class, 'store'])
@@ -467,6 +524,17 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
         ->name('vacancies.transition');
     Route::get('/vacancies/{vacancy}/assignments', [CompanyVacancyController::class, 'assignments'])
         ->name('vacancies.assignments');
+
+    // Adenda de honorarios de una vacante. Es lo que permite que HUMAE cobre
+    // distinto en una vacante concreta sin facturar nunca un número sin firma:
+    // `vacancies.fee_percentage` deja de ser un campo interno y pasa a ser la
+    // propuesta que se firma aquí.
+    Route::get('/vacancies/{vacancy}/contract', [VacancyContractAddendumController::class, 'show'])
+        ->name('vacancies.contract.show');
+    Route::get('/vacancies/{vacancy}/contract/preview', [VacancyContractAddendumController::class, 'preview'])
+        ->name('vacancies.contract.preview');
+    Route::post('/vacancies/{vacancy}/contract', [VacancyContractAddendumController::class, 'store'])
+        ->name('vacancies.contract.store');
 
     // Perfil psicométrico de un candidato PRESENTADO. Se direcciona por
     // asignación y no por candidato a propósito: la empresa no navega el

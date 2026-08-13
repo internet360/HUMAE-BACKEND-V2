@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\CompanyContract;
 use App\Models\ContractSetting;
 use App\Models\User;
+use App\Models\Vacancy;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\UploadedFile;
@@ -44,9 +45,17 @@ class CompanyContractService
      * @param  array{signature: UploadedFile, identity: UploadedFile, selfie: UploadedFile}  $files
      * @param  array{signer_title: string, terms_accepted_at?: Carbon|null, privacy_accepted_at?: Carbon|null, ip?: string|null, user_agent?: string|null}  $meta
      */
-    public function sign(Company $company, User $signer, array $files, array $meta): CompanyContract
-    {
-        $terms = $this->currentTerms();
+    public function sign(
+        Company $company,
+        User $signer,
+        array $files,
+        array $meta,
+        ?Vacancy $vacancy = null,
+    ): CompanyContract {
+        $terms = $vacancy !== null
+            ? $this->addendumTerms($vacancy)
+            : $this->currentTerms();
+
         $signedAt = Carbon::now();
 
         $folder = 'contracts/'.$company->id;
@@ -63,6 +72,7 @@ class CompanyContractService
 
             $contract = new CompanyContract([
                 'company_id' => $company->id,
+                'vacancy_id' => $vacancy?->id,
                 'signed_by_user_id' => $signer->id,
                 'folio' => $folio,
                 'signer_title' => $meta['signer_title'],
@@ -110,6 +120,40 @@ class CompanyContractService
     }
 
     /**
+     * Términos de una adenda: los vigentes, con los honorarios de la vacante.
+     *
+     * Es el punto donde `vacancies.fee_percentage` y `fee_amount` dejan de ser
+     * un número suelto que la empresa nunca vio y se convierten en la propuesta
+     * que se va a firmar. Después de esta traducción, facturar con ellos ya no
+     * es facturar con algo sin firma.
+     *
+     * @return array<string, mixed>
+     */
+    public function addendumTerms(Vacancy $vacancy): array
+    {
+        $terms = $this->currentTerms();
+
+        if ($vacancy->fee_percentage !== null && (float) $vacancy->fee_percentage > 0) {
+            $terms['fee_kind'] = 'percentage_annual_gross';
+            $terms['fee_value'] = (float) $vacancy->fee_percentage;
+            $terms['fee_amount_words'] = null;
+
+            return $terms;
+        }
+
+        if ($vacancy->fee_amount !== null && (float) $vacancy->fee_amount > 0) {
+            $terms['fee_kind'] = 'fixed_amount';
+            $terms['fee_value'] = (float) $vacancy->fee_amount;
+
+            return $terms;
+        }
+
+        throw new RuntimeException(
+            'Esta vacante no tiene honorarios propios definidos. Captúralos antes de emitir una adenda: sin ellos, la adenda repetiría el contrato maestro y no serviría de nada.',
+        );
+    }
+
+    /**
      * Reintenta el sello de un contrato ya firmado que quedó sin constancia.
      */
     public function retryTimestamp(CompanyContract $contract): bool
@@ -142,12 +186,22 @@ class CompanyContractService
      * firma lo muestra tal cual, así que lo que se firma y lo que se leyó salen
      * del mismo Blade y no pueden desincronizarse.
      */
-    public function previewPdf(Company $company, User $signer, ?string $signerTitle = null): string
-    {
-        $terms = $this->currentTerms();
+    public function previewPdf(
+        Company $company,
+        User $signer,
+        ?string $signerTitle = null,
+        ?Vacancy $vacancy = null,
+    ): string {
+        // Con vacante, el borrador muestra los honorarios de la adenda. Nadie
+        // debería firmar un instrumento sin ver el número que lo distingue del
+        // contrato maestro — es lo único que cambia entre los dos.
+        $terms = $vacancy !== null
+            ? $this->addendumTerms($vacancy)
+            : $this->currentTerms();
 
         $draft = new CompanyContract([
             'company_id' => $company->id,
+            'vacancy_id' => $vacancy?->id,
             'signed_by_user_id' => $signer->id,
             'folio' => 'BORRADOR',
             'signer_title' => $signerTitle ?? 'Representante legal',
