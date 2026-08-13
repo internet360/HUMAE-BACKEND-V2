@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -42,8 +43,10 @@ class CompanyContractService
     ) {}
 
     /**
-     * @param  array{signature: UploadedFile, identity: UploadedFile, selfie: UploadedFile}  $files
+     * @param  array{signature: UploadedFile, identity?: UploadedFile|null, selfie?: UploadedFile|null}  $files
      * @param  array{signer_title: string, terms_accepted_at?: Carbon|null, privacy_accepted_at?: Carbon|null, ip?: string|null, user_agent?: string|null}  $meta
+     * @param  CompanyContract|null  $evidenceSource  contrato que ya acreditó a este firmante; deja
+     *                                                omitir la identificación y la selfie
      */
     public function sign(
         Company $company,
@@ -51,6 +54,7 @@ class CompanyContractService
         array $files,
         array $meta,
         ?Vacancy $vacancy = null,
+        ?CompanyContract $evidenceSource = null,
     ): CompanyContract {
         $terms = $vacancy !== null
             ? $this->addendumTerms($vacancy)
@@ -63,9 +67,22 @@ class CompanyContractService
         // Los archivos entran al disco privado antes de abrir la transacción:
         // escribir en disco no es transaccional y no queremos sostener un lock
         // de tabla mientras se suben.
+        //
+        // La firma siempre se traza de nuevo: es el acto que obliga, y reciclar
+        // el trazo de otro contrato sería firmar en nombre de alguien.
         $signaturePath = $this->store($files['signature'], $folder.'/signature');
-        $identityPath = $this->store($files['identity'], $folder.'/identity');
-        $selfiePath = $this->store($files['selfie'], $folder.'/selfie');
+        $identityPath = $this->resolveIdentityEvidence(
+            $files['identity'] ?? null,
+            $evidenceSource?->identity_path,
+            $folder.'/identity',
+            'identificación oficial',
+        );
+        $selfiePath = $this->resolveIdentityEvidence(
+            $files['selfie'] ?? null,
+            $evidenceSource?->selfie_path,
+            $folder.'/selfie',
+            'selfie',
+        );
 
         try {
             $folio = $this->allocateFolio($signedAt);
@@ -367,6 +384,50 @@ class CompanyContractService
     private function store(UploadedFile $file, string $folder): string
     {
         return $this->storage->upload($file, $folder, ['disk' => 'local'])['public_id'];
+    }
+
+    /**
+     * Resguarda la identificación o la selfie de quien firma.
+     *
+     * Con archivo nuevo lo guarda. Sin archivo, **copia** el del contrato que ya
+     * acreditó a esa misma persona: sirve para la adenda de honorarios, que es
+     * accesoria a un maestro que esa persona ya firmó con INE y selfie.
+     *
+     * Copia y no referencia, y la diferencia importa: `VoidCompanyContract`
+     * borra del disco los archivos del contrato que anula. Si la adenda apuntara
+     * al archivo del maestro, anular el maestro dejaría a la adenda —que sigue
+     * vigente y sostiene una factura— sin la evidencia de quién la firmó.
+     *
+     * @param  string  $label  cómo nombrar el archivo si falta, para el mensaje de error
+     */
+    private function resolveIdentityEvidence(
+        ?UploadedFile $file,
+        ?string $sourcePath,
+        string $folder,
+        string $label,
+    ): string {
+        if ($file !== null) {
+            return $this->store($file, $folder);
+        }
+
+        if ($sourcePath === null || $sourcePath === '') {
+            throw new RuntimeException("Falta la {$label} de quien firma.");
+        }
+
+        $disk = Storage::disk('local');
+
+        if (! $disk->exists($sourcePath)) {
+            throw new RuntimeException(
+                "No encontramos la {$label} del contrato anterior. Vuelve a adjuntarla."
+            );
+        }
+
+        $extension = pathinfo($sourcePath, PATHINFO_EXTENSION) ?: 'bin';
+        $target = trim($folder, '/').'/'.Str::random(40).'.'.$extension;
+
+        $disk->put($target, (string) $disk->get($sourcePath));
+
+        return $target;
     }
 
     /**
