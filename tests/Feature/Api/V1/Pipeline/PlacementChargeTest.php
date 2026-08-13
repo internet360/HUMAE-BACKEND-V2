@@ -376,6 +376,29 @@ it('lists accrued charges with their total for HUMAE only', function (): void {
         ->assertJsonPath('meta.accrued_total', fn ($v) => (float) $v === 54720.0);
 });
 
+it('names the company, the vacancy and the currency instead of leaving raw ids', function (): void {
+    chargeRecruiter();
+    [
+        'assignment' => $assignment,
+        'currency' => $currency,
+        'company' => $company,
+        'vacancy' => $vacancy,
+    ] = chargeScenario();
+
+    confirmSalary($assignment, $currency);
+    $this->postJson("/api/v1/assignments/{$assignment->id}/hire")->assertOk();
+
+    // Quien va a facturar no puede resolver «Vacante #12 · Empresa #45» sin
+    // salir del sistema, y la moneda no se puede omitir en una lista de montos
+    // cuando el propio sistema se niega a asumirla al capturar el sueldo.
+    $this->getJson('/api/v1/placement-charges')
+        ->assertOk()
+        ->assertJsonPath('data.0.company.name', $company->trade_name ?? $company->legal_name)
+        ->assertJsonPath('data.0.vacancy.title', $vacancy->title)
+        ->assertJsonPath('data.0.vacancy.code', $vacancy->code)
+        ->assertJsonPath('data.0.currency.code', $currency->code);
+});
+
 it('keeps the charge portfolio away from the client company', function (): void {
     ['owner' => $owner] = chargeScenario();
     Sanctum::actingAs($owner);

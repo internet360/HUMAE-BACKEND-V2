@@ -34,7 +34,11 @@ class PlacementChargeController extends Controller
         ]);
 
         // Explícito: HUMAE no es tenant y necesita ver la cartera completa.
-        $query = PlacementCharge::acrossCompanies();
+        //
+        // Las tres relaciones se precargan porque la lista las muestra en cada
+        // fila: sin esto son 3N consultas para pintar veinte cargos.
+        $query = PlacementCharge::acrossCompanies()
+            ->with(['company', 'vacancy', 'currency']);
 
         if (isset($validated['state'])) {
             $query->where('state', $validated['state']);
