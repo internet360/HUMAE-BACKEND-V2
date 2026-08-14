@@ -15,6 +15,11 @@
 
 set -uo pipefail
 
+# Este archivo se copia al servidor a mano, así que su copia de allá se queda
+# vieja sin avisar. La versión se imprime en el encabezado: si no coincide con la
+# que registra DEPLOY-PROD.md §B.3, subí el script de nuevo antes de desplegar.
+SCRIPT_VERSION="2"
+
 DEPLOY_ENV="${DEPLOY_ENV:-${1:-develop}}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-1}"
 
@@ -44,6 +49,7 @@ COMPOSER="/opt/cpanel/composer/composer.phar"
 
 echo "================================================"
 echo "  HUMAE — Deploy backend ($DEPLOY_ENV)"
+echo "  script v$SCRIPT_VERSION"
 echo "================================================"
 echo ""
 echo "PHP: $PHP"
@@ -184,6 +190,13 @@ if [ "$DEPLOY_ENV" = "production" ]; then
   echo "→ Modo mantenimiento OFF"
   "$PHP" artisan up 2>&1 | sed 's/^/  /'
 fi
+
+# Se borra el zip para que la próxima corrida falle con "no encuentro el zip" en
+# vez de redesplegar el anterior en silencio. Subir el zip y olvidarse de que era
+# el viejo ya costó una vuelta entera de diagnóstico.
+echo ""
+echo "→ Borrando el zip procesado"
+rm -f "$ZIP_PATH" && echo "  ✓ $ZIP_NAME eliminado (subilo de nuevo para el próximo deploy)"
 
 echo ""
 echo "→ Smoke test"
