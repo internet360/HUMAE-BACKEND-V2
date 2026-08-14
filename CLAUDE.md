@@ -65,6 +65,12 @@ app/
 │   │   │   ├── Recruiter/       Endpoints del rol reclutador (directorio, pipeline, entrevistas)
 │   │   │   ├── Company/         Endpoints del rol company_user
 │   │   │   ├── Admin/           CRUD de catálogos, reportes, configuración
+│   │   │   ├── Staff/           Endpoints de HUMAE con el MISMO alcance para admin y
+│   │   │   │                    recruiter, resuelto por Policy y no por rol en la ruta
+│   │   │   │                    (historial de contratos de un cliente). Va acá y no
+│   │   │   │                    duplicado en Admin/ + Recruiter/: dos caminos al mismo
+│   │   │   │                    recurso se desincronizan, y el día que uno se endurece
+│   │   │   │                    el otro queda abierto.
 │   │   │   └── Shared/          Endpoints compartidos (HealthController)
 │   │   └── Webhooks/            Stripe (único webhook público; el correo se trackea vía /var/log/mail.log)
 │   ├── Middleware/

@@ -24,6 +24,7 @@ use App\Models\CandidateExperience;
 use App\Models\CandidateProfile;
 use App\Models\CandidateReference;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\CompanyMember;
 use App\Models\DegreeLevel;
 use App\Models\FunctionalArea;
@@ -105,6 +106,18 @@ const AUTHZ_S_COMPANY_A_CONTACT_EMAIL = 'contacto-sentinel-a@empresa.test';
 const AUTHZ_S_COMPANY_A_ADDRESS = 'AV-SENTINEL-EMPRESA-A-500';
 const AUTHZ_S_COMPANY_A_INTERNAL_NOTES = 'NOTAS-INTERNAS-EMPRESA-SENTINEL';
 
+/**
+ * Rutas del disco privado donde vive la evidencia de un contrato firmado.
+ *
+ * Ninguna respuesta JSON debe contenerlas — ni siquiera para admin. Los archivos
+ * salen por `/contracts/{id}/files/{kind}`, que revalida la policy en cada
+ * descarga; una ruta en el payload es una ruta que alguien va a intentar servir
+ * por otro camino.
+ */
+const AUTHZ_S_CONTRACT_IDENTITY_PATH = 'contracts/sentinel/INE-SENTINEL.jpg';
+const AUTHZ_S_CONTRACT_SELFIE_PATH = 'contracts/sentinel/SELFIE-SENTINEL.jpg';
+const AUTHZ_S_CONTRACT_SIGNATORY_PATH = 'contract-settings/FIRMA-APODERADO-SENTINEL.png';
+
 /** Field names §6 keeps away from the client company. */
 const AUTHZ_PII_KEYS = [
     'curp',
@@ -183,6 +196,8 @@ const AUTHZ_POLICY_INVENTORY = [
         'create' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
         'update' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
         'delete' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'viewContracts' => 'Http/Controllers/Api/V1/Staff/CompanyContractController.php',
+        'viewContractEvidence' => 'Http/Controllers/Api/V1/Staff/CompanyContractController.php',
     ],
     'InterviewPolicy' => [
         'view' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
@@ -715,6 +730,31 @@ function authzBuildFixtures(): array
         'candidate_profile_id' => $profileOther->id,
     ]);
 
+    /*
+     * Contrato maestro de la empresa A, con las rutas de su evidencia marcadas
+     * con sentinelas. Sondea dos cosas a la vez: que sólo HUMAE lea el historial
+     * de un cliente, y que ni siquiera HUMAE reciba en el JSON la ruta de disco
+     * de una INE.
+     */
+    $contractA = CompanyContract::factory()->create([
+        'company_id' => $companyA->id,
+        'signed_by_user_id' => $companyOwner->id,
+        'vacancy_id' => null,
+        'identity_path' => AUTHZ_S_CONTRACT_IDENTITY_PATH,
+        'selfie_path' => AUTHZ_S_CONTRACT_SELFIE_PATH,
+        'terms' => [
+            'version' => '2026.1',
+            'fee_kind' => 'percentage_annual_gross',
+            'fee_value' => 12.0,
+            'payment_days' => 5,
+            'payment_day_kind' => 'habiles',
+            'warranty_days' => 90,
+            'jurisdiction' => 'Querétaro',
+            'signatory' => ['name' => 'Apoderado', 'title' => 'Representante Legal'],
+            'signature_path' => AUTHZ_S_CONTRACT_SIGNATORY_PATH,
+        ],
+    ]);
+
     $notificationId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     DB::table('notifications')->insert([
         'id' => $notificationId,
@@ -743,6 +783,11 @@ function authzBuildFixtures(): array
             'company_member_user' => $companyViewer->id,
             'member' => $viewerMember->id,
             'vacancy' => $vacancyA->id,
+            'contract' => $contractA->id,
+            // Resuelve a su propio literal, igual que los `{tutorial_*}`: existe
+            // sólo para que `authzCanonicalUri()` lo colapse a `*` y reconozca
+            // que la fila cubre `contracts/{contract}/files/{kind}`.
+            'contract_file_kind' => 'identity',
             'interviewRequest' => $interviewRequestA->id,
             'interview_request_candidate' => $interviewRequestCandidateA->id,
             'currency' => $salaryCurrency->id,
@@ -1184,6 +1229,44 @@ function authzMatrixRows(): array
     ]);
     $add('DELETE /companies/{company}/members/{userId}', [
         'method' => 'DELETE', 'uri' => '/api/v1/companies/{company}/members/{company_member_user}', 'spec' => '§5.6 admin/recruiter',
+        ...authzAccess($staff),
+    ]);
+
+    /*
+     * Historial de contratos de un cliente. Es el registro de HUMAE sobre sus
+     * empresas, no la vista de una empresa sobre sí misma: `company_owner` queda
+     * fuera aunque el contrato sea suyo, porque lo ve por `/me/company/contract`
+     * —que no expone INE ni selfie— y porque la ruta pasa por el mismo endpoint
+     * con el que se leería el contrato de otro cliente.
+     *
+     * Los sentinelas cubren lo que ni HUMAE debe recibir en el JSON: las rutas
+     * de disco de la evidencia y la de la firma del apoderado.
+     */
+    $contractPathSentinels = [
+        AUTHZ_S_CONTRACT_IDENTITY_PATH,
+        AUTHZ_S_CONTRACT_SELFIE_PATH,
+        AUTHZ_S_CONTRACT_SIGNATORY_PATH,
+    ];
+    $add('GET /companies/{company}/contracts', [
+        'method' => 'GET', 'uri' => '/api/v1/companies/{company}/contracts',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (registro de clientes)',
+        'must_not_leak' => ['*' => $contractPathSentinels],
+        ...authzAccess($staff),
+    ]);
+    $add('GET /contracts/{contract}', [
+        'method' => 'GET', 'uri' => '/api/v1/contracts/{contract}',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (registro de clientes)',
+        'must_not_leak' => ['*' => $contractPathSentinels],
+        ...authzAccess($staff),
+    ]);
+    $add('GET /contracts/{contract}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/contracts/{contract}/files/{contract_file_kind}',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (evidencia de identidad)',
+        // Quien sí puede recibe 404 acá: la fila apunta a un archivo que este
+        // banco de pruebas no escribe en disco. Que ese 404 salga de verdad de
+        // un 200 autorizado lo cubre `CompanyContractHistoryTest`; lo que se
+        // sondea en esta matriz es que nadie MÁS llegue siquiera hasta ahí.
+        'allow_not_found' => true,
         ...authzAccess($staff),
     ]);
 

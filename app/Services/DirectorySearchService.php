@@ -147,6 +147,26 @@ class DirectorySearchService
     }
 
     /**
+     * Un perfil del padrón anónimo, buscado por su referencia opaca.
+     *
+     * Aplica las MISMAS dos condiciones que `searchAnonymous()` —membresía
+     * vigente y estado visible— y por eso vive acá: si la regla se copiara al
+     * controller que sirve la foto, el día que cambie una de las dos quedaría
+     * un camino sirviendo a alguien que ya salió del padrón.
+     */
+    public function visibleProfileByReference(string $reference): ?CandidateProfile
+    {
+        $query = CandidateProfile::query()
+            ->with('user')
+            ->where('public_reference', $reference)
+            ->whereIn('state', self::VISIBLE_STATES);
+
+        $this->applyActiveMembership($query);
+
+        return $query->first();
+    }
+
+    /**
      * @param  Builder<CandidateProfile>  $query
      */
     private function applyActiveMembership(Builder $query): void

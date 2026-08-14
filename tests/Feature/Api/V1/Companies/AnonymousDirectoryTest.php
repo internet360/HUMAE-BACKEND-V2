@@ -19,6 +19,7 @@ use App\Models\SalaryCurrency;
 use App\Models\Skill;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 /**
@@ -345,4 +346,108 @@ it('returns pagination metadata', function (): void {
         ->assertJsonPath('meta.pagination.total', 2)
         ->assertJsonPath('meta.pagination.per_page', 1)
         ->assertJsonPath('meta.pagination.last_page', 2);
+});
+
+/*
+|--------------------------------------------------------------------------
+| La foto
+|--------------------------------------------------------------------------
+|
+| Decisión de producto: la empresa ve la cara antes de que HUMAE confirme la
+| entrevista. Lo que sigue reservado es el nombre y el contacto, y estas pruebas
+| fijan que la foto no arrastre consigo nada más.
+|
+*/
+
+it('serves the photo through a signed link, never the public avatar url', function (): void {
+    Storage::fake('public');
+    actAsCompanyUser();
+
+    $candidate = anonymousDirectoryCandidate();
+    $candidate->user->forceFill([
+        'avatar_path' => 'avatars/'.$candidate->user_id.'/foto.webp',
+        'avatar_url' => 'http://localhost/storage/avatars/'.$candidate->user_id.'/foto.webp',
+    ])->save();
+    Storage::disk('public')->put($candidate->user->avatar_path, 'imagen');
+
+    $response = $this->getJson('/api/v1/me/company/directory/candidates')->assertOk();
+    $photoUrl = $response->json('data.0.photo_url');
+
+    expect($photoUrl)->toBeString()
+        ->and($photoUrl)->toContain('signature=')
+        // Ni la ruta pública ni el segmento que lleva el id adentro: el
+        // `avatar_url` de hoy expone los dos.
+        ->and($photoUrl)->not->toContain('/storage/')
+        ->and($photoUrl)->not->toContain('avatars/')
+        ->and($photoUrl)->toContain($candidate->public_reference);
+
+    // Y el cuerpo entero sigue sin filtrar la url pública.
+    expect($response->getContent())->not->toContain('avatar_url');
+});
+
+it('opens the signed photo without a session, because an img tag has none', function (): void {
+    Storage::fake('public');
+    actAsCompanyUser();
+
+    $candidate = anonymousDirectoryCandidate();
+    $candidate->user->forceFill(['avatar_path' => 'avatars/x/foto.webp'])->save();
+    Storage::disk('public')->put('avatars/x/foto.webp', 'imagen');
+
+    $photoUrl = $this->getJson('/api/v1/me/company/directory/candidates')
+        ->json('data.0.photo_url');
+
+    app('auth')->forgetGuards();
+
+    $this->get($photoUrl)
+        ->assertOk()
+        ->assertHeader('cache-control', 'max-age=300, private');
+});
+
+it('refuses a tampered or expired link', function (): void {
+    Storage::fake('public');
+    actAsCompanyUser();
+
+    $candidate = anonymousDirectoryCandidate();
+    $candidate->user->forceFill(['avatar_path' => 'avatars/x/foto.webp'])->save();
+    Storage::disk('public')->put('avatars/x/foto.webp', 'imagen');
+
+    $photoUrl = $this->getJson('/api/v1/me/company/directory/candidates')
+        ->json('data.0.photo_url');
+
+    // Sin firma no entra: es la única credencial de esta ruta.
+    $this->get(strtok($photoUrl, '?'))->assertStatus(403);
+
+    // Y caduca sola, que es lo que la distingue del avatar público.
+    $this->travel(31)->minutes();
+    $this->get($photoUrl)->assertStatus(403);
+});
+
+it('stops serving a signed link once the candidate leaves the pool', function (): void {
+    Storage::fake('public');
+    actAsCompanyUser();
+
+    $candidate = anonymousDirectoryCandidate();
+    $candidate->user->forceFill(['avatar_path' => 'avatars/x/foto.webp'])->save();
+    Storage::disk('public')->put('avatars/x/foto.webp', 'imagen');
+
+    $photoUrl = $this->getJson('/api/v1/me/company/directory/candidates')
+        ->json('data.0.photo_url');
+
+    $this->get($photoUrl)->assertOk();
+
+    // Vence la membresía con el enlace todavía firmado y vigente.
+    $candidate->user->memberships()->update(['status' => MembershipStatus::Expired->value]);
+
+    // La firma sigue siendo válida y aun así no se sirve: un enlace no debe
+    // sobrevivir a la salida de la persona del padrón.
+    $this->get($photoUrl)->assertStatus(404);
+});
+
+it('returns no photo url for a candidate who never uploaded one', function (): void {
+    actAsCompanyUser();
+    anonymousDirectoryCandidate();
+
+    $this->getJson('/api/v1/me/company/directory/candidates')
+        ->assertOk()
+        ->assertJsonPath('data.0.photo_url', null);
 });

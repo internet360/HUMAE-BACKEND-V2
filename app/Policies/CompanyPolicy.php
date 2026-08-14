@@ -59,4 +59,32 @@ class CompanyPolicy
     {
         return false; // Solo admin vía `before`.
     }
+
+    /**
+     * Leer el historial de contratos de una empresa: qué firmó, qué se le anuló
+     * y qué le falta firmar.
+     *
+     * Va con el mismo alcance que `view` porque contesta la misma pregunta de
+     * negocio —«¿en qué estado está este cliente?»— y el reclutador es quien la
+     * hace todo el día: es él quien pone honorarios propios en una vacante y
+     * quien necesita saber si esa adenda ya se firmó antes de facturarla.
+     */
+    public function viewContracts(User $user, Company $company): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
+
+    /**
+     * Abrir la identificación oficial y la selfie de quien firmó.
+     *
+     * Separada de `viewContracts` a propósito, aunque hoy devuelvan lo mismo.
+     * Son datos personales sensibles y la decisión de quién los ve es de
+     * negocio, no de arquitectura: el día que se restrinja a admin, se borra el
+     * cuerpo de este método y `before()` hace el resto — sin tocar el
+     * controller, sin tocar las rutas y sin dejar un segundo camino abierto.
+     */
+    public function viewContractEvidence(User $user, Company $company): bool
+    {
+        return $user->hasRole(UserRole::Recruiter->value);
+    }
 }

@@ -10,6 +10,9 @@ use App\Http\Resources\V1\Directory\AnonymousCandidateResource;
 use App\Models\CandidateProfile;
 use App\Services\DirectorySearchService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Response as HttpStatus;
 
 /**
  * Navegación anónima del talento, para la empresa cliente.
@@ -47,5 +50,43 @@ class AnonymousDirectoryController extends Controller
                 ],
             ],
         );
+    }
+
+    /**
+     * Sirve la foto de un perfil del directorio anónimo.
+     *
+     * La ruta va firmada y no autenticada porque un `<img src>` no puede
+     * adjuntar el Bearer del cliente. La firma es la credencial y caduca; el
+     * middleware `signed` la verifica antes de llegar acá.
+     *
+     * Se vuelve a comprobar la elegibilidad aunque la firma sea válida: entre
+     * que se emitió el enlace y se pide la imagen, el candidato pudo vencer su
+     * membresía o salir del padrón. Un enlace firmado no debería sobrevivir a
+     * la salida de la persona.
+     */
+    public function photo(string $reference): Response
+    {
+        $profile = $this->search->visibleProfileByReference($reference);
+
+        $path = $profile?->user?->avatar_path;
+
+        if ($path === null || ! Storage::disk('public')->exists($path)) {
+            abort(HttpStatus::HTTP_NOT_FOUND);
+        }
+
+        // `response()->file()` y no un stream desde una URL: el archivo vive en
+        // el disco del propio servidor y así no se expone su ruta pública, que
+        // es lo que lleva el `user_id` dentro.
+        $response = response()->file(Storage::disk('public')->path($path));
+
+        // Privada: es la cara de una persona, no un asset de la marca. Sin esto
+        // un proxy compartido podría servírsela a alguien más.
+        //
+        // Con `setPrivate()` y no pasando la cabecera como arreglo: la
+        // `BinaryFileResponse` la reescribe y salía `public`.
+        $response->setPrivate();
+        $response->setMaxAge(300);
+
+        return $response;
     }
 }

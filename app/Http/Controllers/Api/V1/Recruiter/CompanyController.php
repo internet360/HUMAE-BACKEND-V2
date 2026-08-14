@@ -15,22 +15,71 @@ use Symfony\Component\HttpFoundation\Response as HttpStatus;
 
 class CompanyController extends Controller
 {
+    /**
+     * Listado de empresas cliente con búsqueda y filtros.
+     *
+     * `latestContract` va precargado siempre —no bajo un flag— porque el estado
+     * del contrato dejó de ser un detalle del expediente y pasó a ser una
+     * columna del listado: es lo primero que el equipo necesita ver de un
+     * cliente, y resolverlo con un request por tarjeta serían N+1 peticiones
+     * desde el navegador para pintar una lista.
+     */
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Company::class);
 
+        $contractFilter = $request->string('contract_status')->toString();
+
         $companies = Company::query()
+            ->with('latestContract')
+            ->withCount($this->pendingAddendaCount())
             ->when(
                 $request->filled('q'),
                 fn ($q) => $q->where(function ($inner) use ($request): void {
                     $term = '%'.$request->string('q').'%';
                     $inner->where('legal_name', 'like', $term)
                         ->orWhere('trade_name', 'like', $term)
-                        ->orWhere('slug', 'like', $term);
+                        ->orWhere('slug', 'like', $term)
+                        ->orWhere('rfc', 'like', $term)
+                        ->orWhere('contact_email', 'like', $term)
+                        ->orWhere('contact_name', 'like', $term);
                 }),
             )
+            ->when(
+                $request->filled('status'),
+                fn ($q) => $q->where('status', $request->string('status')->toString()),
+            )
+            ->when(
+                $request->filled('is_verified'),
+                fn ($q) => $q->where('is_verified', $request->boolean('is_verified')),
+            )
+            ->when(
+                $request->filled('account_manager_id'),
+                fn ($q) => $q->where('account_manager_id', $request->integer('account_manager_id')),
+            )
+            /*
+             * «Firmado» y «pendiente» se preguntan sobre el contrato MAESTRO,
+             * con el mismo `whereNull('vacancy_id')` que usa
+             * `Company::latestContract`. Sin esa condición, una empresa sin
+             * maestro pero con una adenda de honorarios saldría en «firmadas», y
+             * es precisamente la que hay que perseguir: está operando con la
+             * cláusula Primera sin firmar.
+             */
+            ->when($contractFilter === 'signed', fn ($q) => $q->whereHas(
+                'contracts',
+                fn ($c) => $c->whereNull('vacancy_id'),
+            ))
+            ->when($contractFilter === 'pending', fn ($q) => $q->whereDoesntHave(
+                'contracts',
+                fn ($c) => $c->whereNull('vacancy_id'),
+            ))
             ->orderBy('legal_name')
-            ->paginate(20);
+            // Un tope explícito y no `per_page` a secas: el parámetro lo escribe
+            // el cliente, y sin techo un `per_page=100000` convierte un listado
+            // en una descarga de toda la cartera. 100 alcanza para llenar el
+            // selector de empresas del panel de usuarios de una sola vez.
+            ->paginate(min(max($request->integer('per_page', 20), 1), 100))
+            ->withQueryString();
 
         return $this->success(
             message: 'Empresas.',
@@ -73,7 +122,8 @@ class CompanyController extends Controller
     {
         $this->authorize('view', $company);
 
-        $company->load(['members.user']);
+        $company->load(['members.user', 'latestContract']);
+        $company->loadCount($this->pendingAddendaCount());
 
         return $this->success(
             message: 'Empresa.',
@@ -100,6 +150,27 @@ class CompanyController extends Controller
         $company->delete();
 
         return $this->success(message: 'Empresa archivada.', status: HttpStatus::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * Vacantes de la empresa con honorario propio y sin adenda firmada.
+     *
+     * Es el número que hace visible un riesgo que hoy sólo se descubre entrando
+     * vacante por vacante: HUMAE está por facturar un porcentaje que la empresa
+     * nunca firmó. Mismo criterio que `Vacancy::hasPendingFeeAddendum()`, pero
+     * como subconsulta para no traer las filas.
+     *
+     * @return array<string, callable>
+     */
+    private function pendingAddendaCount(): array
+    {
+        return [
+            'vacancies as pending_addenda_count' => fn ($q) => $q
+                ->whereDoesntHave('signedAddendum')
+                ->where(fn ($inner) => $inner
+                    ->where('fee_percentage', '>', 0)
+                    ->orWhere('fee_amount', '>', 0)),
+        ];
     }
 
     private function uniqueSlug(string $base): string

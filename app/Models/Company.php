@@ -8,6 +8,7 @@ use App\Models\Concerns\BelongsToCompany;
 use App\Models\Contracts\CompanyOwned;
 use App\Models\Scopes\CompanyOwnedScope;
 use Database\Factories\CompanyFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -204,12 +205,34 @@ class Company extends Model implements CompanyOwned
      * para operar, y la cláusula Primera —la que le prohíbe contactar
      * candidatos por fuera— no estaría firmada por nadie.
      *
+     * OJO con dónde va esa condición. Esto estaba escrito como
+     * `->whereNull('vacancy_id')->latestOfMany('signed_at')`, y así NO funciona:
+     * `ofMany` arma una subconsulta con `MAX(signed_at)` que ignora los `where`
+     * encadenados en la relación, y después une por ese máximo. Con un maestro
+     * de las 11:04 y una adenda de las 12:52, la subconsulta devolvía las 12:52
+     * y la unión buscaba una fila de las 12:52 con `vacancy_id` nulo — que no
+     * existe. Resultado: `null`, es decir «esta empresa no firmó nada», para una
+     * empresa que había firmado dos veces.
+     *
+     * No era cosmético. `MyCompanyContractController` decide con esto si mostrar
+     * el asistente de firma y si responder 409 a una segunda firma, así que la
+     * empresa veía otra vez el trámite ya hecho y podía emitir un maestro
+     * duplicado con sólo firmar una adenda después del primero.
+     *
+     * La condición tiene que ir DENTRO de la subconsulta, que es lo que hace el
+     * closure. Se deja también afuera: no cambia el resultado —`id` entra en la
+     * agregación y fija una única fila— pero deja escrito en la relación qué es
+     * lo que devuelve.
+     *
      * @return HasOne<CompanyContract, $this>
      */
     public function latestContract(): HasOne
     {
         return $this->hasOne(CompanyContract::class)
-            ->whereNull('vacancy_id')
-            ->latestOfMany('signed_at');
+            ->ofMany(
+                ['signed_at' => 'max'],
+                static fn (Builder $query) => $query->whereNull('vacancy_id'),
+            )
+            ->whereNull('vacancy_id');
     }
 }

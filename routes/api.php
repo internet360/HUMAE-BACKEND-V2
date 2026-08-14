@@ -59,6 +59,7 @@ use App\Http\Controllers\Api\V1\Shared\CatalogController;
 use App\Http\Controllers\Api\V1\Shared\ContactSubmissionController;
 use App\Http\Controllers\Api\V1\Shared\HealthController;
 use App\Http\Controllers\Api\V1\Shared\TutorialController;
+use App\Http\Controllers\Api\V1\Staff\CompanyContractController as StaffCompanyContractController;
 use App\Http\Controllers\Webhooks\StripeWebhookController;
 use App\Http\Middleware\EnsureVerifiedEmail;
 use Illuminate\Support\Facades\Route;
@@ -324,6 +325,28 @@ Route::middleware($authenticated)->group(function (): void {
     Route::apiResource('companies', CompanyController::class)
         ->names('companies');
 
+    /*
+     * Historial de contratos de una empresa, para HUMAE.
+     *
+     * Es la contracara de `/me/company/contract`: allí la empresa ve el suyo,
+     * acá el equipo ve el de cualquier cliente —incluidos los anulados y los que
+     * todavía no se firman—. Autorizado por `CompanyPolicy::viewContracts`, que
+     * admite reclutador y deja pasar a admin.
+     *
+     * `withTrashed()` en el binding no es un descuido: un contrato anulado sigue
+     * siendo la evidencia de lo que esa empresa aceptó en su momento, y es
+     * justamente lo que alguien viene a buscar cuando audita.
+     */
+    Route::get('/companies/{company}/contracts', [StaffCompanyContractController::class, 'index'])
+        ->name('companies.contracts.index');
+    Route::get('/contracts/{contract}', [StaffCompanyContractController::class, 'show'])
+        ->withTrashed()
+        ->name('contracts.show');
+    Route::get('/contracts/{contract}/files/{kind}', [StaffCompanyContractController::class, 'files'])
+        ->withTrashed()
+        ->whereIn('kind', ['pdf', 'identity', 'selfie', 'signature', 'timestamp'])
+        ->name('contracts.files');
+
     // Company members
     Route::get('/companies/{company}/members', [CompanyMemberController::class, 'index'])
         ->name('companies.members.index');
@@ -493,6 +516,9 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
     Route::get('/directory/candidates', [AnonymousDirectoryController::class, 'index'])
         ->name('directory.candidates.index');
 
+    // La foto de cada perfil se sirve por una ruta firmada, declarada fuera de
+    // este grupo porque no lleva sesión. Ver el bloque de abajo.
+
     // Solicitudes de entrevistas: el paso donde la selección anónima se
     // convierte en un pedido concreto a HUMAE. Crea la vacante breve, guarda
     // los dos horarios y avisa al equipo, todo en una escritura.
@@ -544,6 +570,34 @@ Route::middleware($authenticated)->prefix('me/company')->name('me.company.')->gr
     Route::get('/assignments/{assignment}/psychometrics', [CompanyCandidatePsychometricController::class, 'index'])
         ->name('assignments.psychometrics');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Foto de un perfil del padrón anónimo — FIRMADA, no autenticada
+|--------------------------------------------------------------------------
+|
+| La única ruta del proyecto que se autoriza con firma en vez de sesión, y por
+| una razón concreta: la sirve un `<img src>`, que no puede adjuntar el Bearer
+| que el cliente guarda en localStorage. Una ruta autenticada devolvería 401 y
+| la foto no cargaría nunca.
+|
+| La firma hace de credencial y caduca —media hora, configurable en
+| `config/directory.php`—, así que un enlace copiado deja de servir solo. Es
+| mejor que la alternativa que ya existe: `users.avatar_url` apunta al disco
+| público, no caduca jamás y lleva el `user_id` dentro de la ruta.
+|
+| Va por `{reference}` opaca y no por id, igual que el resto del padrón. Y el
+| controller vuelve a comprobar membresía vigente y estado visible antes de
+| servir el archivo: un enlace firmado no debe sobrevivir a la salida de la
+| persona del padrón.
+|
+| Queda fuera del grupo `me/company` a propósito. Meterla ahí con un
+| `withoutMiddleware` la dejaría pareciendo autenticada para quien lea el
+| archivo, que es justo lo que no conviene con la excepción del proyecto.
+*/
+Route::get('me/company/directory/candidates/{reference}/photo', [AnonymousDirectoryController::class, 'photo'])
+    ->middleware('signed')
+    ->name('me.company.directory.candidates.photo');
 
 /*
 |--------------------------------------------------------------------------

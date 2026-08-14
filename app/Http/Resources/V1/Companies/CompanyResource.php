@@ -70,14 +70,29 @@ class CompanyResource extends JsonResource
              */
             'contract' => $this->when(
                 $this->resource->relationLoaded('latestContract'),
-                fn () => $this->latestContract === null
-                    ? ['is_signed' => false]
-                    : [
-                        'is_signed' => true,
-                        'folio' => $this->latestContract->folio,
-                        'signed_at' => $this->latestContract->signed_at->toIso8601String(),
-                        'is_timestamped' => $this->latestContract->isTimestamped(),
-                    ],
+                fn () => [
+                    ...($this->latestContract === null
+                        ? ['is_signed' => false]
+                        : [
+                            'is_signed' => true,
+                            'folio' => $this->latestContract->folio,
+                            'signed_at' => $this->latestContract->signed_at->toIso8601String(),
+                            'is_timestamped' => $this->latestContract->isTimestamped(),
+                        ]),
+                    /*
+                     * Adendas de honorarios propuestas y sin firmar. Viaja junto
+                     * al estado del maestro porque la pregunta del listado es
+                     * una sola —«¿este cliente tiene algo sin firmar?»— y
+                     * separarlas obligaría a la tarjeta a componer dos fuentes
+                     * para decidir un único badge.
+                     *
+                     * Sólo si quien consulta pidió el conteo: sin él la clave no
+                     * aparece, en vez de aparecer en cero y mentir.
+                     */
+                    ...(($count = $this->resource->getAttribute('pending_addenda_count')) === null
+                        ? []
+                        : ['pending_addenda' => (int) $count]),
+                ],
             ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
