@@ -79,6 +79,19 @@ class VacancyResource extends JsonResource
             'cancel_reason' => $this->cancel_reason,
             'fee_amount' => $this->fee_amount !== null ? (float) $this->fee_amount : null,
             'fee_percentage' => $this->fee_percentage !== null ? (float) $this->fee_percentage : null,
+
+            /*
+             * Esta vacante tiene honorarios propios sin firmar.
+             *
+             * Va en el recurso y no se deduce en el cliente porque hace falta
+             * saber si existe la adenda, y eso es una consulta. Se sirve sólo
+             * con la relación precargada: sin ella, un listado dispararía una
+             * consulta por fila para pintar un badge.
+             */
+            'fee_addendum_pending' => $this->when(
+                $this->relationLoaded('signedAddendum'),
+                fn (): bool => $this->hasPendingFeeAddendum(),
+            ),
             'sla_days' => $this->sla_days,
             'internal_notes' => $this->when(
                 $this->canSeeInternalNotes($request),

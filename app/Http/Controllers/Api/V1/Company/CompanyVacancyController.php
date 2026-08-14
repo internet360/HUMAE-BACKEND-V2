@@ -44,7 +44,7 @@ class CompanyVacancyController extends Controller
 
         $vacancies = Vacancy::query()
             ->whereIn('company_id', $companyIds)
-            ->with('company')
+            ->with(['company', 'signedAddendum'])
             ->orderByDesc('created_at')
             ->paginate(20);
 
@@ -94,7 +94,7 @@ class CompanyVacancyController extends Controller
             'code' => $this->identifiers->nextCode(),
         ]);
 
-        $vacancy->load('company');
+        $vacancy->load(['company', 'signedAddendum']);
 
         return $this->success(
             message: 'Vacante creada en borrador. HUMAE la revisará.',
@@ -107,7 +107,7 @@ class CompanyVacancyController extends Controller
     {
         $this->authorize('view', $vacancy);
 
-        $vacancy->load('company');
+        $vacancy->load(['company', 'signedAddendum']);
 
         return $this->success(
             message: 'Vacante.',
@@ -127,7 +127,7 @@ class CompanyVacancyController extends Controller
         }
 
         $vacancy->update($request->validated());
-        $vacancy->load('company');
+        $vacancy->load(['company', 'signedAddendum']);
 
         return $this->success(
             message: 'Vacante actualizada.',
@@ -182,7 +182,7 @@ class CompanyVacancyController extends Controller
         }
 
         $vacancy->update($payload);
-        $vacancy->load('company');
+        $vacancy->load(['company', 'signedAddendum']);
 
         return $this->success(
             message: "Estado actualizado a {$to->value}.",
