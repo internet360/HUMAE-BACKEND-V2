@@ -23,6 +23,11 @@ use Illuminate\Support\Carbon;
  * @property AssignmentStage|null $stage
  * @property Priority|null $priority
  * @property int|null $score
+ * @property string|null $final_salary_amount
+ * @property string|null $final_salary_period
+ * @property int|null $final_salary_currency_id
+ * @property int|null $final_salary_confirmed_by_user_id
+ * @property Carbon|null $final_salary_confirmed_at
  * @property string|null $recruiter_notes
  * @property string|null $company_notes
  * @property string|null $rejection_reason
@@ -52,6 +57,11 @@ class VacancyAssignment extends Model
         'stage',
         'priority',
         'score',
+        'final_salary_amount',
+        'final_salary_period',
+        'final_salary_currency_id',
+        'final_salary_confirmed_by_user_id',
+        'final_salary_confirmed_at',
         'recruiter_notes',
         'company_notes',
         'rejection_reason',
@@ -70,6 +80,8 @@ class VacancyAssignment extends Model
             'stage' => AssignmentStage::class,
             'priority' => Priority::class,
             'score' => 'integer',
+            'final_salary_amount' => 'decimal:2',
+            'final_salary_confirmed_at' => 'datetime',
             'presented_at' => 'datetime',
             'shortlisted_at' => 'datetime',
             'interviewed_at' => 'datetime',

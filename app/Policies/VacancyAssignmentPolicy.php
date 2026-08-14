@@ -75,6 +75,37 @@ class VacancyAssignmentPolicy
     }
 
     /**
+     * Capture the final confirmed salary of a placement.
+     *
+     * Internal staff only, and deliberately NOT open to the company even though
+     * the company knows the number: it is the base of what HUMAE charges, so the
+     * side that pays cannot be the side that writes it. The recruiter records
+     * what was agreed and signs it with their user.
+     */
+    public function confirmFinalSalary(User $user, VacancyAssignment $assignment): bool
+    {
+        return $this->isInternalStaff($user);
+    }
+
+    /**
+     * Close the placement (→ hired).
+     *
+     * Both sides own this one — the checklist asks for it explicitly: "desde el
+     * dashboard del empleador, o desde el panel del reclutador". The company
+     * decides who it hires; HUMAE can also record it when the client confirms by
+     * phone.
+     *
+     * Same visibility fence as `selectFinalist`: a company only closes on
+     * candidates HUMAE actually presented to it.
+     */
+    public function hire(User $user, VacancyAssignment $assignment): bool
+    {
+        return $this->isInternalStaff($user)
+            || ($this->isVisibleToCompany($assignment)
+                && $this->isCompanyDecisionMaker($user, $assignment));
+    }
+
+    /**
      * Propose an interview for an assignment.
      *
      * `vacancy_assignment_id` arrives in the request body, so the company can

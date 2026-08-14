@@ -45,6 +45,15 @@ class AssignmentResource extends JsonResource
             'stage' => $stage->value,
             'priority' => $this->priority?->value,
             'score' => $this->score,
+
+            // Sueldo final confirmado. Se expone aquí para que el panel sepa si
+            // ya se puede cerrar la colocación: sin este dato, `hire` falla.
+            'final_salary_amount' => $this->final_salary_amount !== null
+                ? (float) $this->final_salary_amount
+                : null,
+            'final_salary_period' => $this->final_salary_period,
+            'final_salary_currency_id' => $this->final_salary_currency_id,
+            'final_salary_confirmed_at' => $this->final_salary_confirmed_at?->toIso8601String(),
             'recruiter_notes' => $this->when($isInternalStaff, fn () => $this->recruiter_notes),
             'rejection_reason' => $this->when($isInternalStaff, fn () => $this->rejection_reason),
             'allowed_transitions' => AssignmentStageMachine::allowedValuesFrom($stage),

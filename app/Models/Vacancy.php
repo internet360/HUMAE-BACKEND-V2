@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -167,6 +168,39 @@ class Vacancy extends Model implements CompanyOwned
     {
         return $this->belongsTo(Company::class)
             ->withoutGlobalScope(CompanyOwnedScope::class);
+    }
+
+    /**
+     * La adenda de honorarios firmada para esta vacante, si existe.
+     *
+     * Existe para que un listado pueda decir «falta firmar» sin una consulta por
+     * fila: `CompanyContract::addendumFor()` resuelve una vacante a la vez y en
+     * la lista de la empresa serían N consultas para pintar N tarjetas.
+     *
+     * `hasOne` y no `hasMany` porque el controller responde 409 a la segunda
+     * adenda de la misma vacante. Una anulada queda fuera por el SoftDeletes de
+     * `CompanyContract`, que es lo correcto: anulada deja de sostener el cobro.
+     *
+     * @return HasOne<CompanyContract, $this>
+     */
+    public function signedAddendum(): HasOne
+    {
+        return $this->hasOne(CompanyContract::class);
+    }
+
+    /**
+     * Esta vacante tiene honorarios propios que la empresa todavía no firmó.
+     *
+     * Mientras sea `true` se factura con el contrato maestro: el número está
+     * propuesto, no acordado. Es justo el estado que hay que hacer visible,
+     * porque hoy sólo se descubre entrando al detalle de la vacante.
+     */
+    public function hasPendingFeeAddendum(): bool
+    {
+        $hasOwnFee = ($this->fee_percentage !== null && (float) $this->fee_percentage > 0)
+            || ($this->fee_amount !== null && (float) $this->fee_amount > 0);
+
+        return $hasOwnFee && $this->signedAddendum === null;
     }
 
     /** @return BelongsTo<User, $this> */

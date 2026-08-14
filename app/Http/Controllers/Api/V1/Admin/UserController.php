@@ -34,6 +34,7 @@ class UserController extends Controller
         $roleFilter = $request->string('role')->toString();
         $statusFilter = $request->string('status')->toString();
         $query = $request->string('q')->toString();
+        $companyFilter = $request->integer('company_id');
 
         $users = User::query()
             ->with(['roles', 'companyMemberships.company'])
@@ -43,6 +44,20 @@ class UserController extends Controller
                     $inner->where('email', 'like', $like)
                         ->orWhere('name', 'like', $like);
                 });
+            })
+            /*
+             * Filtro por empresa. Va contra `company_members` y no contra una
+             * columna de `users` porque la pertenencia a una empresa es una
+             * relación, no un atributo: la misma persona puede estar en dos.
+             *
+             * `whereHas` sobre la relación —y no un join— para no duplicar filas
+             * cuando eso pase.
+             */
+            ->when($companyFilter > 0, function ($q) use ($companyFilter): void {
+                $q->whereHas(
+                    'companyMemberships',
+                    fn ($m) => $m->where('company_id', $companyFilter),
+                );
             })
             ->when($roleFilter !== '', function ($q) use ($roleFilter): void {
                 $q->whereHas('roles', fn ($r) => $r->where('name', $roleFilter));

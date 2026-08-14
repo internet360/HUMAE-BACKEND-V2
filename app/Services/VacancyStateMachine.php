@@ -24,6 +24,17 @@ class VacancyStateMachine
         return [
             VacancyState::Borrador->value => [
                 VacancyState::Activa,
+                VacancyState::Solicitada,
+                VacancyState::Cancelada,
+            ],
+            // `solicitada` sale a `con_candidatos_asignados` cuando HUMAE
+            // acepta al menos un perfil de la solicitud. La salida a
+            // `en_busqueda` es el desagüe: si HUMAE veta a todos los que la
+            // empresa señaló, la vacante no puede quedarse atascada esperando
+            // candidatos que ya no van a llegar por ese camino.
+            VacancyState::Solicitada->value => [
+                VacancyState::ConCandidatosAsignados,
+                VacancyState::EnBusqueda,
                 VacancyState::Cancelada,
             ],
             VacancyState::Activa->value => [
@@ -64,12 +75,19 @@ class VacancyStateMachine
      * - `publish`  — borrador → activa. §6 "Aprobar / activar vacante".
      * - `close`    — → cubierta. §6 "Marcar vacante como cubierta".
      * - `cancel`   — → cancelada. Not covered by §6; keeps current behaviour.
+     * - `submit`   — → solicitada. The employer flow: the client picked whom it
+     *   wants to meet and files the request. This is the one transition a
+     *   client company DRIVES rather than proposes, so it gets its own ability
+     *   instead of borrowing `advance` — which is HUMAE's. Folding it in is the
+     *   exact shape of F-03, where one ability covering two rights let a
+     *   company drive its own vacancy to `cubierta`.
      * - `advance`  — the internal pipeline states, which only HUMAE drives.
      */
     public static function abilityFor(VacancyState $to): string
     {
         return match ($to) {
             VacancyState::Activa => 'publish',
+            VacancyState::Solicitada => 'submit',
             VacancyState::Cubierta => 'close',
             VacancyState::Cancelada => 'cancel',
             default => 'advance',

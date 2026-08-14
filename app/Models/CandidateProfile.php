@@ -15,10 +15,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
  * @property int $user_id
+ * @property string|null $public_reference NOT NULL en DB tras el backfill; null sólo en instancias sin guardar
  * @property string $first_name
  * @property string $last_name
  * @property string|null $headline
@@ -94,6 +96,23 @@ class CandidateProfile extends Model
         'approved_at',
         'approved_by',
     ];
+
+    /**
+     * Asigna la referencia pública en el alta.
+     *
+     * No está en `$fillable` a propósito: es la identidad del candidato de cara
+     * a la empresa cliente, y nadie debería poder fijarla desde un request. Si
+     * se pudiera, dos perfiles podrían terminar compartiéndola —o peor, alguien
+     * podría reclamar la referencia de otro.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $profile): void {
+            if ($profile->public_reference === null) {
+                $profile->public_reference = (string) Str::uuid();
+            }
+        });
+    }
 
     protected function casts(): array
     {

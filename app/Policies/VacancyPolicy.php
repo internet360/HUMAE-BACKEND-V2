@@ -91,6 +91,27 @@ class VacancyPolicy
     }
 
     /**
+     * File the vacancy as a request for interviews (→ solicitada).
+     *
+     * The employer flow: the client browsed the anonymous preview, picked whom
+     * it wants to meet and files the request. This is the client's own decision,
+     * so a decision maker of the owning company drives it — HUMAE can too, for
+     * a request filed by phone.
+     *
+     * Its own ability rather than `advance`: `advance` is HUMAE reporting
+     * progress on its mandate (§5.7), and this is the client asking for
+     * something. Same distinction that keeps `publish` and `close` apart.
+     */
+    public function submit(User $user, Vacancy $vacancy): bool
+    {
+        if ($user->hasRole(UserRole::Recruiter->value)) {
+            return true;
+        }
+
+        return $this->isDecisionMaker($user, $vacancy);
+    }
+
+    /**
      * Mark the vacancy filled (→ cubierta).
      *
      * §6 — "Marcar vacante como cubierta: Reclutador ✅ (confirma), Empresa

@@ -24,10 +24,13 @@ use App\Models\CandidateExperience;
 use App\Models\CandidateProfile;
 use App\Models\CandidateReference;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\CompanyMember;
 use App\Models\DegreeLevel;
 use App\Models\FunctionalArea;
 use App\Models\Interview;
+use App\Models\InterviewRequest;
+use App\Models\InterviewRequestCandidate;
 use App\Models\Language;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
@@ -36,6 +39,7 @@ use App\Models\PsychometricQuestion;
 use App\Models\PsychometricQuestionOption;
 use App\Models\PsychometricTest;
 use App\Models\PsychometricTestSection;
+use App\Models\SalaryCurrency;
 use App\Models\Skill;
 use App\Models\User;
 use App\Models\Vacancy;
@@ -102,6 +106,18 @@ const AUTHZ_S_COMPANY_A_CONTACT_EMAIL = 'contacto-sentinel-a@empresa.test';
 const AUTHZ_S_COMPANY_A_ADDRESS = 'AV-SENTINEL-EMPRESA-A-500';
 const AUTHZ_S_COMPANY_A_INTERNAL_NOTES = 'NOTAS-INTERNAS-EMPRESA-SENTINEL';
 
+/**
+ * Rutas del disco privado donde vive la evidencia de un contrato firmado.
+ *
+ * Ninguna respuesta JSON debe contenerlas — ni siquiera para admin. Los archivos
+ * salen por `/contracts/{id}/files/{kind}`, que revalida la policy en cada
+ * descarga; una ruta en el payload es una ruta que alguien va a intentar servir
+ * por otro camino.
+ */
+const AUTHZ_S_CONTRACT_IDENTITY_PATH = 'contracts/sentinel/INE-SENTINEL.jpg';
+const AUTHZ_S_CONTRACT_SELFIE_PATH = 'contracts/sentinel/SELFIE-SENTINEL.jpg';
+const AUTHZ_S_CONTRACT_SIGNATORY_PATH = 'contract-settings/FIRMA-APODERADO-SENTINEL.png';
+
 /** Field names §6 keeps away from the client company. */
 const AUTHZ_PII_KEYS = [
     'curp',
@@ -166,6 +182,13 @@ const AUTHZ_POLICY_INVENTORY = [
         'downloadCv' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
+        'viewAnonymousDirectory' => 'Http/Controllers/Api/V1/Company/AnonymousDirectoryController.php',
+    ],
+    'InterviewRequestPolicy' => [
+        'viewAny' => 'Http/Controllers/Api/V1/Company/InterviewRequestController.php',
+        'view' => 'Http/Controllers/Api/V1/Company/InterviewRequestController.php',
+        'create' => 'Http/Controllers/Api/V1/Company/InterviewRequestController.php',
+        'resolve' => 'Http/Controllers/Api/V1/Recruiter/InterviewRequestController.php',
     ],
     'CompanyPolicy' => [
         'viewAny' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
@@ -173,6 +196,8 @@ const AUTHZ_POLICY_INVENTORY = [
         'create' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
         'update' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
         'delete' => 'Http/Controllers/Api/V1/Recruiter/CompanyController.php',
+        'viewContracts' => 'Http/Controllers/Api/V1/Staff/CompanyContractController.php',
+        'viewContractEvidence' => 'Http/Controllers/Api/V1/Staff/CompanyContractController.php',
     ],
     'InterviewPolicy' => [
         'view' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
@@ -187,11 +212,16 @@ const AUTHZ_POLICY_INVENTORY = [
         'update' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
         'delete' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
         'selectFinalist' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'confirmFinalSalary' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
+        'hire' => 'Http/Controllers/Api/V1/Recruiter/AssignmentController.php',
         'scheduleInterview' => 'Http/Controllers/Api/V1/Interviews/InterviewController.php',
         'viewPsychometrics' => 'Http/Controllers/Api/V1/Company/CandidatePsychometricController.php',
         'viewNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
         'createNote' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
         'viewInternalNotes' => 'Http/Controllers/Api/V1/Recruiter/AssignmentNoteController.php',
+    ],
+    'PlacementChargePolicy' => [
+        'viewAny' => 'Http/Controllers/Api/V1/Recruiter/PlacementChargeController.php',
     ],
     'VacancyPolicy' => [
         'viewAny' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
@@ -201,6 +231,7 @@ const AUTHZ_POLICY_INVENTORY = [
         'update' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
         'delete' => 'Http/Controllers/Api/V1/Recruiter/VacancyController.php',
         'publish' => 'Services/VacancyStateMachine.php',
+        'submit' => 'Services/VacancyStateMachine.php',
         'close' => 'Services/VacancyStateMachine.php',
         'cancel' => 'Services/VacancyStateMachine.php',
         'advance' => 'Services/VacancyStateMachine.php',
@@ -683,6 +714,47 @@ function authzBuildFixtures(): array
         'psychometric_question_id' => $authoringQuestion->id,
     ]);
 
+    // Moneda para el sondeo del sueldo final.
+    $salaryCurrency = SalaryCurrency::query()->first()
+        ?? SalaryCurrency::factory()->create(['code' => 'MXN']);
+
+    // Solicitud de entrevistas de la empresa A, para sondear la lectura de una
+    // solicitud propia y —desde `company_other`— la de otra empresa.
+    $interviewRequestA = InterviewRequest::factory()->create([
+        'company_id' => $companyA->id,
+        'vacancy_id' => $vacancyA->id,
+        'requested_by_user_id' => $companyOwner->id,
+    ]);
+    $interviewRequestCandidateA = InterviewRequestCandidate::factory()->create([
+        'interview_request_id' => $interviewRequestA->id,
+        'candidate_profile_id' => $profileOther->id,
+    ]);
+
+    /*
+     * Contrato maestro de la empresa A, con las rutas de su evidencia marcadas
+     * con sentinelas. Sondea dos cosas a la vez: que sólo HUMAE lea el historial
+     * de un cliente, y que ni siquiera HUMAE reciba en el JSON la ruta de disco
+     * de una INE.
+     */
+    $contractA = CompanyContract::factory()->create([
+        'company_id' => $companyA->id,
+        'signed_by_user_id' => $companyOwner->id,
+        'vacancy_id' => null,
+        'identity_path' => AUTHZ_S_CONTRACT_IDENTITY_PATH,
+        'selfie_path' => AUTHZ_S_CONTRACT_SELFIE_PATH,
+        'terms' => [
+            'version' => '2026.1',
+            'fee_kind' => 'percentage_annual_gross',
+            'fee_value' => 12.0,
+            'payment_days' => 5,
+            'payment_day_kind' => 'habiles',
+            'warranty_days' => 90,
+            'jurisdiction' => 'Querétaro',
+            'signatory' => ['name' => 'Apoderado', 'title' => 'Representante Legal'],
+            'signature_path' => AUTHZ_S_CONTRACT_SIGNATORY_PATH,
+        ],
+    ]);
+
     $notificationId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     DB::table('notifications')->insert([
         'id' => $notificationId,
@@ -711,6 +783,14 @@ function authzBuildFixtures(): array
             'company_member_user' => $companyViewer->id,
             'member' => $viewerMember->id,
             'vacancy' => $vacancyA->id,
+            'contract' => $contractA->id,
+            // Resuelve a su propio literal, igual que los `{tutorial_*}`: existe
+            // sólo para que `authzCanonicalUri()` lo colapse a `*` y reconozca
+            // que la fila cubre `contracts/{contract}/files/{kind}`.
+            'contract_file_kind' => 'identity',
+            'interviewRequest' => $interviewRequestA->id,
+            'interview_request_candidate' => $interviewRequestCandidateA->id,
+            'currency' => $salaryCurrency->id,
             'vacancy_draft' => $vacancyDraft->id,
             'assignment' => $assignmentPresented->id,
             'assignment_sourced' => $assignmentSourced->id,
@@ -906,7 +986,7 @@ function authzMatrixRows(): array
     ]);
 
     // -------------------------------------------------- Catálogos (UNSPECIFIED)
-    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'positions', 'vacancy-types'] as $catalog) {
+    foreach (['skills', 'languages', 'degree-levels', 'functional-areas', 'positions', 'vacancy-types', 'salary-currencies'] as $catalog) {
         $add("GET /catalogs/{$catalog}", [
             'method' => 'GET', 'uri' => "/api/v1/catalogs/{$catalog}", 'spec' => 'UNSPECIFIED — inferido: cualquier usuario autenticado (datos maestros)',
             ...authzAccess($authenticated),
@@ -1152,6 +1232,44 @@ function authzMatrixRows(): array
         ...authzAccess($staff),
     ]);
 
+    /*
+     * Historial de contratos de un cliente. Es el registro de HUMAE sobre sus
+     * empresas, no la vista de una empresa sobre sí misma: `company_owner` queda
+     * fuera aunque el contrato sea suyo, porque lo ve por `/me/company/contract`
+     * —que no expone INE ni selfie— y porque la ruta pasa por el mismo endpoint
+     * con el que se leería el contrato de otro cliente.
+     *
+     * Los sentinelas cubren lo que ni HUMAE debe recibir en el JSON: las rutas
+     * de disco de la evidencia y la de la firma del apoderado.
+     */
+    $contractPathSentinels = [
+        AUTHZ_S_CONTRACT_IDENTITY_PATH,
+        AUTHZ_S_CONTRACT_SELFIE_PATH,
+        AUTHZ_S_CONTRACT_SIGNATORY_PATH,
+    ];
+    $add('GET /companies/{company}/contracts', [
+        'method' => 'GET', 'uri' => '/api/v1/companies/{company}/contracts',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (registro de clientes)',
+        'must_not_leak' => ['*' => $contractPathSentinels],
+        ...authzAccess($staff),
+    ]);
+    $add('GET /contracts/{contract}', [
+        'method' => 'GET', 'uri' => '/api/v1/contracts/{contract}',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (registro de clientes)',
+        'must_not_leak' => ['*' => $contractPathSentinels],
+        ...authzAccess($staff),
+    ]);
+    $add('GET /contracts/{contract}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/contracts/{contract}/files/{contract_file_kind}',
+        'spec' => 'UNSPECIFIED — inferido: §5.6 admin/recruiter (evidencia de identidad)',
+        // Quien sí puede recibe 404 acá: la fila apunta a un archivo que este
+        // banco de pruebas no escribe en disco. Que ese 404 salga de verdad de
+        // un 200 autorizado lo cubre `CompanyContractHistoryTest`; lo que se
+        // sondea en esta matriz es que nadie MÁS llegue siquiera hasta ahí.
+        'allow_not_found' => true,
+        ...authzAccess($staff),
+    ]);
+
     // -------------------------------------------------------- Vacantes (§5.6)
     $add('GET /vacancies', [
         'method' => 'GET', 'uri' => '/api/v1/vacancies', 'spec' => '§5.6 recruiter/admin/company (propias)',
@@ -1374,6 +1492,165 @@ function authzMatrixRows(): array
     $add('DELETE /me/company/members/{member}', [
         'method' => 'DELETE', 'uri' => '/api/v1/me/company/members/{member}', 'spec' => 'UNSPECIFIED — inferido: owner de la propia empresa',
         ...authzAccess(['company_owner']),
+    ]);
+    // Adenda de honorarios de una vacante. La firma la empresa dueña, igual que
+    // el contrato maestro: es el instrumento que respalda cobrar distinto en esa
+    // vacante. `company_other` es de otra empresa y la vacante ni se le resuelve.
+    $add('GET /me/company/vacancies/{vacancy}/contract', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/contract',
+        'spec' => 'Flujo del empleador — adenda de honorarios de la vacante propia',
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
+    ]);
+    $add('GET /me/company/vacancies/{vacancy}/contract/preview', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/contract/preview',
+        'spec' => 'Flujo del empleador — borrador de la adenda; nadie firma lo que no pudo leer',
+        // La vacante de la matriz no trae honorarios propios, así que responde
+        // 422 «no hay adenda que firmar». La matriz cuenta 422 como acceso: el
+        // sondeo llegó al controlador, que es lo que se está midiendo.
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
+    ]);
+    $add('POST /me/company/vacancies/{vacancy}/contract', [
+        'method' => 'POST', 'uri' => '/api/v1/me/company/vacancies/{vacancy}/contract',
+        'spec' => 'Flujo del empleador — firmar la adenda; sólo la empresa dueña',
+        // `recruiter` queda FUERA y es la frontera que da sentido a todo esto:
+        // HUMAE no puede firmar el honorario que ella misma va a cobrar. Lee la
+        // adenda por GET, la propone escribiendo los honorarios en la vacante,
+        // pero quien la firma es el representante legal del cliente.
+        ...authzAccess(['company_owner', 'admin']),
+    ]);
+
+    // Sueldo final: lo captura HUMAE. La empresa conoce el número pero no lo
+    // escribe — quien paga no fija la base de lo que se le cobra.
+    $add('POST /assignments/{assignment}/final-salary', [
+        'method' => 'POST', 'uri' => '/api/v1/assignments/{assignment}/final-salary',
+        'spec' => 'Flujo del empleador — base del cargo por colocación, sólo HUMAE',
+        'payload' => ['final_salary_amount' => 38000, 'final_salary_period' => 'mes', 'final_salary_currency_id' => '{currency}'],
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+
+    // Cerrar la colocación. Las dos partes: el checklist pide «desde el
+    // dashboard del empleador, o desde el panel del reclutador». `company_other`
+    // queda fuera porque la asignación es de otra empresa.
+    $add('POST /assignments/{assignment}/hire', [
+        'method' => 'POST', 'uri' => '/api/v1/assignments/{assignment}/hire',
+        'spec' => 'Flujo del empleador — mover a Contratado; empresa dueña o HUMAE',
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
+    ]);
+
+    // Cartera de honorarios devengados. La empresa no la lee: se le comunica
+    // por factura, y abrirla «porque ya está» expondría el cobro antes de que
+    // nadie decidiera cómo se le presenta.
+    $add('GET /placement-charges', [
+        'method' => 'GET', 'uri' => '/api/v1/placement-charges',
+        'spec' => 'Flujo del empleador — cartera devengada, sólo HUMAE',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+
+    // Bandeja de solicitudes, lado HUMAE. Aceptar y vetar son la curación: si
+    // la empresa pudiera resolver su propia solicitud, se autoaprobaría los
+    // candidatos y el filtro que paga dejaría de existir.
+    $add('GET /interview-requests (bandeja HUMAE)', [
+        'method' => 'GET', 'uri' => '/api/v1/interview-requests',
+        'spec' => 'Flujo del empleador — bandeja de staff',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('GET /interview-requests/{interviewRequest} (staff)', [
+        'method' => 'GET', 'uri' => '/api/v1/interview-requests/{interviewRequest}',
+        'spec' => 'Flujo del empleador — detalle con expediente completo, sólo HUMAE',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('POST /interview-requests/{interviewRequest}/candidates/{candidate}/accept', [
+        'method' => 'POST',
+        'uri' => '/api/v1/interview-requests/{interviewRequest}/candidates/{interview_request_candidate}/accept',
+        'spec' => 'Flujo del empleador — aceptar un perfil señalado; curación de HUMAE',
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+    $add('POST /interview-requests/{interviewRequest}/candidates/{candidate}/reject', [
+        'method' => 'POST',
+        'uri' => '/api/v1/interview-requests/{interviewRequest}/candidates/{interview_request_candidate}/reject',
+        'spec' => 'Flujo del empleador — vetar un perfil señalado; curación de HUMAE',
+        'payload' => ['reason' => 'Motivo de sondeo de autorización, suficientemente largo.'],
+        ...authzAccess(['recruiter', 'admin']),
+    ]);
+
+    // Solicitudes de entrevistas del empleador. `create` exige owner/manager:
+    // un `viewer` mira el proceso pero no compromete a su empresa a
+    // entrevistar a nadie, así que `company_other` —que entra como viewer— lee
+    // pero no envía.
+    $add('GET /me/company/interview-requests', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/interview-requests',
+        'spec' => 'Flujo del empleador — solicitudes propias',
+        'must_not_leak' => [
+            'company_owner' => [AUTHZ_S_CANDIDATE_B_LASTNAME, AUTHZ_S_CANDIDATE_B_EMAIL, AUTHZ_S_CANDIDATE_B_PHONE],
+            'company_other' => [AUTHZ_S_CANDIDATE_B_LASTNAME, AUTHZ_S_CANDIDATE_B_EMAIL, AUTHZ_S_CANDIDATE_B_PHONE],
+        ],
+        ...authzAccess(['recruiter', 'company_owner', 'company_other', 'admin']),
+    ]);
+    $add('POST /me/company/interview-requests', [
+        'method' => 'POST', 'uri' => '/api/v1/me/company/interview-requests',
+        'spec' => 'Flujo del empleador — enviar solicitud; sólo owner/manager de la empresa',
+        'payload' => [
+            'candidate_references' => ['00000000-0000-4000-8000-000000000000'],
+            'vacancy' => ['title' => 'Sondeo', 'description' => 'Solicitud de sondeo de autorización.'],
+            'interview_slots' => ['2099-01-01T10:00:00+00:00', '2099-01-02T10:00:00+00:00'],
+        ],
+        // `admin` queda fuera y no es un olvido: no es miembro de ninguna
+        // empresa, así que no hay compañía en cuyo nombre enviar. El endpoint
+        // responde 404 con ese mensaje exacto.
+        ...authzAccess(['company_owner', 'company_other']),
+    ]);
+    $add('GET /me/company/interview-requests/{interviewRequest}', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/interview-requests/{interviewRequest}',
+        'spec' => 'Flujo del empleador — solicitud propia; la de otra empresa ni se resuelve',
+        // La solicitud es de la empresa A. `company_other` es de la B y el
+        // scope de tenancy la deja fuera antes de que llegue a la policy.
+        ...authzAccess(['recruiter', 'company_owner', 'admin']),
+    ]);
+
+    // Vista previa anónima del talento. La empresa entra —es la superficie que
+    // le deja elegir a quién conocer— pero lo que recibe es una silueta
+    // profesional: ni identidad, ni contacto, ni archivos. Los centinelas de
+    // abajo son la mitad que importa; el acceso sin ellos no prueba nada.
+    // El reclutador queda fuera a propósito: tiene el directorio completo.
+    $add('GET /me/company/directory/candidates', [
+        'method' => 'GET', 'uri' => '/api/v1/me/company/directory/candidates',
+        'spec' => 'Flujo del empleador — navegación anónima; §6 «Ver directorio de candidatos — Empresa ❌» sigue valiendo para /directory/candidates',
+        'must_not_leak' => [
+            'company_owner' => [
+                AUTHZ_S_CANDIDATE_B_LASTNAME,
+                AUTHZ_S_CANDIDATE_B_EMAIL,
+                AUTHZ_S_CANDIDATE_B_PHONE,
+                AUTHZ_S_CANDIDATE_B_CURP,
+                AUTHZ_S_CANDIDATE_B_RFC,
+                AUTHZ_S_CANDIDATE_B_ADDRESS,
+            ],
+            'company_other' => [
+                AUTHZ_S_CANDIDATE_B_LASTNAME,
+                AUTHZ_S_CANDIDATE_B_EMAIL,
+                AUTHZ_S_CANDIDATE_B_PHONE,
+                AUTHZ_S_CANDIDATE_B_CURP,
+                AUTHZ_S_CANDIDATE_B_RFC,
+                AUTHZ_S_CANDIDATE_B_ADDRESS,
+            ],
+        ],
+        ...authzAccess(['company_owner', 'company_other', 'admin']),
+    ]);
+    /*
+     * La foto de un perfil del padrón anónimo.
+     *
+     * Todos denegados, y es lo correcto: esta ruta no se autoriza por rol sino
+     * por firma, porque la consume un `<img src>` que no puede adjuntar el
+     * Bearer. Sin firma válida el middleware `signed` responde 403 a cualquiera,
+     * incluido el admin — que es justo lo que esta fila deja fijado.
+     *
+     * El camino con firma válida, su caducidad y el corte cuando el candidato
+     * sale del padrón se prueban en `AnonymousDirectoryTest`.
+     */
+    $add('GET /me/company/directory/candidates/{reference}/photo', [
+        'method' => 'GET',
+        'uri' => '/api/v1/me/company/directory/candidates/{reference}/photo',
+        'spec' => 'Flujo del empleador — foto del padrón anónimo; autorizada por firma temporal, no por rol',
+        ...authzAccess([]),
     ]);
     $add('GET /me/company/vacancies', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies', 'spec' => '§5.6 /me/company/jobs — company_user',

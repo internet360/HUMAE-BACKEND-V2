@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
 use App\Models\SalaryCurrency;
@@ -136,6 +137,10 @@ it('dispatches notification when interview is scheduled', function (): void {
     ]);
 
     $company = Company::factory()->create();
+    // Contrato firmado: sin él `InterviewService::schedule()` rechaza el
+    // agendado. No es decoración del fixture, es la regla — una entrevista sin
+    // contrato vigente no debe poder existir.
+    CompanyContract::factory()->create(['company_id' => $company->id]);
     $vacancy = Vacancy::factory()->create([
         'company_id' => $company->id,
         'state' => VacancyState::ConCandidatosAsignados,

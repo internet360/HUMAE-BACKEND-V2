@@ -10,6 +10,7 @@ use App\Models\DegreeLevel;
 use App\Models\FunctionalArea;
 use App\Models\Language;
 use App\Models\Position;
+use App\Models\SalaryCurrency;
 use App\Models\Skill;
 use App\Models\VacancyType;
 use Illuminate\Http\JsonResponse;
@@ -94,5 +95,24 @@ class CatalogController extends Controller
             ->get(['id', 'code', 'name']);
 
         return $this->success(message: 'Catálogo de tipos de jornada.', data: $types);
+    }
+
+    /**
+     * Monedas para capturar sueldos.
+     *
+     * Existe porque el sueldo final confirmado exige moneda y sin catálogo no
+     * había de dónde elegirla: un 12% sobre 38,000 pesos y sobre 38,000 dólares
+     * no son el mismo cobro, así que el campo no podía quedar opcional ni
+     * adivinarse.
+     */
+    public function salaryCurrencies(): JsonResponse
+    {
+        $currencies = SalaryCurrency::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'symbol']);
+
+        return $this->success(message: 'Catálogo de monedas.', data: $currencies);
     }
 }

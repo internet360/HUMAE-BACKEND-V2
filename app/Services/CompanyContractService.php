@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\CompanyContract;
 use App\Models\ContractSetting;
 use App\Models\User;
+use App\Models\Vacancy;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\UploadedFile;
@@ -17,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -41,12 +43,23 @@ class CompanyContractService
     ) {}
 
     /**
-     * @param  array{signature: UploadedFile, identity: UploadedFile, selfie: UploadedFile}  $files
+     * @param  array{signature: UploadedFile, identity?: UploadedFile|null, selfie?: UploadedFile|null}  $files
      * @param  array{signer_title: string, terms_accepted_at?: Carbon|null, privacy_accepted_at?: Carbon|null, ip?: string|null, user_agent?: string|null}  $meta
+     * @param  CompanyContract|null  $evidenceSource  contrato que ya acreditó a este firmante; deja
+     *                                                omitir la identificación y la selfie
      */
-    public function sign(Company $company, User $signer, array $files, array $meta): CompanyContract
-    {
-        $terms = $this->currentTerms();
+    public function sign(
+        Company $company,
+        User $signer,
+        array $files,
+        array $meta,
+        ?Vacancy $vacancy = null,
+        ?CompanyContract $evidenceSource = null,
+    ): CompanyContract {
+        $terms = $vacancy !== null
+            ? $this->addendumTerms($vacancy)
+            : $this->currentTerms();
+
         $signedAt = Carbon::now();
 
         $folder = 'contracts/'.$company->id;
@@ -54,15 +67,29 @@ class CompanyContractService
         // Los archivos entran al disco privado antes de abrir la transacción:
         // escribir en disco no es transaccional y no queremos sostener un lock
         // de tabla mientras se suben.
+        //
+        // La firma siempre se traza de nuevo: es el acto que obliga, y reciclar
+        // el trazo de otro contrato sería firmar en nombre de alguien.
         $signaturePath = $this->store($files['signature'], $folder.'/signature');
-        $identityPath = $this->store($files['identity'], $folder.'/identity');
-        $selfiePath = $this->store($files['selfie'], $folder.'/selfie');
+        $identityPath = $this->resolveIdentityEvidence(
+            $files['identity'] ?? null,
+            $evidenceSource?->identity_path,
+            $folder.'/identity',
+            'identificación oficial',
+        );
+        $selfiePath = $this->resolveIdentityEvidence(
+            $files['selfie'] ?? null,
+            $evidenceSource?->selfie_path,
+            $folder.'/selfie',
+            'selfie',
+        );
 
         try {
             $folio = $this->allocateFolio($signedAt);
 
             $contract = new CompanyContract([
                 'company_id' => $company->id,
+                'vacancy_id' => $vacancy?->id,
                 'signed_by_user_id' => $signer->id,
                 'folio' => $folio,
                 'signer_title' => $meta['signer_title'],
@@ -77,7 +104,7 @@ class CompanyContractService
                 'signed_user_agent' => $meta['user_agent'] ?? null,
             ]);
 
-            $pdf = $this->renderPdf($contract, $company, $signer, $terms, $signaturePath);
+            $pdf = $this->renderPdf($contract, $company, $signer, $terms, $signaturePath, $vacancy);
 
             $pdfPath = $folder.'/'.$folio.'.pdf';
             Storage::disk('local')->put($pdfPath, $pdf);
@@ -107,6 +134,40 @@ class CompanyContractService
 
             throw $e;
         }
+    }
+
+    /**
+     * Términos de una adenda: los vigentes, con los honorarios de la vacante.
+     *
+     * Es el punto donde `vacancies.fee_percentage` y `fee_amount` dejan de ser
+     * un número suelto que la empresa nunca vio y se convierten en la propuesta
+     * que se va a firmar. Después de esta traducción, facturar con ellos ya no
+     * es facturar con algo sin firma.
+     *
+     * @return array<string, mixed>
+     */
+    public function addendumTerms(Vacancy $vacancy): array
+    {
+        $terms = $this->currentTerms();
+
+        if ($vacancy->fee_percentage !== null && (float) $vacancy->fee_percentage > 0) {
+            $terms['fee_kind'] = 'percentage_annual_gross';
+            $terms['fee_value'] = (float) $vacancy->fee_percentage;
+            $terms['fee_amount_words'] = null;
+
+            return $terms;
+        }
+
+        if ($vacancy->fee_amount !== null && (float) $vacancy->fee_amount > 0) {
+            $terms['fee_kind'] = 'fixed_amount';
+            $terms['fee_value'] = (float) $vacancy->fee_amount;
+
+            return $terms;
+        }
+
+        throw new RuntimeException(
+            'Esta vacante no tiene honorarios propios definidos. Captúralos antes de emitir una adenda: sin ellos, la adenda repetiría el contrato maestro y no serviría de nada.',
+        );
     }
 
     /**
@@ -142,12 +203,22 @@ class CompanyContractService
      * firma lo muestra tal cual, así que lo que se firma y lo que se leyó salen
      * del mismo Blade y no pueden desincronizarse.
      */
-    public function previewPdf(Company $company, User $signer, ?string $signerTitle = null): string
-    {
-        $terms = $this->currentTerms();
+    public function previewPdf(
+        Company $company,
+        User $signer,
+        ?string $signerTitle = null,
+        ?Vacancy $vacancy = null,
+    ): string {
+        // Con vacante, el borrador muestra los honorarios de la adenda. Nadie
+        // debería firmar un instrumento sin ver el número que lo distingue del
+        // contrato maestro — es lo único que cambia entre los dos.
+        $terms = $vacancy !== null
+            ? $this->addendumTerms($vacancy)
+            : $this->currentTerms();
 
         $draft = new CompanyContract([
             'company_id' => $company->id,
+            'vacancy_id' => $vacancy?->id,
             'signed_by_user_id' => $signer->id,
             'folio' => 'BORRADOR',
             'signer_title' => $signerTitle ?? 'Representante legal',
@@ -155,7 +226,7 @@ class CompanyContractService
             'signed_at' => Carbon::now(),
         ]);
 
-        return $this->renderPdf($draft, $company, $signer, $terms, null);
+        return $this->renderPdf($draft, $company, $signer, $terms, null, $vacancy);
     }
 
     /**
@@ -246,10 +317,35 @@ class CompanyContractService
         User $signer,
         array $terms,
         ?string $signaturePath,
+        ?Vacancy $vacancy = null,
     ): string {
         $signatory = is_array($terms['signatory'] ?? null) ? $terms['signatory'] : [];
 
-        $html = View::make('pdf.company-contract', [
+        /*
+         * La adenda tiene plantilla propia porque dice otra cosa.
+         *
+         * Reutilizando el Blade del maestro salía titulada «acceso a
+         * plataforma» y su cláusula Primera regulaba un acceso que la empresa
+         * ya había pactado: nunca nombraba la vacante ni el contrato del que
+         * cuelga. Un documento que no nombra su objeto ni su antecedente no es
+         * una adenda.
+         */
+        $isAddendum = $contract->vacancy_id !== null;
+
+        // La vacante del contrato cuando no la pasó quien llama — es el caso de
+        // `renderStored()`, que reimprime un instrumento ya emitido.
+        $vacancy ??= $isAddendum ? $contract->vacancy : null;
+
+        $extra = $isAddendum
+            ? [
+                'vacancy' => $vacancy,
+                'masterContract' => CompanyContract::masterFor($company->id),
+                'folioLabel' => 'Folio de la adenda',
+            ]
+            : [];
+
+        $html = View::make($isAddendum ? 'pdf.vacancy-fee-addendum' : 'pdf.company-contract', [
+            ...$extra,
             'contract' => $contract,
             'company' => $company,
             'signer' => $signer,
@@ -313,6 +409,50 @@ class CompanyContractService
     private function store(UploadedFile $file, string $folder): string
     {
         return $this->storage->upload($file, $folder, ['disk' => 'local'])['public_id'];
+    }
+
+    /**
+     * Resguarda la identificación o la selfie de quien firma.
+     *
+     * Con archivo nuevo lo guarda. Sin archivo, **copia** el del contrato que ya
+     * acreditó a esa misma persona: sirve para la adenda de honorarios, que es
+     * accesoria a un maestro que esa persona ya firmó con INE y selfie.
+     *
+     * Copia y no referencia, y la diferencia importa: `VoidCompanyContract`
+     * borra del disco los archivos del contrato que anula. Si la adenda apuntara
+     * al archivo del maestro, anular el maestro dejaría a la adenda —que sigue
+     * vigente y sostiene una factura— sin la evidencia de quién la firmó.
+     *
+     * @param  string  $label  cómo nombrar el archivo si falta, para el mensaje de error
+     */
+    private function resolveIdentityEvidence(
+        ?UploadedFile $file,
+        ?string $sourcePath,
+        string $folder,
+        string $label,
+    ): string {
+        if ($file !== null) {
+            return $this->store($file, $folder);
+        }
+
+        if ($sourcePath === null || $sourcePath === '') {
+            throw new RuntimeException("Falta la {$label} de quien firma.");
+        }
+
+        $disk = Storage::disk('local');
+
+        if (! $disk->exists($sourcePath)) {
+            throw new RuntimeException(
+                "No encontramos la {$label} del contrato anterior. Vuelve a adjuntarla."
+            );
+        }
+
+        $extension = pathinfo($sourcePath, PATHINFO_EXTENSION) ?: 'bin';
+        $target = trim($folder, '/').'/'.Str::random(40).'.'.$extension;
+
+        $disk->put($target, (string) $disk->get($sourcePath));
+
+        return $target;
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Enums\VacancyState;
 use App\Models\CandidateProfile;
 use App\Models\Company;
+use App\Models\CompanyContract;
 use App\Models\CompanyMember;
 use App\Models\User;
 use App\Models\Vacancy;
@@ -26,6 +27,11 @@ beforeEach(function (): void {
 function hireScenario(): array
 {
     $company = Company::factory()->create();
+
+    // Contrato firmado: `PlacementChargeService` lo exige para devengar. Es el
+    // segundo candado del riesgo de facturar sin instrumento — el primero está
+    // en el agendado, y se puede llegar a `hired` sin haber agendado nunca.
+    CompanyContract::factory()->create(['company_id' => $company->id]);
 
     $owner = User::factory()->create();
     $owner->assignRole(UserRole::CompanyUser->value);
@@ -47,6 +53,11 @@ function hireScenario(): array
         'vacancy_id' => $vacancy->id,
         'candidate_profile_id' => $hiredProfile->id,
         'stage' => AssignmentStage::Finalist,
+        // Sin sueldo final confirmado no hay base para el cargo y `hire()`
+        // aborta antes de tocar la etapa.
+        'final_salary_amount' => 38000,
+        'final_salary_period' => 'mes',
+        'final_salary_confirmed_at' => now(),
     ]);
 
     $otherProfileA = CandidateProfile::factory()->create([
@@ -94,7 +105,7 @@ it('marks vacancy as cubierta and the assignment as hired', function (): void {
     Notification::fake();
     $ctx = hireScenario();
 
-    app(HireService::class)->hire($ctx['hired']);
+    app(HireService::class)->hire($ctx['hired'], $ctx['owner']);
 
     expect($ctx['hired']->fresh()->stage->value)->toBe('hired')
         ->and($ctx['hired']->fresh()->hired_at)->not->toBeNull()
@@ -106,7 +117,7 @@ it('auto-withdraws other active assignments with reason', function (): void {
     Notification::fake();
     $ctx = hireScenario();
 
-    app(HireService::class)->hire($ctx['hired']);
+    app(HireService::class)->hire($ctx['hired'], $ctx['owner']);
 
     $otherA = $ctx['otherA']->fresh();
     $otherB = $ctx['otherB']->fresh();
@@ -121,7 +132,7 @@ it('does not touch previously rejected assignments', function (): void {
     Notification::fake();
     $ctx = hireScenario();
 
-    app(HireService::class)->hire($ctx['hired']);
+    app(HireService::class)->hire($ctx['hired'], $ctx['owner']);
 
     $rejected = $ctx['rejected']->fresh();
     expect($rejected->stage->value)->toBe('rejected')
@@ -132,7 +143,7 @@ it('notifies hired candidate and auto-withdrawn candidates', function (): void {
     Notification::fake();
     $ctx = hireScenario();
 
-    app(HireService::class)->hire($ctx['hired']);
+    app(HireService::class)->hire($ctx['hired'], $ctx['owner']);
 
     Notification::assertSentTo(
         $ctx['hired']->candidateProfile->user,
@@ -158,7 +169,7 @@ it('notifies the company owner', function (): void {
     Notification::fake();
     $ctx = hireScenario();
 
-    app(HireService::class)->hire($ctx['hired']);
+    app(HireService::class)->hire($ctx['hired'], $ctx['owner']);
 
     Notification::assertSentTo(
         $ctx['owner'],
@@ -171,6 +182,6 @@ it('rejects hiring an assignment whose stage cannot transition to hired', functi
     $ctx = hireScenario();
     $ctx['hired']->forceFill(['stage' => AssignmentStage::Sourced->value])->save();
 
-    expect(fn () => app(HireService::class)->hire($ctx['hired']))
+    expect(fn () => app(HireService::class)->hire($ctx['hired'], $ctx['owner']))
         ->toThrow(RuntimeException::class);
 });

@@ -13,6 +13,7 @@ use App\Models\CandidateProfile;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Services\MatchingService;
+use App\Services\VacancyFeeService;
 use App\Services\VacancyStateMachine;
 use Cocur\Slugify\Slugify;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,10 @@ use Symfony\Component\HttpFoundation\Response as HttpStatus;
 
 class VacancyController extends Controller
 {
+    public function __construct(
+        private readonly VacancyFeeService $fees,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Vacancy::class);
@@ -29,7 +34,9 @@ class VacancyController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $query = Vacancy::query()->with('company');
+        // `signedAddendum` precargada: sin ella el recurso omite el estado de
+        // la adenda y el listado no puede señalar lo que falta firmar.
+        $query = Vacancy::query()->with(['company', 'signedAddendum']);
 
         if ($user->hasRole(UserRole::CompanyUser->value) && ! $user->hasRole(UserRole::Admin->value)) {
             $companyIds = $user->companyMemberships()->pluck('company_id');
@@ -95,7 +102,7 @@ class VacancyController extends Controller
     {
         $this->authorize('view', $vacancy);
 
-        $vacancy->load('company');
+        $vacancy->load(['company', 'signedAddendum']);
 
         return $this->success(
             message: 'Vacante.',
@@ -110,9 +117,14 @@ class VacancyController extends Controller
         $vacancy->update($request->validated());
         $vacancy->load('company');
 
+        // Después de guardar y con el modelo actualizado: el servicio se apoya
+        // en `wasChanged()` para no repetir el aviso cuando el número no se
+        // movió.
+        $this->fees->notifyProposalIfChanged($vacancy);
+
         return $this->success(
             message: 'Vacante actualizada.',
-            data: VacancyResource::make($vacancy->fresh('company')),
+            data: VacancyResource::make($vacancy->fresh(['company', 'signedAddendum'])),
         );
     }
 

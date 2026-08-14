@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\AttemptStatus;
 use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Models\CandidateProfile;
@@ -61,6 +62,122 @@ class DirectorySearchService
     }
 
     /**
+     * Estados de candidato que la empresa cliente puede alcanzar.
+     *
+     * Fuente única: la usan la vista anónima y el alta de solicitudes, que
+     * tiene que revalidar lo mismo al resolver referencias. Dos listas serían
+     * dos verdades, y la que se olvide de actualizarse deja pasar a alguien.
+     *
+     * @return list<string>
+     */
+    public static function companyVisibleStates(): array
+    {
+        return self::VISIBLE_STATES;
+    }
+
+    /**
+     * Vista previa anónima del directorio, para la empresa cliente.
+     *
+     * Comparte los filtros estructurados con `search()` y se aparta en cuatro
+     * puntos, todos deliberados:
+     *
+     * - **Membresía activa forzada.** `search()` la deja apagar con
+     *   `has_active_membership=0` porque HUMAE necesita ver su base completa.
+     *   La empresa no: sólo ve talento vigente.
+     * - **Estado forzado.** `search()` acepta `state` para que el reclutador
+     *   consulte etapas internas. Aquí se fija la lista visible; si no, la
+     *   empresa podría listar descartados y leer a quién rechazó HUMAE.
+     * - **Búsqueda libre sólo contra `headline`.** En `search()` corre también
+     *   contra nombre y apellido, y eso convertiría el buscador en un oráculo:
+     *   escribir un nombre y leer el conteo de resultados confirma si esa
+     *   persona está en la base. Es exactamente lo que la vista anónima evita,
+     *   y sería una fuga silenciosa porque la respuesta no muestra nombres.
+     * - **Sin favoritos.** `directory_favorites` está indexada por
+     *   `recruiter_id`; no hay favoritos de empresa que aplicar.
+     *
+     * No se hace eager load de `user`: el recurso anónimo no debe poder llegar
+     * ahí ni por accidente.
+     *
+     * @return LengthAwarePaginator<int, CandidateProfile>
+     */
+    public function searchAnonymous(Request $request): LengthAwarePaginator
+    {
+        $query = CandidateProfile::query()
+            ->with(['skills', 'languages'])
+            ->withCount([
+                'attempts as completed_psychometrics_count' => function (Builder $q): void {
+                    $q->where('status', AttemptStatus::Completed->value);
+                },
+            ]);
+
+        $this->applyActiveMembership($query);
+        $query->whereIn('state', self::VISIBLE_STATES);
+
+        $this->applyHeadlineSearch($query, $request);
+        $this->applyScalarFilters($query, $request);
+        $this->applyExperienceFilters($query, $request);
+        $this->applySalaryFilter($query, $request);
+        $this->applyFlagFilters($query, $request);
+        $this->applyModalityFilter($query, $request);
+        $this->applyWorkSchedulesFilter($query, $request);
+        $this->applySkillsFilter($query, $request);
+        $this->applyLanguagesFilter($query, $request);
+        $this->applyFunctionalAreasFilter($query, $request);
+
+        $query->orderByDesc('updated_at');
+
+        $perPage = min(50, max(1, (int) $request->input('per_page', 20)));
+
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * Búsqueda libre restringida al titular profesional. Ver `searchAnonymous()`
+     * para por qué no incluye nombre ni resumen.
+     *
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyHeadlineSearch(Builder $query, Request $request): void
+    {
+        if (! $request->filled('q')) {
+            return;
+        }
+
+        $query->where('headline', 'like', '%'.trim((string) $request->input('q')).'%');
+    }
+
+    /**
+     * Un perfil del padrón anónimo, buscado por su referencia opaca.
+     *
+     * Aplica las MISMAS dos condiciones que `searchAnonymous()` —membresía
+     * vigente y estado visible— y por eso vive acá: si la regla se copiara al
+     * controller que sirve la foto, el día que cambie una de las dos quedaría
+     * un camino sirviendo a alguien que ya salió del padrón.
+     */
+    public function visibleProfileByReference(string $reference): ?CandidateProfile
+    {
+        $query = CandidateProfile::query()
+            ->with('user')
+            ->where('public_reference', $reference)
+            ->whereIn('state', self::VISIBLE_STATES);
+
+        $this->applyActiveMembership($query);
+
+        return $query->first();
+    }
+
+    /**
+     * @param  Builder<CandidateProfile>  $query
+     */
+    private function applyActiveMembership(Builder $query): void
+    {
+        $query->whereHas('user.memberships', function (Builder $m): void {
+            $m->where('status', MembershipStatus::Active->value)
+                ->where('expires_at', '>', now());
+        });
+    }
+
+    /**
      * @param  Builder<CandidateProfile>  $query
      */
     private function applyMembershipFilter(Builder $query, Request $request): void
@@ -72,10 +189,7 @@ class DirectorySearchService
             return;
         }
 
-        $query->whereHas('user.memberships', function (Builder $m): void {
-            $m->where('status', MembershipStatus::Active->value)
-                ->where('expires_at', '>', now());
-        });
+        $this->applyActiveMembership($query);
     }
 
     /**

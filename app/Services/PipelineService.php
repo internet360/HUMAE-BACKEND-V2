@@ -29,6 +29,10 @@ class PipelineService
     private const VACANCY_ACCEPTS_ASSIGNMENTS = [
         'activa',
         'en_busqueda',
+        // Flujo del empleador: la vacante nace en `solicitada` con los perfiles
+        // ya señalados por el cliente. Sin esta entrada, aceptar un perfil de la
+        // solicitud fallaría por estado y el flujo se cortaría en su primer paso.
+        'solicitada',
         'con_candidatos_asignados',
         'entrevistas_en_curso',
     ];
@@ -58,11 +62,13 @@ class PipelineService
             ]);
 
             // Avanzar la vacante a `con_candidatos_asignados` apenas se crea
-            // la primera asignación. Acepta venir desde `activa` o `en_busqueda`
-            // (ambas son estados pre-pipeline donde aún no había candidatos).
+            // la primera asignación. Acepta venir desde `activa`, `en_busqueda`
+            // o `solicitada` (las tres son estados pre-pipeline donde aún no
+            // había candidatos).
             if (
                 $vacancy->state === VacancyState::Activa
                 || $vacancy->state === VacancyState::EnBusqueda
+                || $vacancy->state === VacancyState::Solicitada
             ) {
                 $vacancy->forceFill([
                     'state' => VacancyState::ConCandidatosAsignados->value,
@@ -73,9 +79,15 @@ class PipelineService
         });
     }
 
+    /**
+     * @param  User|null  $actor  obligatorio sólo para cerrar la colocación
+     *                            (→ hired), donde el cargo devengado queda
+     *                            firmado por quien la cerró.
+     */
     public function changeStage(
         VacancyAssignment $assignment,
         AssignmentStage $to,
+        ?User $actor = null,
     ): VacancyAssignment {
         $from = $assignment->stage;
         if ($from === null) {
@@ -88,10 +100,16 @@ class PipelineService
             );
         }
 
-        // El cierre de vacante (→ hired) es transaccional + notifica a todas
-        // las partes. Delegamos en HireService.
+        // El cierre de vacante (→ hired) es transaccional, devenga honorarios y
+        // notifica a todas las partes. Delegamos en HireService.
         if ($to === AssignmentStage::Hired) {
-            return $this->hireService->hire($assignment);
+            if ($actor === null) {
+                throw new RuntimeException(
+                    'Cerrar una colocación exige identificar quién la cierra.',
+                );
+            }
+
+            return $this->hireService->hire($assignment, $actor);
         }
 
         $payload = ['stage' => $to->value];

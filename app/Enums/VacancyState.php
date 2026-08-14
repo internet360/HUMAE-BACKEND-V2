@@ -7,6 +7,14 @@ namespace App\Enums;
 enum VacancyState: string
 {
     case Borrador = 'borrador';
+
+    /**
+     * La empresa eligió candidatos y mandó la solicitud; HUMAE todavía no la
+     * atiende. Es un estado del flujo del empleador y por eso no pasa por
+     * `activa` ni `en_busqueda`: no hay fase de búsqueda que hacer cuando el
+     * cliente ya señaló a quién quiere conocer.
+     */
+    case Solicitada = 'solicitada';
     case Activa = 'activa';
     case EnBusqueda = 'en_busqueda';
     case ConCandidatosAsignados = 'con_candidatos_asignados';
@@ -19,6 +27,7 @@ enum VacancyState: string
     {
         return match ($this) {
             self::Borrador => 'Borrador',
+            self::Solicitada => 'Solicitada',
             self::Activa => 'Activa',
             self::EnBusqueda => 'En búsqueda',
             self::ConCandidatosAsignados => 'Con candidatos asignados',
