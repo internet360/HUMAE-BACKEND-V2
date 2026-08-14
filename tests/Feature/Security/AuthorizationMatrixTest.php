@@ -1635,6 +1635,23 @@ function authzMatrixRows(): array
         ],
         ...authzAccess(['company_owner', 'company_other', 'admin']),
     ]);
+    /*
+     * La foto de un perfil del padrón anónimo.
+     *
+     * Todos denegados, y es lo correcto: esta ruta no se autoriza por rol sino
+     * por firma, porque la consume un `<img src>` que no puede adjuntar el
+     * Bearer. Sin firma válida el middleware `signed` responde 403 a cualquiera,
+     * incluido el admin — que es justo lo que esta fila deja fijado.
+     *
+     * El camino con firma válida, su caducidad y el corte cuando el candidato
+     * sale del padrón se prueban en `AnonymousDirectoryTest`.
+     */
+    $add('GET /me/company/directory/candidates/{reference}/photo', [
+        'method' => 'GET',
+        'uri' => '/api/v1/me/company/directory/candidates/{reference}/photo',
+        'spec' => 'Flujo del empleador — foto del padrón anónimo; autorizada por firma temporal, no por rol',
+        ...authzAccess([]),
+    ]);
     $add('GET /me/company/vacancies', [
         'method' => 'GET', 'uri' => '/api/v1/me/company/vacancies', 'spec' => '§5.6 /me/company/jobs — company_user',
         'must_not_leak' => [
