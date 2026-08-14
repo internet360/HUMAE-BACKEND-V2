@@ -15,8 +15,8 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
         "predis/predis": "^3.4",
-        "spatie/laravel-activitylog": "^5.0",
-        "spatie/laravel-permission": "^7.0",
+        "spatie/laravel-activitylog": "^4.0",
+        "spatie/laravel-permission": "^6.0",
         "stripe/stripe-php": "^20.0"
     },
     "require-dev": {
@@ -111,6 +111,9 @@
         }
     },
     "config": {
+        "platform": {
+            "php": "8.2.0"
+        },
         "optimize-autoloader": true,
         "preferred-install": "dist",
         "sort-packages": true,
