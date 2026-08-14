@@ -12,6 +12,7 @@ use App\Models\CompanyContract;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Services\CompanyContractService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -231,10 +232,39 @@ class VacancyContractAddendumController extends Controller
                 vacancy: $vacancy,
                 evidenceSource: $source,
             );
+        } catch (QueryException $e) {
+            /*
+             * Va ANTES del `RuntimeException`, y no es estilo: `QueryException`
+             * hereda de `PDOException`, que hereda de `RuntimeException`. Al
+             * revés, el catch de abajo se lo tragaba y un error de base de datos
+             * salía como 422 con el mensaje crudo del motor — SQL incluido.
+             *
+             * Lo que sí cae acá de verdad: choque de folio entre dos firmas
+             * simultáneas. Es un conflicto y reintentar tiene sentido.
+             */
+            report($e);
+
+            return $this->error(
+                'No pudimos emitir la adenda en este momento. Vuelve a intentarlo.',
+                status: HttpStatus::HTTP_CONFLICT,
+            );
         } catch (RuntimeException $e) {
             return $this->error($e->getMessage(), status: HttpStatus::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $e) {
-            return $this->error($e->getMessage(), status: HttpStatus::HTTP_CONFLICT);
+            /*
+             * Todo lo demás es un fallo nuestro, no un conflicto.
+             *
+             * Este catch devolvía 409 con el mensaje crudo de la excepción, y
+             * un error de sintaxis en el Blade salía como «conflicto» — la
+             * empresa leía que su adenda chocaba con algo cuando lo que pasaba
+             * es que el PDF no compilaba. Además exponía rutas del servidor.
+             */
+            report($e);
+
+            return $this->error(
+                'No pudimos emitir la adenda.',
+                status: HttpStatus::HTTP_INTERNAL_SERVER_ERROR,
+            );
         }
 
         return $this->success(

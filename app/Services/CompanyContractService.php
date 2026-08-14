@@ -104,7 +104,7 @@ class CompanyContractService
                 'signed_user_agent' => $meta['user_agent'] ?? null,
             ]);
 
-            $pdf = $this->renderPdf($contract, $company, $signer, $terms, $signaturePath);
+            $pdf = $this->renderPdf($contract, $company, $signer, $terms, $signaturePath, $vacancy);
 
             $pdfPath = $folder.'/'.$folio.'.pdf';
             Storage::disk('local')->put($pdfPath, $pdf);
@@ -226,7 +226,7 @@ class CompanyContractService
             'signed_at' => Carbon::now(),
         ]);
 
-        return $this->renderPdf($draft, $company, $signer, $terms, null);
+        return $this->renderPdf($draft, $company, $signer, $terms, null, $vacancy);
     }
 
     /**
@@ -317,10 +317,35 @@ class CompanyContractService
         User $signer,
         array $terms,
         ?string $signaturePath,
+        ?Vacancy $vacancy = null,
     ): string {
         $signatory = is_array($terms['signatory'] ?? null) ? $terms['signatory'] : [];
 
-        $html = View::make('pdf.company-contract', [
+        /*
+         * La adenda tiene plantilla propia porque dice otra cosa.
+         *
+         * Reutilizando el Blade del maestro salía titulada «acceso a
+         * plataforma» y su cláusula Primera regulaba un acceso que la empresa
+         * ya había pactado: nunca nombraba la vacante ni el contrato del que
+         * cuelga. Un documento que no nombra su objeto ni su antecedente no es
+         * una adenda.
+         */
+        $isAddendum = $contract->vacancy_id !== null;
+
+        // La vacante del contrato cuando no la pasó quien llama — es el caso de
+        // `renderStored()`, que reimprime un instrumento ya emitido.
+        $vacancy ??= $isAddendum ? $contract->vacancy : null;
+
+        $extra = $isAddendum
+            ? [
+                'vacancy' => $vacancy,
+                'masterContract' => CompanyContract::masterFor($company->id),
+                'folioLabel' => 'Folio de la adenda',
+            ]
+            : [];
+
+        $html = View::make($isAddendum ? 'pdf.vacancy-fee-addendum' : 'pdf.company-contract', [
+            ...$extra,
             'contract' => $contract,
             'company' => $company,
             'signer' => $signer,

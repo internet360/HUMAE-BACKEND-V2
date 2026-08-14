@@ -13,6 +13,8 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
+use Illuminate\View\View as IlluminateView;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function (): void {
@@ -297,6 +299,114 @@ it('refuses a second addendum for the same vacancy', function (): void {
         ->assertStatus(409);
 
     expect(CompanyContract::acrossCompanies()->whereNotNull('vacancy_id')->count())->toBe(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| El documento
+|--------------------------------------------------------------------------
+|
+| La adenda reutilizaba el Blade del contrato maestro y salía titulada «acceso
+| a plataforma», con una cláusula Primera que regulaba un acceso ya pactado y
+| sin nombrar nunca la vacante. Estos tests fijan lo que el documento tiene que
+| decir para ser una adenda y no una copia con otro folio.
+|
+*/
+
+/**
+ * Renderiza el endpoint y devuelve [nombre de la plantilla, HTML].
+ *
+ * No se busca el texto dentro del PDF a propósito: DejaVu Sans va incrustada
+ * como subconjunto, así que las frases se escriben como índices de glifo y no
+ * queda ASCII que buscar. Con un composer se captura la vista que el servicio
+ * eligió y los datos que le pasó, y se rinde ese mismo par — se prueba qué
+ * plantilla se usó y qué dice, sin pelear con las tripas del PDF.
+ *
+ * @return array{0: string, 1: string}
+ */
+function renderedContract(callable $request): array
+{
+    $captured = null;
+
+    View::composer('pdf.*', function (IlluminateView $view) use (&$captured): void {
+        // El primero gana: los parciales también disparan el composer.
+        $captured ??= [$view->name(), $view->getData()];
+    });
+
+    $request();
+
+    if ($captured === null) {
+        return ['', ''];
+    }
+
+    [$name, $data] = $captured;
+
+    return [$name, View::make($name, $data)->render()];
+}
+
+it('names the vacancy in the addendum instead of reusing the master wording', function (): void {
+    [, , $vacancy] = companyWithMasterContract();
+    $vacancy->forceFill(['title' => 'Contador Senior'])->save();
+
+    [$template, $html] = renderedContract(
+        fn () => $this->get("/api/v1/me/company/vacancies/{$vacancy->id}/contract/preview")->assertOk(),
+    );
+
+    expect($template)->toBe('pdf.vacancy-fee-addendum')
+        ->and($html)->toContain('ADENDA DE HONORARIOS')
+        ->and($html)->toContain('CONTADOR SENIOR')
+        ->and($html)->toContain($vacancy->code)
+        // Y no el título del maestro, que anunciaba algo ya pactado.
+        ->and($html)->not->toContain('(ACCESO A PLATAFORMA)');
+});
+
+it('anchors the addendum to the master contract it hangs from', function (): void {
+    [$company, , $vacancy] = companyWithMasterContract();
+    $master = CompanyContract::masterFor($company->id);
+
+    [, $html] = renderedContract(
+        fn () => $this->get("/api/v1/me/company/vacancies/{$vacancy->id}/contract/preview"),
+    );
+
+    // Sin nombrar el instrumento del que cuelga, la adenda queda huérfana y su
+    // alcance es discutible.
+    expect($html)->toContain('Antecedentes')
+        ->and($html)->toContain((string) $master?->folio)
+        ->and($html)->toContain('EL CONTRATO');
+});
+
+it('says the fee applies to this vacancy only, and that the rest stands', function (): void {
+    [, , $vacancy] = companyWithMasterContract();
+
+    [, $html] = renderedContract(
+        fn () => $this->get("/api/v1/me/company/vacancies/{$vacancy->id}/contract/preview"),
+    );
+
+    expect($html)->toContain('no aplica a ninguna otra vacante')
+        ->and($html)->toContain('permanecen en sus términos')
+        // El honorario propio de la vacante, no el del contrato maestro.
+        ->and($html)->toContain('20% (por ciento) del sueldo bruto anualizado');
+});
+
+it('keeps the master contract on its own wording', function (): void {
+    $company = Company::factory()->create();
+    $user = User::factory()->create();
+    $user->assignRole(UserRole::CompanyUser->value);
+    CompanyMember::factory()->create([
+        'company_id' => $company->id,
+        'user_id' => $user->id,
+        'role' => CompanyMemberRole::Owner->value,
+    ]);
+    Sanctum::actingAs($user);
+
+    [$template, $html] = renderedContract(
+        fn () => $this->get('/api/v1/me/company/contract/preview')->assertOk(),
+    );
+
+    // El maestro no se contagió del cambio: sigue siendo el de acceso.
+    expect($template)->toBe('pdf.company-contract')
+        ->and($html)->toContain('(ACCESO A PLATAFORMA)')
+        ->and($html)->not->toContain('ADENDA DE HONORARIOS');
 });
 
 it('keeps the master contract untouched when an addendum is signed', function (): void {
