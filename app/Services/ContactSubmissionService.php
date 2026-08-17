@@ -6,7 +6,9 @@ namespace App\Services;
 
 use App\Models\ContactSubmission;
 use App\Notifications\NewContactSubmissionNotification;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Throwable;
 
 class ContactSubmissionService
 {
@@ -46,7 +48,21 @@ class ContactSubmissionService
             return;
         }
 
-        Notification::route('mail', $address)
-            ->notify(new NewContactSubmissionNotification($submission));
+        // El lead ya quedó persistido antes de llegar acá, así que avisar es
+        // best-effort. Un SMTP caído, una cuota llena o un buzón de soporte
+        // inexistente (550 No Such User Here) no pueden tumbar la captura: el
+        // visitante vería un 500 sobre un lead que SÍ se guardó y reenviaría
+        // el formulario, duplicándolo. El error queda en el log para que el
+        // correo roto se arregle sin costarnos leads mientras tanto.
+        try {
+            Notification::route('mail', $address)
+                ->notify(new NewContactSubmissionNotification($submission));
+        } catch (Throwable $e) {
+            Log::error('No se pudo avisar por correo de un lead de contacto.', [
+                'submission_id' => $submission->id,
+                'address' => $address,
+                'exception' => $e,
+            ]);
+        }
     }
 }
