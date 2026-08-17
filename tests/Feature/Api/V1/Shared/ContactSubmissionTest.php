@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Models\ContactSubmission;
 use App\Notifications\NewContactSubmissionNotification;
+use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 beforeEach(function (): void {
@@ -43,6 +45,66 @@ it('accepts a public contact submission and notifies support', function (): void
         fn (NewContactSubmissionNotification $notification, array $channels, object $notifiable): bool => $notifiable->routes['mail'] === 'soporte@humae.test'
             && $notification->submission->is($submission),
     );
+});
+
+it('still captures the lead when the support notification fails', function (): void {
+    // Producción 2026-08-14: `MAIL_REPLY_TO` apuntaba a un buzón inexistente y
+    // el SMTP cortaba con «550 No Such User Here». La notificación se envía
+    // síncrona dentro del request, así que la excepción se llevaba puesto un
+    // POST cuyo INSERT ya había ocurrido: 500 al visitante sobre un lead ya
+    // guardado. Capturar el lead no puede depender de que el correo salga.
+    // Mailer real apuntado a un puerto muerto: ejercita el camino completo
+    // (ChannelManager → MailChannel → Mailer → transport) en vez de simular
+    // el fallo con un mock, que es justo la capa donde se escondió el bug.
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.transport' => 'smtp',
+        'mail.mailers.smtp.host' => '127.0.0.1',
+        'mail.mailers.smtp.port' => 1,
+        'mail.mailers.smtp.timeout' => 1,
+    ]);
+
+    Log::spy();
+
+    $this->postJson('/api/v1/contact-submissions', [
+        'name' => 'Imelda Wiggins',
+        'email' => 'imelda@empresa.test',
+        'message' => 'Soy representante de una empresa y necesito cubrir vacantes.',
+        'type' => 'company_request',
+        'source' => 'empresas',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('success', true);
+
+    $submission = ContactSubmission::where('email', 'imelda@empresa.test')->firstOrFail();
+
+    expect($submission->type)->toBe('company_request')
+        ->and($submission->source)->toBe('empresas');
+
+    Log::shouldHaveReceived('error')->once();
+});
+
+it('survives being serialized onto the queue', function (): void {
+    // `phpunit.xml` corre con QUEUE_CONNECTION=sync, que ejecuta la
+    // notificación en el mismo proceso y NUNCA la serializa. Producción usa
+    // `database`, así que la serialización sólo se ejercita allá — el mismo
+    // punto ciego que dejó pasar el 500 original. La notificación lleva un
+    // modelo Eloquent en una propiedad readonly, así que esto lo verifica acá.
+    $submission = ContactSubmission::factory()->create([
+        'type' => 'company_request',
+        'email' => 'serializable@empresa.test',
+    ]);
+
+    $restored = unserialize(serialize(new NewContactSubmissionNotification($submission)));
+
+    expect($restored)->toBeInstanceOf(NewContactSubmissionNotification::class)
+        ->and($restored->submission->id)->toBe($submission->id)
+        ->and($restored->submission->email)->toBe('serializable@empresa.test');
+
+    // Y que el mail se siga armando después del viaje por la cola.
+    $mail = $restored->toMail(new AnonymousNotifiable);
+
+    expect($mail->subject)->toContain($submission->subject ?? 'Solicitud de empresa');
 });
 
 it('defaults type to contact when omitted', function (): void {

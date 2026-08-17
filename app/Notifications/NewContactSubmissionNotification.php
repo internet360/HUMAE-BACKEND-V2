@@ -6,6 +6,7 @@ namespace App\Notifications;
 
 use App\Models\ContactSubmission;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -15,8 +16,18 @@ use Illuminate\Notifications\Notification;
  * configurada, no a un usuario del sistema: quien escribe no necesariamente
  * tiene cuenta. Ver `humae_docs/notificaciones/catalogo-eventos.md`
  * («Ticket de contacto»).
+ *
+ * Va a la cola (`QUEUE_CONNECTION=database` + `queue:work` por cron en
+ * producción) y no dentro del request: el visitante no tiene por qué esperar
+ * a que el SMTP conteste, y un correo rechazado se reintenta en el worker
+ * (`--tries=3`) en vez de morir en el único intento que había.
+ *
+ * `ShouldQueue` es lo que encola: el trait `Queueable` sólo aporta los
+ * setters de cola/retraso. Sin la interfaz, el envío es SÍNCRONO — que es
+ * exactamente cómo un «550 No Such User Here» tumbó el endpoint público el
+ * 14-08-2026.
  */
-class NewContactSubmissionNotification extends Notification
+class NewContactSubmissionNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
