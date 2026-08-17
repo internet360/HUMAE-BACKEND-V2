@@ -202,7 +202,11 @@ echo ""
 echo "→ Smoke test"
 HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/up")
 LOGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/v1/auth/login" -H "Content-Type: application/json" -d '{"email":"x","password":"x"}')
-WEBHOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/v1/webhooks/stripe" -H "Stripe-Signature: invalid")
+# El `-d` no es decorativo: un POST sin Content-Type ni cuerpo no llega a
+# Laravel como POST resoluble y Apache lo corta con 405 antes del controller.
+# Sin esto el smoke test reportaba 405 en cada deploy —falso positivo— sobre
+# un endpoint que responde 400 correctamente ante una firma inválida.
+WEBHOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/v1/webhooks/stripe" -H "Content-Type: application/json" -H "Stripe-Signature: invalid" -d '{}')
 printf "  %-50s → %s\n" "GET  /up                                       (200 esperado)" "$HEALTH_CODE"
 printf "  %-50s → %s\n" "POST /api/v1/auth/login                        (422 esperado)" "$LOGIN_CODE"
 printf "  %-50s → %s\n" "POST /api/v1/webhooks/stripe (invalid sig)     (400 esperado)" "$WEBHOOK_CODE"
