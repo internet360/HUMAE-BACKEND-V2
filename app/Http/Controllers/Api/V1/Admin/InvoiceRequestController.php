@@ -14,8 +14,10 @@ use App\Http\Resources\V1\Admin\AdminInvoiceRequestResource;
 use App\Models\InvoiceRequest;
 use App\Models\User;
 use App\Services\InvoiceRequestService;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
 
 /**
@@ -36,8 +38,8 @@ class InvoiceRequestController extends Controller
             ->with('user')
             ->withCount('payments')
             ->when($request->filled('status'), fn (Builder $q) => $q->where('status', $request->string('status')->toString()))
-            ->when($request->filled('from'), fn (Builder $q) => $q->where('created_at', '>=', $request->date('from')?->startOfDay()))
-            ->when($request->filled('to'), fn (Builder $q) => $q->where('created_at', '<=', $request->date('to')?->endOfDay()))
+            ->when($request->filled('from'), fn (Builder $q) => $q->where('created_at', '>=', $this->billingDayBoundary($request->string('from')->toString(), endOfDay: false)))
+            ->when($request->filled('to'), fn (Builder $q) => $q->where('created_at', '<=', $this->billingDayBoundary($request->string('to')->toString(), endOfDay: true)))
             ->when($search !== '', function (Builder $q) use ($search): void {
                 $like = '%'.addcslashes($search, '%_\\').'%';
                 $q->where(function (Builder $inner) use ($like, $search): void {
@@ -74,8 +76,11 @@ class InvoiceRequestController extends Controller
     {
         $to = InvoiceRequestStatus::from($request->string('status')->toString());
 
+        $reason = is_string($request->input('reason')) ? trim($request->input('reason')) : null;
+        $reason = $reason === '' ? null : $reason;
+
         try {
-            $from = $this->service->transition($invoiceRequest, $to, $request->input('reason'));
+            $from = $this->service->transition($invoiceRequest, $to, $reason);
         } catch (InvalidInvoiceRequestTransitionException $e) {
             return $this->error(
                 message: 'La validación falló.',
@@ -90,12 +95,14 @@ class InvoiceRequestController extends Controller
         activity('invoice-requests')
             ->performedOn($invoiceRequest)
             ->causedBy($actor)
-            ->withProperties([
+            ->withProperties(array_filter([
                 'invoice_request_id' => $invoiceRequest->id,
                 'from' => $from->value,
                 'to' => $to->value,
+                // Free text typed by the admin; it is not PII (never the RFC or legal name).
+                'reason' => $reason,
                 'ip' => $request->ip(),
-            ])
+            ], static fn (mixed $value): bool => $value !== null))
             ->log('Cambió el estado de una solicitud de factura.');
 
         return $this->detail('Estado actualizado.', $invoiceRequest);
@@ -116,6 +123,17 @@ class InvoiceRequestController extends Controller
             ->log('Actualizó las notas de una solicitud de factura.');
 
         return $this->detail('Notas actualizadas.', $invoiceRequest);
+    }
+
+    /**
+     * A calendar day typed by the admin is a day in the billing timezone; the
+     * column stores UTC, so the boundary is converted before comparing.
+     */
+    private function billingDayBoundary(string $date, bool $endOfDay): CarbonInterface
+    {
+        $day = Carbon::parse($date, (string) config('billing.timezone'));
+
+        return ($endOfDay ? $day->endOfDay() : $day->startOfDay())->setTimezone('UTC');
     }
 
     private function detail(string $message, InvoiceRequest $invoiceRequest): JsonResponse

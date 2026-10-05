@@ -10,6 +10,9 @@ use Illuminate\Validation\Rule;
 
 class UpdateInvoiceRequestStatusRequest extends FormRequest
 {
+    /** Statuses that close or contest a fiscal document and must be justified. */
+    private const REASON_REQUIRED = ['rejected', 'cancellation_pending', 'cancelled'];
+
     public function authorize(): bool
     {
         return $this->user()?->can('invoices.manage') ?? false;
@@ -28,7 +31,7 @@ class UpdateInvoiceRequestStatusRequest extends FormRequest
                 static fn (InvoiceRequestStatus $s): string => $s->value,
                 array_filter(InvoiceRequestStatus::cases(), static fn (InvoiceRequestStatus $s): bool => $s !== InvoiceRequestStatus::Issued),
             ))],
-            'reason' => ['nullable', 'string', 'max:500', Rule::requiredIf(fn (): bool => $this->input('status') === InvoiceRequestStatus::Rejected->value)],
+            'reason' => ['nullable', 'string', 'max:500', Rule::requiredIf(fn (): bool => in_array($this->input('status'), self::REASON_REQUIRED, true))],
         ];
     }
 
@@ -37,7 +40,7 @@ class UpdateInvoiceRequestStatusRequest extends FormRequest
     {
         return [
             'status.in' => 'El estado no es válido. Una solicitud sólo pasa a «Emitida» al subir la factura (PDF y XML).',
-            'reason.required' => 'Indica el motivo del rechazo.',
+            'reason.required' => 'Indica el motivo del cambio de estado.',
         ];
     }
 

@@ -133,7 +133,8 @@ class InvoiceRequestService
      * invoice files upload is the only way to issue.
      *
      * Releasing statuses free the claims and a rejection stores its reason in
-     * the same transaction.
+     * the same transaction. Reasons for other statuses are not persisted on the
+     * row: the controller records them in the audit entry.
      *
      * @return InvoiceRequestStatus the status the request had before
      *

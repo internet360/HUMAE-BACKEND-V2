@@ -37,7 +37,11 @@ class AdminInvoiceRequestResource extends JsonResource
             ]),
             'billing_notified_at' => $this->billing_notified_at?->toIso8601String(),
             'billing_notification' => $this->billing_notified_at === null ? 'pending' : 'sent',
-            'payments_count' => $this->whenLoaded('payments', fn (): int => $this->payments->count()),
+            'payments_count' => $this->whenCounted(
+                'payments',
+                fn ($count): int => (int) $count,
+                fn () => $this->whenLoaded('payments', fn (): int => $this->payments->count()),
+            ),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
 

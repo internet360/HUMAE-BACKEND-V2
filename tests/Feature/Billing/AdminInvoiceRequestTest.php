@@ -69,6 +69,7 @@ describe('GET /admin/invoice-requests', function (): void {
             ->assertJsonPath('data.0.user.name', 'Ana Candidata')
             ->assertJsonPath('data.0.billing_notified_at', null)
             ->assertJsonPath('data.0.billing_notification', 'pending')
+            ->assertJsonPath('data.0.payments_count', 1)
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonMissingPath('data.0.rfc');
 
@@ -98,6 +99,23 @@ describe('GET /admin/invoice-requests', function (): void {
             ->and($ids('?q=beto@example'))->toBe([$old->id])
             ->and($ids('?q=OTRO010101AAA'))->toBe([$old->id])
             ->and($ids('?q=nadie'))->toBe([]);
+    });
+
+    it('interprets from/to as whole days in the billing timezone, not UTC', function (): void {
+        $at = fn (string $local) => Carbon::parse($local, 'America/Mexico_City')->utc();
+        $make = fn (string $local) => InvoiceRequest::factory()->create(['created_at' => $at($local)])->id;
+
+        // 20:00 Mexico City on Oct 31 is already Nov 1 in UTC.
+        $lateOct31 = $make('2026-10-31 20:00:00');
+        $startNov1 = $make('2026-11-01 00:00:00');
+        $startOct1 = $make('2026-10-01 00:00:00');
+        $endSep30 = $make('2026-09-30 23:59:59');
+
+        $ids = fn (string $qs) => collect($this->getJson(ADMIN_BASE.$qs)->assertOk()->json('data'))->pluck('id')->all();
+
+        expect($ids('?to=2026-10-31&from=2026-10-01'))->toContain($lateOct31)->toContain($startOct1)
+            ->not->toContain($startNov1)->not->toContain($endSep30)
+            ->and($ids('?from=2026-11-01'))->toContain($startNov1)->not->toContain($lateOct31);
     });
 
     it('validates filters', function (): void {
@@ -155,6 +173,44 @@ describe('PATCH /admin/invoice-requests/{id}/status', function (): void {
         expect($this->request->payments()->whereNotNull('claimed_payment_id')->count())->toBe(0);
     });
 
+    it('requires a reason for the fiscal cancellation statuses and keeps the status when it is missing', function (string $from, string $to): void {
+        $this->request->update(['status' => InvoiceRequestStatus::from($from)]);
+
+        adminStatus($this->request, $to)->assertUnprocessable()->assertJsonValidationErrors('reason');
+        adminStatus($this->request, $to, ['reason' => '   '])->assertUnprocessable()->assertJsonValidationErrors('reason');
+
+        expect($this->request->fresh()->status->value)->toBe($from)
+            ->and(Activity::where('log_name', 'invoice-requests')->count())->toBe(0);
+    })->with([
+        'issued to cancellation_pending' => ['issued', 'cancellation_pending'],
+        'cancellation_pending to cancelled' => ['cancellation_pending', 'cancelled'],
+    ]);
+
+    it('records the reason in the audit entry of every transition without PII', function (string $from, string $to, string $reason): void {
+        $this->request->update(['status' => InvoiceRequestStatus::from($from)]);
+
+        adminStatus($this->request, $to, ['reason' => $reason])->assertOk();
+
+        $entry = Activity::where('log_name', 'invoice-requests')->latest('id')->firstOrFail();
+        expect($entry->properties['reason'])->toBe($reason)
+            ->and($entry->properties['from'])->toBe($from)
+            ->and($entry->properties['to'])->toBe($to)
+            ->and(json_encode(Activity::all()->toArray()))->not->toContain(ADMIN_RFC)->not->toContain('Ana Fiscal')
+            ->and($this->request->fresh()->rejection_reason)->toBe($to === 'rejected' ? $reason : null);
+    })->with([
+        'rejected' => ['requested', 'rejected', 'RFC no coincide'],
+        'in_progress (optional reason)' => ['requested', 'in_progress', 'Se revisa con contabilidad'],
+        'cancellation_pending' => ['issued', 'cancellation_pending', 'El cliente pidió cancelar'],
+        'cancelled' => ['cancellation_pending', 'cancelled', 'SAT aceptó la cancelación'],
+    ]);
+
+    it('audits a transition without reason as such', function (): void {
+        adminStatus($this->request, 'in_progress')->assertOk();
+
+        $entry = Activity::where('log_name', 'invoice-requests')->latest('id')->firstOrFail();
+        expect($entry->properties->has('reason'))->toBeFalse();
+    });
+
     it('makes the payment eligible again after a rejection', function (): void {
         $service = app(InvoiceRequestService::class);
         expect($service->eligiblePayments($this->owner)->pluck('id')->all())->toBe([]);
@@ -167,7 +223,7 @@ describe('PATCH /admin/invoice-requests/{id}/status', function (): void {
     it('frees the claims when a pending cancellation is completed', function (): void {
         $this->request->update(['status' => InvoiceRequestStatus::CancellationPending]);
 
-        adminStatus($this->request, 'cancelled')->assertOk()->assertJsonPath('data.status', 'cancelled');
+        adminStatus($this->request, 'cancelled', ['reason' => 'Cancelación aceptada por el SAT'])->assertOk()->assertJsonPath('data.status', 'cancelled');
 
         expect(app(InvoiceRequestService::class)->eligiblePayments($this->owner)->pluck('id')->all())->toBe([$this->payment->id]);
     });
