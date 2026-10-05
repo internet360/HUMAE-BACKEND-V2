@@ -32,6 +32,10 @@ class InvoiceRequestResource extends JsonResource
             'cfdi_use' => $this->cfdi_use,
             'email' => $this->email,
             'rejection_reason' => $this->rejection_reason,
+            'has_pdf' => $this->pdf_path !== null,
+            'has_xml' => $this->xml_path !== null,
+            'cfdi_uuid' => $this->cfdi_uuid,
+            'issued_at' => $this->issued_at?->toIso8601String(),
             'payments' => $this->payments->map(fn ($p): array => [
                 'payment_id' => $p->payment_id,
                 'amount' => (float) $p->amount,

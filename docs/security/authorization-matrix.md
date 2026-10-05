@@ -136,6 +136,7 @@ a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efe
 | GET | `/me/invoice-requests/eligible-payments` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
 | POST | `/me/invoice-requests` (`throttle:10,1`) | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
 | GET | `/me/invoice-requests/{invoiceRequest}` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/{invoiceRequest}/files/{pdf\|xml}` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
 
 Solicitud de factura (CFDI): §5/§6 no la especifican (**UNSPECIFIED**). Inferencia: sólo el candidato paga la
 membresía, así que sólo él factura; `role:candidate` fronta las cuatro rutas y todo se acota al usuario
@@ -378,13 +379,19 @@ directa (`UserController::ensureAdmin()`).
 | GET | `/admin/invoice-requests/{invoiceRequest}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
 | PATCH | `/admin/invoice-requests/{invoiceRequest}/status` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
 | PATCH | `/admin/invoice-requests/{invoiceRequest}/notes` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| POST | `/admin/invoice-requests/{invoiceRequest}/files` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| GET | `/admin/invoice-requests/{invoiceRequest}/files/{pdf\|xml}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
 
 Se cierran con el permiso Spatie `invoices.manage` (FormRequest `can()` o `authorize()` en `show`), que una
 migración de datos idempotente y el seeder dan al rol `admin`; un futuro rol de facturación sólo necesita ese
 permiso. No hay habilidades nuevas de Policy: `InvoiceRequestPolicy::before` ahora concede por el permiso (ya
 no por el nombre del rol), y `view` sigue siendo la del dueño. El listado no incluye el RFC; el detalle sí
 (sólo para quien tiene el permiso). `issued` no se alcanza con `PATCH .../status` (422): sólo al subir los
-archivos (slice posterior). Rechazar exige motivo y libera los pagos reclamados. La bitácora
+archivos (`POST .../files`: PDF + XML obligatorios, el XML se parsea sin DTD/entidades y su RFC receptor debe
+coincidir con el de la solicitud; un `issued` no admite reemplazo). Los archivos viven en el disco privado,
+sólo salen por las descargas autenticadas (`Cache-Control: private, no-store`; el dueño recibe 404 si la
+solicitud es ajena, igual que si no existe) y nunca se borran (ni al cancelar ni al eliminar al usuario).
+Rechazar exige motivo y libera los pagos reclamados. La bitácora
 `activity('invoice-requests')` registra id, estado anterior/nuevo, actor e IP, nunca el RFC ni las notas.
 
 ### 2.15 Salud y webhooks

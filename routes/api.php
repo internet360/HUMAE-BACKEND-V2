@@ -211,6 +211,7 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
         Route::get('/eligible-payments', [InvoiceRequestController::class, 'eligiblePayments'])->name('eligible-payments');
         Route::post('/', [InvoiceRequestController::class, 'store'])->middleware('throttle:10,1')->name('store');
         Route::get('/{invoiceRequest}', [InvoiceRequestController::class, 'show'])->name('show');
+        Route::get('/{invoiceRequest}/files/{kind}', [InvoiceRequestController::class, 'downloadFile'])->where('kind', 'pdf|xml')->name('files');
     });
 
     /*
@@ -671,6 +672,8 @@ Route::middleware($authenticated)->prefix('admin/invoice-requests')->name('admin
     Route::get('/{invoiceRequest}', [AdminInvoiceRequestController::class, 'show'])->name('show');
     Route::patch('/{invoiceRequest}/status', [AdminInvoiceRequestController::class, 'updateStatus'])->name('status');
     Route::patch('/{invoiceRequest}/notes', [AdminInvoiceRequestController::class, 'updateNotes'])->name('notes');
+    Route::post('/{invoiceRequest}/files', [AdminInvoiceRequestController::class, 'uploadFiles'])->name('files.upload');
+    Route::get('/{invoiceRequest}/files/{kind}', [AdminInvoiceRequestController::class, 'downloadFile'])->where('kind', 'pdf|xml')->name('files.download');
 });
 
 Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {

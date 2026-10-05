@@ -26,6 +26,10 @@ use Illuminate\Support\Carbon;
  * @property string $email
  * @property string|null $rejection_reason
  * @property string|null $admin_notes
+ * @property string|null $pdf_path
+ * @property string|null $xml_path
+ * @property string|null $cfdi_uuid
+ * @property Carbon|null $issued_at
  * @property Carbon|null $billing_notified_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -46,17 +50,22 @@ class InvoiceRequest extends Model
         'email',
         'rejection_reason',
         'admin_notes',
+        'pdf_path',
+        'xml_path',
+        'cfdi_uuid',
+        'issued_at',
         'billing_notified_at',
     ];
 
     /** @var list<string> */
-    protected $hidden = ['rfc'];
+    protected $hidden = ['rfc', 'pdf_path', 'xml_path'];
 
     protected function casts(): array
     {
         return [
             'status' => InvoiceRequestStatus::class,
             'billing_notified_at' => 'datetime',
+            'issued_at' => 'datetime',
         ];
     }
 

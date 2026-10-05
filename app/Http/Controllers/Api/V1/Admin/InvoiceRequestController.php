@@ -10,15 +10,24 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ListInvoiceRequestsRequest;
 use App\Http\Requests\Admin\UpdateInvoiceRequestNotesRequest;
 use App\Http\Requests\Admin\UpdateInvoiceRequestStatusRequest;
+use App\Http\Requests\Admin\UploadInvoiceFilesRequest;
 use App\Http\Resources\V1\Admin\AdminInvoiceRequestResource;
 use App\Models\InvoiceRequest;
 use App\Models\User;
+use App\Notifications\InvoiceIssuedNotification;
+use App\Services\InvoiceFileService;
 use App\Services\InvoiceRequestService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 /**
  * Admin side of the CFDI requests. Authorization is the Spatie permission
@@ -28,7 +37,10 @@ use Symfony\Component\HttpFoundation\Response as HttpStatus;
  */
 class InvoiceRequestController extends Controller
 {
-    public function __construct(private readonly InvoiceRequestService $service) {}
+    public function __construct(
+        private readonly InvoiceRequestService $service,
+        private readonly InvoiceFileService $files,
+    ) {}
 
     public function index(ListInvoiceRequestsRequest $request): JsonResponse
     {
@@ -123,6 +135,82 @@ class InvoiceRequestController extends Controller
             ->log('Actualizó las notas de una solicitud de factura.');
 
         return $this->detail('Notas actualizadas.', $invoiceRequest);
+    }
+
+    /**
+     * The only path to `issued`. Both files are required; the XML must be a
+     * stamped CFDI addressed to the request's RFC. An issued request keeps its
+     * files for good: re-uploading is refused, never a silent replacement.
+     */
+    public function uploadFiles(UploadInvoiceFilesRequest $request, InvoiceRequest $invoiceRequest): JsonResponse
+    {
+        $cfdi = $request->cfdi();
+
+        try {
+            $from = $this->files->issue($invoiceRequest, $request->pdfFile(), $request->xmlFile(), $cfdi['uuid']);
+        } catch (InvalidInvoiceRequestTransitionException $e) {
+            $message = $e->from === InvoiceRequestStatus::Issued
+                ? 'La factura ya fue emitida: los archivos no se pueden reemplazar.'
+                : "No se puede emitir una solicitud en estado «{$e->from->label()}».";
+
+            return $this->error('La validación falló.', errors: ['status' => [$message]], status: HttpStatus::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (UniqueConstraintViolationException) {
+            return $this->error(
+                'La validación falló.',
+                errors: ['xml' => ['Ese UUID ya está asociado a otra solicitud de factura.']],
+                status: HttpStatus::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        activity('invoice-requests')
+            ->performedOn($invoiceRequest)
+            ->causedBy($actor)
+            ->withProperties([
+                'invoice_request_id' => $invoiceRequest->id,
+                'from' => $from->value,
+                'to' => InvoiceRequestStatus::Issued->value,
+                'cfdi_uuid' => $invoiceRequest->cfdi_uuid,
+                'ip' => $request->ip(),
+            ])
+            ->log('Emitió una solicitud de factura con sus archivos.');
+
+        // Already issued and saved: the email is best-effort and must never turn
+        // this into a 500. Nothing here may log the fiscal data.
+        try {
+            Notification::route('mail', $invoiceRequest->email)->notify(new InvoiceIssuedNotification($invoiceRequest));
+        } catch (Throwable $e) {
+            Log::warning('Issued-invoice notification dispatch raised.', [
+                'invoice_request_id' => $invoiceRequest->id,
+                'exception' => $e::class,
+            ]);
+        }
+
+        return $this->detail('Factura emitida.', $invoiceRequest);
+    }
+
+    public function downloadFile(Request $request, InvoiceRequest $invoiceRequest, string $kind): StreamedResponse|JsonResponse
+    {
+        $this->authorize('invoices.manage');
+
+        $response = $this->files->download($invoiceRequest, $kind);
+
+        if ($response === null) {
+            return $this->error('Este archivo no está disponible.', status: HttpStatus::HTTP_NOT_FOUND);
+        }
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        activity('invoice-requests')
+            ->performedOn($invoiceRequest)
+            ->causedBy($actor)
+            ->withProperties(['invoice_request_id' => $invoiceRequest->id, 'kind' => $kind, 'ip' => $request->ip()])
+            ->log('Descargó un archivo de una solicitud de factura.');
+
+        return $response;
     }
 
     /**

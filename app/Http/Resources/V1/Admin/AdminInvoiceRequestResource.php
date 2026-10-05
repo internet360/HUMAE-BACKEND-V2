@@ -35,6 +35,10 @@ class AdminInvoiceRequestResource extends JsonResource
                 'name' => $this->user?->name,
                 'email' => $this->user?->email,
             ]),
+            'has_pdf' => $this->pdf_path !== null,
+            'has_xml' => $this->xml_path !== null,
+            'cfdi_uuid' => $this->cfdi_uuid,
+            'issued_at' => $this->issued_at?->toIso8601String(),
             'billing_notified_at' => $this->billing_notified_at?->toIso8601String(),
             'billing_notification' => $this->billing_notified_at === null ? 'pending' : 'sent',
             'payments_count' => $this->whenCounted(

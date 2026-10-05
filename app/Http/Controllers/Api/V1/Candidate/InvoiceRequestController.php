@@ -12,11 +12,13 @@ use App\Http\Resources\V1\PaymentResource;
 use App\Jobs\NotifyBillingOfInvoiceRequestJob;
 use App\Models\InvoiceRequest;
 use App\Models\User;
+use App\Services\InvoiceFileService;
 use App\Services\InvoiceRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class InvoiceRequestController extends Controller
@@ -29,7 +31,10 @@ class InvoiceRequestController extends Controller
         'deadline' => 'Alguno de los pagos seleccionados está fuera del plazo para solicitar factura.',
     ];
 
-    public function __construct(private readonly InvoiceRequestService $service) {}
+    public function __construct(
+        private readonly InvoiceRequestService $service,
+        private readonly InvoiceFileService $files,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -75,6 +80,15 @@ class InvoiceRequestController extends Controller
             message: 'Solicitud de factura.',
             data: InvoiceRequestResource::make($invoiceRequest->load('payments')),
         );
+    }
+
+    /** A foreign request answers 404 (policy), same as a missing one. */
+    public function downloadFile(InvoiceRequest $invoiceRequest, string $kind): StreamedResponse|JsonResponse
+    {
+        $this->authorize('view', $invoiceRequest);
+
+        return $this->files->download($invoiceRequest, $kind)
+            ?? $this->error('Este archivo no está disponible.', status: HttpStatus::HTTP_NOT_FOUND);
     }
 
     public function store(StoreInvoiceRequestRequest $request): JsonResponse

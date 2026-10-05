@@ -810,6 +810,7 @@ function authzBuildFixtures(): array
             'candidate' => $profileOther->id,
             'document' => $documentOwner->id,
             'invoice_request' => $invoiceRequest->id,
+            'invoice_file_kind' => 'pdf',
             'document_other' => $documentOther->id,
             'experience' => $experience->id,
             'education' => $education->id,
@@ -1089,6 +1090,15 @@ function authzMatrixRows(): array
     ]);
     $add('GET /me/profile/documents/{document}/download', [
         'method' => 'GET', 'uri' => '/api/v1/me/profile/documents/{document}/download', 'spec' => '§5.2 role: candidate (propio)',
+        'allow_not_found' => true,
+        ...authzCandidateSelfService(ownerOnly: true),
+    ]);
+    $add('GET /me/invoice-requests/{invoice_request}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
+        'spec' => 'UNSPECIFIED: role candidate (propio); un ajeno recibe 404',
+        // The fixture request has no files on disk: the owner gets 404 from the
+        // controller. That a 200 is served to the owner and only to the owner is
+        // covered by InvoiceFilesTest; this row probes that nobody ELSE reaches it.
         'allow_not_found' => true,
         ...authzCandidateSelfService(ownerOnly: true),
     ]);
@@ -1821,6 +1831,20 @@ function authzMatrixRows(): array
         'method' => 'PATCH', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/notes',
         'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
         'payload' => ['admin_notes' => 'Nota interna'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/invoice-requests/{invoice_request}/files', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/files',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin); única vía a `issued`',
+        // Without multipart the validation answers 422, which counts as access:
+        // what is probed is that nobody else reaches the endpoint (no mutation).
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/invoice-requests/{invoice_request}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        // The fixture request has no files: 404 for the admin (see the /me row).
+        'allow_not_found' => true,
         ...authzAccess(['admin']),
     ]);
 
