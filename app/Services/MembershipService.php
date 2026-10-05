@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
+use Stripe\Exception\InvalidRequestException;
 use Throwable;
 
 class MembershipService
@@ -63,12 +64,11 @@ class MembershipService
 
         $customerId = $this->customers->ensureFor($user);
 
-        // price_data inline — Stripe genera un product/price efímero por sesión
-        $session = $this->stripe->createCheckoutSession([
+        $buildParams = fn (string $customer): array => [
             'mode' => 'payment',
             'success_url' => $successUrl,
             'cancel_url' => $cancelUrl,
-            'customer' => $customerId,
+            'customer' => $customer,
             'client_reference_id' => (string) $user->id,
             'line_items' => [[
                 'quantity' => 1,
@@ -86,7 +86,21 @@ class MembershipService
                 'membership_plan_id' => (string) $plan->id,
                 'plan_code' => (string) $plan->code,
             ],
-        ]);
+        ];
+
+        // price_data inline — Stripe genera un product/price efímero por sesión
+        try {
+            $session = $this->stripe->createCheckoutSession($buildParams($customerId));
+        } catch (InvalidRequestException $e) {
+            // The stored customer is unknown to Stripe (deleted, test id in
+            // live, rotated account). Replace it and retry exactly once.
+            if ($e->getStripeCode() !== 'resource_missing' || $e->getStripeParam() !== 'customer') {
+                throw $e;
+            }
+
+            $customerId = $this->customers->replaceStale($user, $customerId);
+            $session = $this->stripe->createCheckoutSession($buildParams($customerId));
+        }
 
         $payment = Payment::create([
             'user_id' => $user->id,
