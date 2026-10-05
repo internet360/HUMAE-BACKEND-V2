@@ -6,6 +6,7 @@ use App\Enums\CandidateState;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\UserRole;
+use App\Enums\VacancyState;
 use App\Events\PaymentReversed;
 use App\Helpers\StripeClient;
 use App\Jobs\ExpireMembershipsJob;
@@ -16,13 +17,16 @@ use App\Models\Payment;
 use App\Models\SalaryCurrency;
 use App\Models\StripeWebhookEvent;
 use App\Models\User;
+use App\Models\Vacancy;
 use App\Notifications\BillingAlertNotification;
 use App\Services\MembershipService;
 use App\Services\PaymentReversalService;
+use App\Services\PipelineService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Event as EventFacade;
 use Illuminate\Support\Facades\Notification;
+use Laravel\Sanctum\Sanctum;
 use Stripe\Charge;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Dispute;
@@ -489,4 +493,72 @@ it('honours a configured retry window', function (): void {
     sendStripeEvent('evt_short', 'charge.refunded', refundCharge(49900, 'pi_short', 'ch_short'), time() - 2 * 3600);
 
     Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
+
+it('denies the membership-gated behaviour to a candidate revoked by a full refund, before the original expiry', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+    $user = $payment->user;
+    $profile = CandidateProfile::where('user_id', $user->id)->first();
+    $originalExpiry = $payment->membership->expires_at;
+    $recruiter = User::factory()->create()->assignRole(UserRole::Recruiter->value);
+
+    // Sanity: before the refund the same gates let the candidate through.
+    expect($user->hasActiveMembership())->toBeTrue();
+    Sanctum::actingAs($recruiter);
+    $this->getJson('/api/v1/directory/candidates')->assertOk()->assertJsonCount(1, 'data');
+
+    sendStripeEvent('evt_revoke_gate', 'charge.refunded', refundCharge(49900));
+
+    expect(now()->lt($originalExpiry))->toBeTrue()
+        ->and($user->fresh()->hasActiveMembership())->toBeFalse();
+
+    // Directory: excluded by default, even when the profile still looks active.
+    $profile->forceFill(['state' => CandidateState::Activo])->save();
+    $this->getJson('/api/v1/directory/candidates')->assertOk()->assertJsonCount(0, 'data');
+
+    // Pipeline: cannot be assigned to a vacancy.
+    $vacancy = Vacancy::factory()->create(['state' => VacancyState::Activa]);
+    expect(fn () => app(PipelineService::class)->assign($vacancy, $profile->fresh(), $recruiter))
+        ->toThrow(RuntimeException::class, 'Sólo candidatos con membresía activa pueden asignarse a vacantes.');
+});
+
+it('grants access again when a new checkout payment completes after a revoke', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+    $user = $payment->user;
+    $recruiter = User::factory()->create()->assignRole(UserRole::Recruiter->value);
+
+    sendStripeEvent('evt_revoke_repurchase', 'charge.refunded', refundCharge(49900));
+
+    expect($user->fresh()->hasActiveMembership())->toBeFalse()
+        ->and(CandidateProfile::where('user_id', $user->id)->first()->state)->toBe(CandidateState::MembresiaVencida);
+
+    $plan = MembershipPlan::where('code', 'candidate_6m')->first();
+    Payment::factory()->create([
+        'user_id' => $user->id,
+        'membership_plan_id' => $plan->id,
+        'salary_currency_id' => $plan->salary_currency_id,
+        'amount' => 499,
+        'net_amount' => 499,
+        'status' => PaymentStatus::Pending,
+        'stripe_session_id' => 'cs_again',
+    ]);
+
+    sendStripeEvent('evt_repurchase_done', 'checkout.session.completed', CheckoutSession::constructFrom([
+        'id' => 'cs_again',
+        'customer' => 'cus_again',
+        'payment_status' => 'paid',
+        'payment_intent' => 'pi_again',
+    ]));
+
+    expect($user->fresh()->hasActiveMembership())->toBeTrue()
+        ->and(CandidateProfile::where('user_id', $user->id)->first()->state)->toBe(CandidateState::Activo)
+        ->and(Payment::where('stripe_session_id', 'cs_again')->first()->status)->toBe(PaymentStatus::Succeeded);
+
+    // The refunded membership stays refunded: access comes from the new one.
+    expect(Membership::where('user_id', $user->id)->where('status', MembershipStatus::Refunded)->count())->toBe(1);
+
+    Sanctum::actingAs($recruiter);
+    $this->getJson('/api/v1/directory/candidates')->assertOk()->assertJsonCount(1, 'data');
 });
