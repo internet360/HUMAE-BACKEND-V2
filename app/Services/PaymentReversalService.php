@@ -32,9 +32,9 @@ use Stripe\StripeObject;
  */
 class PaymentReversalService
 {
-    public function handleRefund(Charge $charge, ?int $eventCreated = null): void
+    public function handleRefund(Charge $charge, ?int $eventCreated = null, ?string $eventId = null): void
     {
-        DB::transaction(function () use ($charge, $eventCreated): void {
+        DB::transaction(function () use ($charge, $eventCreated, $eventId): void {
             $payment = $this->lockPayment($this->idOf($charge->payment_intent ?? null), $this->idOf($charge->id ?? null));
 
             if ($payment === null) {
@@ -50,7 +50,7 @@ class PaymentReversalService
             $refunded = ((int) ($charge->amount_refunded ?? 0)) / 100;
 
             if ($refunded >= ((int) ($charge->amount ?? 0)) / 100 && $refunded > 0) {
-                $this->revokeAccess($payment, 'refunded', number_format($refunded, 2, '.', ''));
+                $this->revokeAccess($payment, 'refunded', number_format($refunded, 2, '.', ''), $eventId);
 
                 return;
             }
@@ -94,9 +94,9 @@ class PaymentReversalService
         });
     }
 
-    public function handleDisputeClosed(Dispute $dispute, ?int $eventCreated = null): void
+    public function handleDisputeClosed(Dispute $dispute, ?int $eventCreated = null, ?string $eventId = null): void
     {
-        DB::transaction(function () use ($dispute, $eventCreated): void {
+        DB::transaction(function () use ($dispute, $eventCreated, $eventId): void {
             $payment = $this->lockPayment($this->idOf($dispute->payment_intent ?? null), $this->idOf($dispute->charge ?? null));
 
             if ($payment === null) {
@@ -126,7 +126,7 @@ class PaymentReversalService
                 return;
             }
 
-            $this->revokeAccess($payment, 'dispute_lost');
+            $this->revokeAccess($payment, 'dispute_lost', null, $eventId);
         });
     }
 
@@ -146,9 +146,9 @@ class PaymentReversalService
      * the stored and the new one; without one (dispute lost) a stored partial
      * refund is kept, otherwise the full price is recorded.
      */
-    public function revokeAccess(Payment $payment, string $reason, ?string $refundAmount = null): void
+    public function revokeAccess(Payment $payment, string $reason, ?string $refundAmount = null, ?string $eventId = null): void
     {
-        DB::transaction(function () use ($payment, $reason, $refundAmount): void {
+        DB::transaction(function () use ($payment, $reason, $refundAmount, $eventId): void {
             $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
 
             if ($payment->status === PaymentStatus::Refunded) {
@@ -176,7 +176,7 @@ class PaymentReversalService
 
             $this->alertBilling($payment, 'Payment reversed', "Payment {$payment->id} was reversed ({$reason}); access revoked.");
 
-            event(new PaymentReversed($payment, $reason));
+            event(new PaymentReversed($payment, $reason, $eventId));
         });
     }
 

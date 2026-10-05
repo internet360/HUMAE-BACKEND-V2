@@ -130,6 +130,8 @@ it('moves an issued request to cancellation pending on a full refund and tells b
         ->and($log->properties['from'])->toBe('issued')
         ->and($log->properties['to'])->toBe('cancellation_pending')
         ->and($log->properties['reason'])->toBe('refunded')
+        ->and($log->properties['source'])->toBe('stripe_webhook')
+        ->and($log->properties['stripe_event_id'])->toBe('evt_ir_1')
         ->and(json_encode($log->properties))->not->toContain('XXXX010101AAA');
 });
 
@@ -144,6 +146,7 @@ it('moves an issued request to cancellation pending when a dispute is lost', fun
         BillingAlertNotification::class,
         fn (BillingAlertNotification $n): bool => str_contains($n->body, REVERSAL_UUID),
     );
+    expect(Activity::where('log_name', 'invoice-requests')->latest('id')->first()->properties['stripe_event_id'])->toBe('evt_ir_d');
 });
 
 it('rejects an unissued request, frees its claim and keeps the payment out of the eligible list', function (InvoiceRequestStatus $status): void {

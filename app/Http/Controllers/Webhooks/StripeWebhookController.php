@@ -132,7 +132,7 @@ class StripeWebhookController extends Controller
             case 'charge.refunded':
                 /** @var Charge $charge */
                 $charge = $event->data->object;
-                $this->reversals->handleRefund($charge, $this->createdOf($event));
+                $this->reversals->handleRefund($charge, $this->createdOf($event), $event->id);
                 break;
 
             case 'charge.dispute.created':
@@ -144,7 +144,7 @@ class StripeWebhookController extends Controller
             case 'charge.dispute.closed':
                 /** @var Dispute $dispute */
                 $dispute = $event->data->object;
-                $this->reversals->handleDisputeClosed($dispute, $this->createdOf($event));
+                $this->reversals->handleDisputeClosed($dispute, $this->createdOf($event), $event->id);
                 break;
 
             default:

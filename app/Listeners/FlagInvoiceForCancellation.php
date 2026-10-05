@@ -112,6 +112,8 @@ final class FlagInvoiceForCancellation
                     'from' => $from->value,
                     'to' => $target->value,
                     'reason' => $event->reason,
+                    'source' => 'stripe_webhook',
+                    'stripe_event_id' => $event->stripeEventId,
                 ])
                 ->log('El pago se revirtió: se actualizó la solicitud de factura.');
 
