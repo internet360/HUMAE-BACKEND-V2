@@ -30,18 +30,19 @@ class InvoiceRequestedNotification extends Notification
     {
         $request = $this->request->loadMissing(['user', 'payments.payment']);
         $user = $request->user;
+        $e = self::escape(...);
 
         $mail = (new MailMessage)
             ->subject("Nueva solicitud de factura #{$request->id}")
             ->greeting('Hola equipo de facturación,')
-            ->line(sprintf('%s (%s) solicitó una factura.', $user?->name, $user?->email))
+            ->line(sprintf('%s (%s) solicitó una factura.', $e($user?->name), $e($user?->email)))
             ->line('Datos fiscales:')
             ->line("RFC: {$request->rfc}")
-            ->line("Razón social: {$request->legal_name}")
+            ->line("Razón social: {$e($request->legal_name)}")
             ->line("Régimen fiscal: {$request->tax_regime}")
             ->line("Código postal: {$request->postal_code}")
             ->line("Uso de CFDI: {$request->cfdi_use}")
-            ->line("Correo para el CFDI: {$request->email}")
+            ->line("Correo para el CFDI: {$e($request->email)}")
             ->line('Pagos a facturar:');
 
         foreach ($request->payments as $line) {
@@ -58,5 +59,14 @@ class InvoiceRequestedNotification extends Notification
         $link = rtrim((string) config('app.frontend_url'), '/')."/admin/facturacion/{$request->id}";
 
         return $mail->action('Abrir solicitud', $link)->line("Solicitud: {$link}");
+    }
+
+    /**
+     * Mail lines are rendered as Markdown, so user-supplied text must not be
+     * able to open links, images, emphasis, code or raw HTML.
+     */
+    private static function escape(?string $value): string
+    {
+        return (string) preg_replace('/([\\\\`*_\[\]()<>#!|~&])/u', '\\\\$1', (string) $value);
     }
 }

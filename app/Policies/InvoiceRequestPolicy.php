@@ -7,6 +7,7 @@ namespace App\Policies;
 use App\Enums\UserRole;
 use App\Models\InvoiceRequest;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 /**
  * Only the owner reads their request; admins read everything. Ability names
@@ -20,8 +21,12 @@ class InvoiceRequestPolicy
         return $user->hasRole(UserRole::Admin->value) ? true : null;
     }
 
-    public function view(User $user, InvoiceRequest $request): bool
+    /**
+     * A foreign request answers 404, same as a missing id, so ids cannot be
+     * enumerated.
+     */
+    public function view(User $user, InvoiceRequest $request): Response
     {
-        return $request->user_id === $user->id;
+        return $request->user_id === $user->id ? Response::allow() : Response::denyAsNotFound();
     }
 }

@@ -194,12 +194,14 @@ describe('GET /me/invoice-requests', function (): void {
             ->assertJsonPath('data.rfc', 'XXXX010101AAA');
     });
 
-    it('refuses another user request without leaking it', function (): void {
+    it('answers 404 for another user request, identical to a missing one, without leaking it', function (): void {
         $other = InvoiceRequest::factory()->create(['rfc' => 'ZZZZ010101ZZZ']);
 
-        $response = $this->getJson("/api/v1/me/invoice-requests/{$other->id}")->assertForbidden();
+        $foreign = $this->getJson("/api/v1/me/invoice-requests/{$other->id}")->assertNotFound();
+        $missing = $this->getJson('/api/v1/me/invoice-requests/999999')->assertNotFound();
 
-        expect($response->getContent())->not->toContain('ZZZZ010101ZZZ');
+        expect($foreign->getContent())->not->toContain('ZZZZ010101ZZZ')
+            ->and($foreign->json('message'))->toBe($missing->json('message'));
     });
 });
 
@@ -247,6 +249,24 @@ describe('billing notification job', function (): void {
         (new NotifyBillingOfInvoiceRequestJob($request->id))->handle();
 
         Notification::assertNothingSent();
+    });
+
+    it('renders user-supplied text as inert in the billing email', function (): void {
+        $user = User::factory()->create(['name' => 'Eve [click](https://evil.example/u) *bold*']);
+        $request = makeRequest($user, $this->payment, [
+            'legal_name' => 'Acme [x](https://evil.example) <b>SA</b> `code` _it_ https://evil.example/bare',
+        ]);
+
+        $mail = (new InvoiceRequestedNotification($request))->toMail((object) []);
+        $html = (string) $mail->render();
+        $text = implode("\n", [...$mail->introLines, ...$mail->outroLines]);
+
+        expect($html)->not->toContain('href="https://evil.example')
+            ->and($html)->not->toContain('<b>SA</b>')
+            ->and($text)->not->toContain('[x](https://evil.example)')
+            ->and($text)->not->toContain('[click](https://evil.example/u)')
+            ->and($html)->toContain('[x]')
+            ->and($html)->toContain('Acme');
     });
 
     it('keeps the request and leaves the stamp empty when the mail fails, without the RFC in logs', function (): void {
