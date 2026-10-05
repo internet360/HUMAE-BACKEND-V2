@@ -58,6 +58,14 @@ describe('GET /me/invoice-requests/eligible-payments', function (): void {
     });
 });
 
+describe('GET /me/invoice-requests/eligible-payments authorization', function (): void {
+    it('is limited to candidates', function (UserRole $role): void {
+        Sanctum::actingAs(User::factory()->create()->assignRole($role->value));
+
+        $this->getJson('/api/v1/me/invoice-requests/eligible-payments')->assertForbidden();
+    })->with([UserRole::Recruiter, UserRole::CompanyUser, UserRole::Admin]);
+});
+
 describe('POST /me/invoice-requests', function (): void {
     beforeEach(function (): void {
         Bus::fake();
@@ -79,6 +87,17 @@ describe('POST /me/invoice-requests', function (): void {
         Bus::assertDispatched(NotifyBillingOfInvoiceRequestJob::class, fn ($job) => $job->invoiceRequestId === $request->id);
     });
 
+    it('accepts compatible régimen, uso and person type combinations', function (array $override): void {
+        $this->postJson('/api/v1/me/invoice-requests', validInvoicePayload([$this->payment->id], $override))
+            ->assertCreated();
+    })->with([
+        'moral 601 + G03' => [['rfc' => 'ABC010101AAA', 'tax_regime' => '601', 'cfdi_use' => 'G03']],
+        'fisica 605 + D01' => [['tax_regime' => '605', 'cfdi_use' => 'D01']],
+        'fisica 616 + S01' => [['tax_regime' => '616', 'cfdi_use' => 'S01']],
+        '626 on a moral RFC' => [['rfc' => 'ABC010101AAA', 'tax_regime' => '626', 'cfdi_use' => 'G01']],
+        '626 on a fisica RFC' => [['tax_regime' => '626', 'cfdi_use' => 'G01']],
+    ]);
+
     it('normalises the RFC to uppercase', function (): void {
         $this->postJson('/api/v1/me/invoice-requests', validInvoicePayload([$this->payment->id], ['rfc' => ' xxxx010101aaa ']))
             ->assertCreated();
@@ -99,7 +118,20 @@ describe('POST /me/invoice-requests', function (): void {
         'cp too short' => [['postal_code' => '0660'], 'postal_code'],
         'cp letters' => [['postal_code' => '06A00'], 'postal_code'],
         'unknown regime' => [['tax_regime' => '999'], 'tax_regime'],
+        'regime 610 is not offered' => [['tax_regime' => '610'], 'tax_regime'],
         'unknown uso' => [['cfdi_use' => 'ZZ9'], 'cfdi_use'],
+        'uso CP01 is not offered' => [['cfdi_use' => 'CP01'], 'cfdi_use'],
+        'uso CN01 is not offered' => [['cfdi_use' => 'CN01'], 'cfdi_use'],
+        'moral regime on a fisica RFC' => [['tax_regime' => '601'], 'tax_regime'],
+        'fisica regime on a moral RFC' => [['rfc' => 'ABC010101AAA', 'tax_regime' => '612'], 'tax_regime'],
+        'regime 616 with a non S01 uso' => [['tax_regime' => '616', 'cfdi_use' => 'G03'], 'cfdi_use'],
+        'regime 616 with G02 (business rule)' => [['tax_regime' => '616', 'cfdi_use' => 'G02'], 'cfdi_use'],
+        'uso D01 on a regime that does not allow it' => [['tax_regime' => '626', 'cfdi_use' => 'D01'], 'cfdi_use'],
+        'uso G03 on a regime that does not allow it' => [['tax_regime' => '605', 'cfdi_use' => 'G03'], 'cfdi_use'],
+        'newline in legal name' => [['legal_name' => "Acme\nSA"], 'legal_name'],
+        'control char in legal name' => [['legal_name' => "Acme\x07SA"], 'legal_name'],
+        'duplicate payment ids' => [['payment_ids' => [1, 1]], 'payment_ids.0'],
+        'more than 50 payment ids' => [['payment_ids' => range(1, 51)], 'payment_ids'],
         'missing name' => [['legal_name' => ''], 'legal_name'],
         'bad email' => [['email' => 'nope'], 'email'],
         'no payments' => [['payment_ids' => []], 'payment_ids'],

@@ -6,8 +6,10 @@ namespace App\Http\Requests\Candidate;
 
 use App\Rules\Rfc;
 use App\Support\Sat\SatCatalog;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreInvoiceRequestRequest extends FormRequest
 {
@@ -32,7 +34,7 @@ class StoreInvoiceRequestRequest extends FormRequest
     {
         return [
             'rfc' => ['required', 'string', new Rfc],
-            'legal_name' => ['required', 'string', 'min:1', 'max:300'],
+            'legal_name' => ['required', 'string', 'min:1', 'max:300', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
             'tax_regime' => ['required', 'string', Rule::in(SatCatalog::regimeCodes())],
             'postal_code' => ['required', 'string', 'regex:/^\d{5}$/'],
             'cfdi_use' => ['required', 'string', Rule::in(SatCatalog::useCodes())],
@@ -40,6 +42,42 @@ class StoreInvoiceRequestRequest extends FormRequest
             'payment_ids' => ['required', 'array', 'min:1', 'max:50'],
             'payment_ids.*' => ['integer', 'distinct'],
         ];
+    }
+
+    /**
+     * Cross-field SAT rules; they only run once the individual fields are valid.
+     *
+     * @return list<Closure(Validator): void>
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->hasAny(['rfc', 'tax_regime', 'cfdi_use'])) {
+                return;
+            }
+
+            $regime = (string) $this->input('tax_regime');
+            $use = (string) $this->input('cfdi_use');
+            $personType = SatCatalog::personTypeForRfc((string) $this->input('rfc'));
+
+            if (! in_array($regime, SatCatalog::regimeCodesFor($personType), true)) {
+                $validator->errors()->add('tax_regime', $personType === 'moral'
+                    ? 'El régimen fiscal no aplica a una persona moral (RFC de 12 caracteres).'
+                    : 'El régimen fiscal no aplica a una persona física (RFC de 13 caracteres).');
+
+                return;
+            }
+
+            if ($regime === SatCatalog::SIN_OBLIGACIONES_FISCALES && $use !== SatCatalog::SIN_EFECTOS_FISCALES) {
+                $validator->errors()->add('cfdi_use', 'Con el régimen 616 (Sin obligaciones fiscales) el uso de CFDI debe ser S01.');
+
+                return;
+            }
+
+            if (! SatCatalog::isUseAllowedForRegime($use, $regime)) {
+                $validator->errors()->add('cfdi_use', 'El uso de CFDI no es válido para el régimen fiscal seleccionado.');
+            }
+        }];
     }
 
     /**
@@ -67,6 +105,7 @@ class StoreInvoiceRequestRequest extends FormRequest
             'postal_code.regex' => 'El código postal debe tener 5 dígitos.',
             'tax_regime.in' => 'El régimen fiscal no es válido.',
             'cfdi_use.in' => 'El uso de CFDI no es válido.',
+            'legal_name.regex' => 'La razón social no puede contener saltos de línea ni caracteres de control.',
         ];
     }
 

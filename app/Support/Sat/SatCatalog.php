@@ -8,8 +8,12 @@ namespace App\Support\Sat;
  * Static subsets of the SAT CFDI 4.0 catalogs used by invoice requests.
  * Backend authoritative: the frontend mirrors these codes for its selects.
  *
- * Régimen/uso compatibility (c_UsoCFDI x c_RegimenFiscal) is intentionally not
- * enforced: the design leaves it to the billing team when issuing the CFDI.
+ * Verified against the official SAT workbook catCFDI_V_4_20261001.xls
+ * (sheets c_RegimenFiscal and c_UsoCFDI). Deliberately excluded: régimen 610
+ * (foreign residents, no Mexican RFC) and usos CP01/CN01 (payments/payroll
+ * complements, never a candidate invoice). The régimen must apply to the RFC
+ * person type and the uso must be allowed for the régimen (c_UsoCFDI column
+ * "Régimen Fiscal Receptor").
  */
 final class SatCatalog
 {
@@ -21,7 +25,6 @@ final class SatCatalog
         '606' => 'Arrendamiento',
         '607' => 'Régimen de Enajenación o Adquisición de Bienes',
         '608' => 'Demás ingresos',
-        '610' => 'Residentes en el Extranjero sin Establecimiento Permanente en México',
         '611' => 'Ingresos por Dividendos (socios y accionistas)',
         '612' => 'Personas Físicas con Actividades Empresariales y Profesionales',
         '614' => 'Ingresos por intereses',
@@ -60,9 +63,21 @@ final class SatCatalog
         'D09' => 'Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones',
         'D10' => 'Pagos por servicios educativos (colegiaturas)',
         'S01' => 'Sin efectos fiscales',
-        'CP01' => 'Pagos',
-        'CN01' => 'Nómina',
     ];
+
+    public const SIN_OBLIGACIONES_FISCALES = '616';
+
+    public const SIN_EFECTOS_FISCALES = 'S01';
+
+    /** Regimes that apply only to personas morales (12-char RFC). */
+    private const MORAL_ONLY = ['601', '603', '620', '622', '623', '624'];
+
+    /** Regimes that apply to both person types. */
+    private const BOTH = ['626'];
+
+    private const GENERAL_USE_REGIMES = ['601', '603', '606', '612', '620', '621', '622', '623', '624', '625', '626'];
+
+    private const PERSONAL_USE_REGIMES = ['605', '606', '607', '608', '611', '612', '614', '615', '625'];
 
     /** @return list<string> */
     public static function regimeCodes(): array
@@ -74,5 +89,41 @@ final class SatCatalog
     public static function useCodes(): array
     {
         return array_map('strval', array_keys(self::USES));
+    }
+
+    /** @return 'moral'|'fisica' */
+    public static function personTypeForRfc(string $rfc): string
+    {
+        return mb_strlen($rfc) === 12 ? 'moral' : 'fisica';
+    }
+
+    /**
+     * @param  'moral'|'fisica'  $personType
+     * @return list<string>
+     */
+    public static function regimeCodesFor(string $personType): array
+    {
+        return array_values(array_filter(
+            self::regimeCodes(),
+            fn (string $code): bool => in_array($code, self::BOTH, true)
+                || in_array($code, self::MORAL_ONLY, true) === ($personType === 'moral'),
+        ));
+    }
+
+    public static function isUseAllowedForRegime(string $use, string $regime): bool
+    {
+        return in_array($regime, self::regimesForUse($use), true);
+    }
+
+    /** @return list<string> */
+    private static function regimesForUse(string $use): array
+    {
+        return match (true) {
+            $use === 'G02' => [...self::GENERAL_USE_REGIMES, self::SIN_OBLIGACIONES_FISCALES],
+            $use === 'S01' => self::regimeCodes(),
+            str_starts_with($use, 'D') => self::PERSONAL_USE_REGIMES,
+            str_starts_with($use, 'G'), str_starts_with($use, 'I') => self::GENERAL_USE_REGIMES,
+            default => [],
+        };
     }
 }
