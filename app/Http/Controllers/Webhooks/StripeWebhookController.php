@@ -6,9 +6,12 @@ namespace App\Http\Controllers\Webhooks;
 
 use App\Helpers\StripeClient;
 use App\Http\Controllers\Controller;
+use App\Models\StripeWebhookEvent;
 use App\Services\MembershipService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
@@ -36,8 +39,30 @@ class StripeWebhookController extends Controller
             return $this->error('Invalid signature.', status: HttpStatus::HTTP_BAD_REQUEST);
         }
 
+        if (StripeWebhookEvent::where('event_id', $event->id)->exists()) {
+            return $this->alreadyProcessed();
+        }
+
         try {
-            $this->dispatch($event);
+            $duplicate = DB::transaction(function () use ($event): bool {
+                // The dedup row goes in FIRST: the unique index serialises
+                // concurrent deliveries, and rolling the transaction back on any
+                // handler failure means "row exists" always means "processed".
+                try {
+                    StripeWebhookEvent::create([
+                        'event_id' => $event->id,
+                        'type' => $event->type,
+                        'livemode' => (bool) ($event->livemode ?? false),
+                        'processed_at' => now(),
+                    ]);
+                } catch (UniqueConstraintViolationException) {
+                    return true;
+                }
+
+                $this->dispatch($event);
+
+                return false;
+            });
         } catch (Throwable $e) {
             Log::error('Stripe webhook handler failed.', [
                 'event' => $event->type,
@@ -49,7 +74,16 @@ class StripeWebhookController extends Controller
             return $this->error('Handler failed.', status: HttpStatus::HTTP_INTERNAL_SERVER_ERROR);
         }
 
+        if ($duplicate) {
+            return $this->alreadyProcessed();
+        }
+
         return $this->success(message: 'Event processed.', data: ['type' => $event->type]);
+    }
+
+    private function alreadyProcessed(): JsonResponse
+    {
+        return $this->success(message: 'Event already processed.');
     }
 
     private function dispatch(Event $event): void

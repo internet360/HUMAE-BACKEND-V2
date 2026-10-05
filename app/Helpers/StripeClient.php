@@ -33,9 +33,12 @@ class StripeClient
         return $this->sdk()->checkout->sessions->create($params);
     }
 
-    public function retrieveCheckoutSession(string $sessionId): CheckoutSession
+    /**
+     * @param  array<string, mixed>  $params  e.g. `['expand' => ['payment_intent.latest_charge']]`
+     */
+    public function retrieveCheckoutSession(string $sessionId, array $params = []): CheckoutSession
     {
-        return $this->sdk()->checkout->sessions->retrieve($sessionId);
+        return $this->sdk()->checkout->sessions->retrieve($sessionId, $params);
     }
 
     public function constructWebhookEvent(string $payload, string $signature): Event
