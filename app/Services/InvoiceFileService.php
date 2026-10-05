@@ -94,6 +94,7 @@ class InvoiceFileService
             [
                 'Content-Type' => self::CONTENT_TYPES[$kind],
                 'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
             ],
         );
     }

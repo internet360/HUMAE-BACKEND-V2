@@ -173,6 +173,12 @@ describe('upload validation', function (): void {
         'version 3.3' => fn () => str_replace('Version="4.0"', 'Version="3.3"', cfdiXml()),
     ]);
 
+    it('compares the receptor RFC case-insensitively including non-ascii letters', function (): void {
+        $this->request->update(['rfc' => 'ÑAND010101AAA']);
+
+        uploadFiles($this->request, cfdiFiles(cfdiXml(rfc: 'ñand010101aaa')))->assertOk();
+    });
+
     it('rejects an xml without the stamp uuid', function (): void {
         uploadFiles($this->request, cfdiFiles(cfdiXml(uuid: null)))->assertUnprocessable()->assertJsonValidationErrors(['xml']);
     });
@@ -293,6 +299,7 @@ describe('downloads', function (): void {
 
         expect($response->headers->get('Content-Type'))->toContain($type)
             ->and($response->headers->get('Cache-Control'))->toContain('no-store')->toContain('private')
+            ->and($response->headers->get('X-Content-Type-Options'))->toBe('nosniff')
             ->and($response->headers->get('Content-Disposition'))->toContain('CFDI-'.FILES_UUID.'.'.$kind);
 
         $this->get(FILES_ME.'/'.$this->request->id.'/files/'.$kind)->assertOk();
@@ -327,7 +334,8 @@ describe('downloads', function (): void {
 
         $response = $this->get(FILES_ADMIN.'/'.$this->request->id.'/files/xml')->assertOk();
 
-        expect($response->headers->get('Cache-Control'))->toContain('no-store');
+        expect($response->headers->get('Cache-Control'))->toContain('no-store')
+            ->and($response->headers->get('X-Content-Type-Options'))->toBe('nosniff');
         $log = Activity::where('log_name', 'invoice-requests')->latest('id')->first();
         expect($log->properties['invoice_request_id'])->toBe($this->request->id)
             ->and($log->properties['kind'])->toBe('xml')

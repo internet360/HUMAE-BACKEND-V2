@@ -61,7 +61,7 @@ class UploadInvoiceFilesRequest extends FormRequest
             $invoiceRequest = $this->route('invoiceRequest');
 
             // The RFC is deliberately not echoed in the message (personal data).
-            if ($invoiceRequest instanceof InvoiceRequest && ! hash_equals(strtoupper($invoiceRequest->rfc), $cfdi['rfc'])) {
+            if ($invoiceRequest instanceof InvoiceRequest && ! hash_equals(self::normalizeRfc($invoiceRequest->rfc), self::normalizeRfc($cfdi['rfc']))) {
                 $validator->errors()->add('xml', 'El RFC del receptor del XML no coincide con el de la solicitud.');
 
                 return;
@@ -69,6 +69,17 @@ class UploadInvoiceFilesRequest extends FormRequest
 
             $this->cfdi = $cfdi;
         }];
+    }
+
+    private static function normalizeRfc(string $rfc): string
+    {
+        $rfc = trim($rfc);
+
+        if (class_exists(\Normalizer::class)) {
+            $rfc = \Normalizer::normalize($rfc, \Normalizer::FORM_C) ?: $rfc;
+        }
+
+        return mb_strtoupper($rfc);
     }
 
     /** @return array{rfc: string, uuid: string} */
