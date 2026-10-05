@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\InvoiceRequestStatus;
 use App\Enums\PaymentStatus;
+use App\Exceptions\InvalidInvoiceRequestTransitionException;
 use App\Exceptions\PaymentNotEligibleException;
 use App\Models\InvoiceRequest;
 use App\Models\InvoiceRequestPayment;
@@ -69,7 +70,7 @@ class InvoiceRequestService
 
         try {
             return DB::transaction(function () use ($user, $paymentIds, $fiscal): InvoiceRequest {
-                $eligible = $this->eligibleQuery($user)->whereIn('id', $paymentIds)->lockForUpdate()->get();
+                $eligible = $this->eligibleQuery($user)->whereIn('id', $paymentIds)->orderBy('id')->lockForUpdate()->get();
 
                 if ($paymentIds === [] || $eligible->count() !== count($paymentIds)) {
                     throw new PaymentNotEligibleException($this->reasonFor($user, $paymentIds, $eligible));
@@ -91,14 +92,22 @@ class InvoiceRequestService
                 }
 
                 return $request->load('payments');
-            });
+            }, 3);
         } catch (UniqueConstraintViolationException) {
             // A concurrent request won the claim between our check and insert.
             throw new PaymentNotEligibleException('claimed');
         }
     }
 
-    /** Moves the request to a releasing status and frees its payments. */
+    /**
+     * Moves the request to a releasing status and frees its payments.
+     *
+     * The row is locked and the transition checked against the persisted
+     * status, so an issued request can never free payments that already back
+     * an invoice.
+     *
+     * @throws InvalidInvoiceRequestTransitionException
+     */
     public function releaseClaims(InvoiceRequest $request, InvoiceRequestStatus $to): void
     {
         if (! $to->releasesClaim()) {
@@ -106,8 +115,16 @@ class InvoiceRequestService
         }
 
         DB::transaction(function () use ($request, $to): void {
-            $request->update(['status' => $to]);
-            InvoiceRequestPayment::where('invoice_request_id', $request->id)->update(['claimed_payment_id' => null]);
+            $locked = InvoiceRequest::query()->lockForUpdate()->findOrFail($request->id);
+
+            if (! $locked->status->canTransitionTo($to)) {
+                throw new InvalidInvoiceRequestTransitionException($locked->status, $to);
+            }
+
+            $locked->update(['status' => $to]);
+            InvoiceRequestPayment::where('invoice_request_id', $locked->id)->update(['claimed_payment_id' => null]);
+
+            $request->setRawAttributes($locked->getAttributes(), true);
         });
     }
 

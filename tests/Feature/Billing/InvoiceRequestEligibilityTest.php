@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\InvoiceRequestStatus;
 use App\Enums\PaymentStatus;
+use App\Exceptions\InvalidInvoiceRequestTransitionException;
 use App\Exceptions\PaymentNotEligibleException;
 use App\Models\InvoiceRequest;
 use App\Models\Payment;
@@ -114,6 +115,10 @@ it('rejects a second claim while the first request is active', function (): void
 it('frees the claim when the request is rejected or cancelled', function (InvoiceRequestStatus $final): void {
     $payment = paidAt($this->user, '2026-10-02 09:00');
     $request = $this->service->claim($this->user, [$payment->id], FISCAL);
+    if ($final === InvoiceRequestStatus::Cancelled) {
+        // Cancelled is only reachable through cancellation_pending.
+        $request->update(['status' => InvoiceRequestStatus::CancellationPending]);
+    }
 
     $this->service->releaseClaims($request, $final);
 
@@ -130,6 +135,29 @@ it('refuses to release a claim into a non-releasing status', function (): void {
 
     $this->service->releaseClaims($request, InvoiceRequestStatus::Issued);
 })->throws(InvalidArgumentException::class);
+
+it('refuses to release the claims of an issued request', function (): void {
+    $payment = paidAt($this->user, '2026-10-02 09:00');
+    $request = $this->service->claim($this->user, [$payment->id], FISCAL);
+    $request->update(['status' => InvoiceRequestStatus::Issued]);
+
+    expect(fn () => $this->service->releaseClaims($request, InvoiceRequestStatus::Rejected))
+        ->toThrow(InvalidInvoiceRequestTransitionException::class);
+
+    expect($request->fresh()->status)->toBe(InvoiceRequestStatus::Issued)
+        ->and($request->payments()->first()->claimed_payment_id)->toBe($payment->id)
+        ->and(eligibleIds())->toBe([]);
+});
+
+it('validates the transition against the persisted status, not the stale instance', function (): void {
+    $payment = paidAt($this->user, '2026-10-02 09:00');
+    $stale = $this->service->claim($this->user, [$payment->id], FISCAL);
+    InvoiceRequest::whereKey($stale->id)->update(['status' => InvoiceRequestStatus::Issued]);
+
+    expect(fn () => $this->service->releaseClaims($stale, InvoiceRequestStatus::Rejected))
+        ->toThrow(InvalidInvoiceRequestTransitionException::class);
+    expect($stale->payments()->first()->claimed_payment_id)->toBe($payment->id);
+});
 
 it('enforces claim uniqueness in the database too', function (): void {
     $payment = paidAt($this->user, '2026-10-02 09:00');
