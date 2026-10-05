@@ -1798,6 +1798,32 @@ function authzMatrixRows(): array
         ...authzAccess($staff),
     ]);
 
+    // ------------------------- Admin: solicitudes de factura (invoices.manage, S4b)
+    $add('GET /admin/invoice-requests', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests',
+        'spec' => 'UNSPECIFIED — inferido: datos fiscales de terceros, permiso invoices.manage (solo admin)',
+        'must_not_leak' => ['candidate_owner' => [AUTHZ_S_INVOICE_RFC], 'candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/invoice-requests/{invoice_request}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin); el dueño usa /me/invoice-requests',
+        'must_not_leak' => ['candidate_owner' => [AUTHZ_S_INVOICE_RFC], 'recruiter' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/invoice-requests/{invoice_request}/status', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/status',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        'payload' => ['status' => 'in_progress'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/invoice-requests/{invoice_request}/notes', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/notes',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        'payload' => ['admin_notes' => 'Nota interna'],
+        ...authzAccess(['admin']),
+    ]);
+
     // ------------------------------- Admin: condiciones del contrato (admin only)
     $add('GET /admin/contract-settings', [
         'method' => 'GET', 'uri' => '/api/v1/admin/contract-settings',

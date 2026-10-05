@@ -129,6 +129,45 @@ class InvoiceRequestService
     }
 
     /**
+     * Admin status change. `issued` is deliberately unreachable here: the
+     * invoice files upload is the only way to issue.
+     *
+     * Releasing statuses free the claims and a rejection stores its reason in
+     * the same transaction.
+     *
+     * @return InvoiceRequestStatus the status the request had before
+     *
+     * @throws InvalidInvoiceRequestTransitionException
+     */
+    public function transition(InvoiceRequest $request, InvoiceRequestStatus $to, ?string $reason = null): InvoiceRequestStatus
+    {
+        if ($to === InvoiceRequestStatus::Issued) {
+            throw new InvalidArgumentException('Issued is only reachable by uploading the invoice files.');
+        }
+
+        return DB::transaction(function () use ($request, $to, $reason): InvoiceRequestStatus {
+            $locked = InvoiceRequest::query()->lockForUpdate()->findOrFail($request->id);
+            $from = $locked->status;
+
+            if ($to->releasesClaim()) {
+                $this->releaseClaims($locked, $to);
+            } elseif ($from->canTransitionTo($to)) {
+                $locked->update(['status' => $to]);
+            } else {
+                throw new InvalidInvoiceRequestTransitionException($from, $to);
+            }
+
+            if ($to === InvoiceRequestStatus::Rejected) {
+                $locked->update(['rejection_reason' => $reason]);
+            }
+
+            $request->setRawAttributes($locked->getAttributes(), true);
+
+            return $from;
+        });
+    }
+
+    /**
      * @param  list<int>  $ids
      * @param  Collection<int, Payment>  $eligible
      */

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLangua
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
 use App\Http\Controllers\Api\V1\Admin\ContractSettingController;
+use App\Http\Controllers\Api\V1\Admin\InvoiceRequestController as AdminInvoiceRequestController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\AttemptController as AdminPsychometricAttemptController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\CandidateResultsController as AdminPsychometricCandidateResultsController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\OptionController as AdminPsychometricOptionController;
@@ -655,6 +656,21 @@ Route::middleware($authenticated)->prefix('admin/contract-settings')->name('admi
         ->name('signature.store');
     Route::delete('/signature', [ContractSettingController::class, 'destroySignature'])
         ->name('signature.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admin: solicitudes de factura (CFDI)
+|--------------------------------------------------------------------------
+| Protegido por el permiso Spatie `invoices.manage` (lo crea una migración de
+| datos y el seeder; hoy sólo el rol admin lo tiene). `issued` NO se alcanza
+| con el cambio de estado: sólo al subir los archivos de la factura.
+*/
+Route::middleware($authenticated)->prefix('admin/invoice-requests')->name('admin.invoice-requests.')->group(function (): void {
+    Route::get('/', [AdminInvoiceRequestController::class, 'index'])->name('index');
+    Route::get('/{invoiceRequest}', [AdminInvoiceRequestController::class, 'show'])->name('show');
+    Route::patch('/{invoiceRequest}/status', [AdminInvoiceRequestController::class, 'updateStatus'])->name('status');
+    Route::patch('/{invoiceRequest}/notes', [AdminInvoiceRequestController::class, 'updateNotes'])->name('notes');
 });
 
 Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {

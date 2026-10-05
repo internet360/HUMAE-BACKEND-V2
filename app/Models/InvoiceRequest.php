@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $cfdi_use
  * @property string $email
  * @property string|null $rejection_reason
+ * @property string|null $admin_notes
  * @property Carbon|null $billing_notified_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -44,6 +45,7 @@ class InvoiceRequest extends Model
         'cfdi_use',
         'email',
         'rejection_reason',
+        'admin_notes',
         'billing_notified_at',
     ];
 

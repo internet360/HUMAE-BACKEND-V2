@@ -370,6 +370,23 @@ Los 16 endpoints de catálogos se cierran con el permiso Spatie `catalogs.manage
 posee — coherente con §6 «CRUD catálogos: Reclutador ❌». Los 6 de usuarios usan una comprobación de rol
 directa (`UserController::ensureAdmin()`).
 
+#### Solicitudes de factura — módulo admin (`invoices.manage`)
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/invoice-requests` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| GET | `/admin/invoice-requests/{invoiceRequest}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| PATCH | `/admin/invoice-requests/{invoiceRequest}/status` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| PATCH | `/admin/invoice-requests/{invoiceRequest}/notes` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+
+Se cierran con el permiso Spatie `invoices.manage` (FormRequest `can()` o `authorize()` en `show`), que una
+migración de datos idempotente y el seeder dan al rol `admin`; un futuro rol de facturación sólo necesita ese
+permiso. No hay habilidades nuevas de Policy: `InvoiceRequestPolicy::before` ahora concede por el permiso (ya
+no por el nombre del rol), y `view` sigue siendo la del dueño. El listado no incluye el RFC; el detalle sí
+(sólo para quien tiene el permiso). `issued` no se alcanza con `PATCH .../status` (422): sólo al subir los
+archivos (slice posterior). Rechazar exige motivo y libera los pagos reclamados. La bitácora
+`activity('invoice-requests')` registra id, estado anterior/nuevo, actor e IP, nunca el RFC ni las notas.
+
 ### 2.15 Salud y webhooks
 
 | Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |

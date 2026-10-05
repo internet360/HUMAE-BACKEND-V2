@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Enums\UserRole;
 use App\Models\InvoiceRequest;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
 
 /**
- * Only the owner reads their request; admins read everything. Ability names
+ * Only the owner reads their request; whoever holds `invoices.manage` reads everything. Ability names
  * must not collide with permission names (Spatie's Gate::before would
  * auto-approve them).
  */
@@ -18,7 +17,7 @@ class InvoiceRequestPolicy
 {
     public function before(User $user): ?bool
     {
-        return $user->hasRole(UserRole::Admin->value) ? true : null;
+        return $user->checkPermissionTo('invoices.manage') ? true : null;
     }
 
     /**
