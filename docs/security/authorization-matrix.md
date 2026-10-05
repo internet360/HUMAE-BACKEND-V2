@@ -132,6 +132,16 @@ a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efe
 | GET | `/me/membership` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
 | POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | ✔ |
 | GET | `/me/payments` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
+| GET | `/me/invoice-requests` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/eligible-payments` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| POST | `/me/invoice-requests` (`throttle:10,1`) | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/{invoiceRequest}` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+
+Solicitud de factura (CFDI): §5/§6 no la especifican (**UNSPECIFIED**). Inferencia: sólo el candidato paga la
+membresía, así que sólo él factura; `role:candidate` fronta las cuatro rutas y todo se acota al usuario
+autenticado. `GET /{invoiceRequest}` autoriza con `InvoiceRequestPolicy::view` (dueño; el admin pasa por
+`before` pero no llega: el módulo admin vive en `/admin/invoice-requests`, otra slice) y responde `403` a otro
+candidato. El RFC sólo se devuelve al dueño y nunca se escribe en logs.
 
 §5.3 titula la sección «Membership (auth)» sin acotar rol, y ambos `GET` se autoacotan al usuario
 autenticado (devuelven vacío para quien no tiene membresías ni pagos). `POST /checkout` sí está acotado por

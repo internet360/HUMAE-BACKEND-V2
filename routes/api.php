@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\V1\Candidate\CvController;
 use App\Http\Controllers\Api\V1\Candidate\DocumentController;
 use App\Http\Controllers\Api\V1\Candidate\EducationController;
 use App\Http\Controllers\Api\V1\Candidate\ExperienceController;
+use App\Http\Controllers\Api\V1\Candidate\InvoiceRequestController;
 use App\Http\Controllers\Api\V1\Candidate\LanguageController;
 use App\Http\Controllers\Api\V1\Candidate\MembershipController;
 use App\Http\Controllers\Api\V1\Candidate\NotificationController;
@@ -200,6 +201,16 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
         ->name('membership.checkout');
 
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
+
+    // Solicitud de factura (CFDI). Sólo candidatos; `eligible-payments` va antes
+    // de `{invoiceRequest}` para que no lo capture el binding. El dueño se
+    // resuelve con `InvoiceRequestPolicy::view`.
+    Route::middleware(RoleMiddleware::using([UserRole::Candidate]))->prefix('invoice-requests')->name('invoice-requests.')->group(function (): void {
+        Route::get('/', [InvoiceRequestController::class, 'index'])->name('index');
+        Route::get('/eligible-payments', [InvoiceRequestController::class, 'eligiblePayments'])->name('eligible-payments');
+        Route::post('/', [InvoiceRequestController::class, 'store'])->middleware('throttle:10,1')->name('store');
+        Route::get('/{invoiceRequest}', [InvoiceRequestController::class, 'show'])->name('show');
+    });
 
     /*
     |----------------------------------------------------------------------

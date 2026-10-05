@@ -31,6 +31,7 @@ use App\Models\FunctionalArea;
 use App\Models\Interview;
 use App\Models\InterviewRequest;
 use App\Models\InterviewRequestCandidate;
+use App\Models\InvoiceRequest;
 use App\Models\Language;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
@@ -93,6 +94,7 @@ const AUTHZ_S_CANDIDATE_B_ADDRESS = 'CALLE-SENTINEL-CANDIDATO-B-123';
 const AUTHZ_S_CANDIDATE_B_PHONE = '+52-555-SENTINEL-B';
 const AUTHZ_S_CANDIDATE_B_EMAIL = 'sentinel-candidato-b@humae.test';
 const AUTHZ_S_CANDIDATE_B_LASTNAME = 'ApellidoSentinelB';
+const AUTHZ_S_INVOICE_RFC = 'SENT010101AAA';
 const AUTHZ_S_CANDIDATE_A_CURP = 'CURPSENTINELA00001';
 const AUTHZ_S_CANDIDATE_A_ADDRESS = 'CALLE-SENTINEL-CANDIDATO-A-123';
 const AUTHZ_S_CANDIDATE_A_PHONE = '+52-555-SENTINEL-A';
@@ -141,6 +143,8 @@ const AUTHZ_GUARDED_TABLES = [
     'interviews',
     'candidate_profiles',
     'candidate_documents',
+    'invoice_requests',
+    'invoice_request_payments',
     'candidate_experiences',
     'candidate_educations',
     'candidate_courses',
@@ -183,6 +187,9 @@ const AUTHZ_POLICY_INVENTORY = [
         'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'viewAnonymousDirectory' => 'Http/Controllers/Api/V1/Company/AnonymousDirectoryController.php',
+    ],
+    'InvoiceRequestPolicy' => [
+        'view' => 'Http/Controllers/Api/V1/Candidate/InvoiceRequestController.php',
     ],
     'InterviewRequestPolicy' => [
         'viewAny' => 'Http/Controllers/Api/V1/Company/InterviewRequestController.php',
@@ -686,6 +693,11 @@ function authzBuildFixtures(): array
         ]);
     }
 
+    $invoiceRequest = InvoiceRequest::factory()->create([
+        'user_id' => $candidateOwner->id,
+        'rfc' => AUTHZ_S_INVOICE_RFC,
+    ]);
+
     $test = PsychometricTest::factory()->create(['is_active' => true]);
     $attempt = PsychometricAttempt::factory()->create([
         'candidate_profile_id' => $profileOwner->id,
@@ -797,6 +809,7 @@ function authzBuildFixtures(): array
             'interview' => $interview->id,
             'candidate' => $profileOther->id,
             'document' => $documentOwner->id,
+            'invoice_request' => $invoiceRequest->id,
             'document_other' => $documentOther->id,
             'experience' => $experience->id,
             'education' => $education->id,
@@ -1099,6 +1112,27 @@ function authzMatrixRows(): array
     $add('GET /me/payments', [
         'method' => 'GET', 'uri' => '/api/v1/me/payments', 'spec' => '§5.3 auth',
         ...authzAccess($authenticated),
+    ]);
+
+    // ----------------------------------------- Invoice requests (CFDI, S4a2)
+    $add('GET /me/invoice-requests', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests', 'spec' => 'UNSPECIFIED: role candidate (propio); inferencia: sólo el candidato paga y factura',
+        'must_not_leak' => ['candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/invoice-requests/eligible-payments', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/eligible-payments', 'spec' => 'UNSPECIFIED: role candidate (propio)',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('POST /me/invoice-requests', [
+        'method' => 'POST', 'uri' => '/api/v1/me/invoice-requests', 'spec' => 'UNSPECIFIED: role candidate; throttle 10/min',
+        // Empty payload: the role gate answers before validation (422 = reached the controller).
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/invoice-requests/{invoice_request}', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/{invoice_request}', 'spec' => 'UNSPECIFIED: role candidate (propio)',
+        'must_not_leak' => ['candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzCandidateSelfService(ownerOnly: true),
     ]);
 
     // ---------------------------------------------------- Psychometrics (§5.4)
