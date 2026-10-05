@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Enums\InvoiceRequestStatus;
 use App\Enums\PaymentStatus;
+use App\Events\PaymentReversed;
 use App\Helpers\StripeClient;
+use App\Listeners\FlagInvoiceForCancellation;
 use App\Models\InvoiceRequest;
 use App\Models\InvoiceRequestPayment;
 use App\Models\Payment;
@@ -12,6 +14,7 @@ use App\Models\User;
 use App\Notifications\BillingAlertNotification;
 use App\Services\InvoiceRequestService;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event as EventFacade;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Activitylog\Models\Activity;
@@ -270,4 +273,105 @@ it('does nothing for a reversed payment without an invoice request', function ()
 
     expect(Activity::where('log_name', 'invoice-requests')->count())->toBe(0);
     Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
+
+/** Attaches a second payment (same user) to the request, paid 2026-02-28 23:30 Mexico City. */
+function attachOtherPayment(InvoiceRequest $request, bool $claimHeld = true): Payment
+{
+    $other = Payment::factory()->create([
+        'user_id' => $request->user_id,
+        'amount' => 250,
+        'net_amount' => 250,
+        'status' => PaymentStatus::Succeeded,
+        'paid_at' => '2026-03-01 05:30:00',
+    ]);
+
+    InvoiceRequestPayment::create([
+        'invoice_request_id' => $request->id,
+        'payment_id' => $other->id,
+        'amount' => 250,
+        'paid_at' => $other->paid_at,
+        'claimed_payment_id' => $claimHeld ? $other->id : null,
+    ]);
+
+    return $other;
+}
+
+it('follows an admin CFDI upload that lands between the lookup and the lock', function (): void {
+    Notification::fake();
+    [$payment, $request] = invoicedPayment(InvoiceRequestStatus::Requested);
+
+    // The first read still sees `requested`; the upload commits right after it.
+    $armed = true;
+    InvoiceRequest::retrieved(function (InvoiceRequest $r) use (&$armed): void {
+        if (! $armed) {
+            return;
+        }
+        $armed = false;
+        DB::table('invoice_requests')->where('id', $r->id)->update([
+            'status' => InvoiceRequestStatus::Issued->value,
+            'cfdi_uuid' => REVERSAL_UUID,
+            'issued_at' => now(),
+        ]);
+    });
+
+    try {
+        app(FlagInvoiceForCancellation::class)->handle(new PaymentReversed($payment, 'refunded'));
+    } finally {
+        $armed = false;
+    }
+
+    expect($request->fresh()->status)->toBe(InvoiceRequestStatus::CancellationPending);
+    Notification::assertSentOnDemand(
+        BillingAlertNotification::class,
+        fn (BillingAlertNotification $n): bool => str_contains($n->body, REVERSAL_UUID) && ! str_contains($n->body, 'manual'),
+    );
+});
+
+it('lists the other payments of the request and warns they need a new CFDI when it is issued', function (): void {
+    Notification::fake();
+    [, $request] = invoicedPayment(InvoiceRequestStatus::Issued);
+    $other = attachOtherPayment($request);
+
+    invoiceReversalSend('evt_ir_m1', 'charge.refunded', invoiceReversalCharge(49900));
+
+    Notification::assertSentOnDemand(
+        BillingAlertNotification::class,
+        fn (BillingAlertNotification $n): bool => str_contains($n->body, REVERSAL_UUID)
+            && str_contains($n->body, "Payment {$other->id}")
+            && str_contains($n->body, '250.00')
+            && str_contains($n->body, '2026-02-28 23:30')
+            && str_contains($n->body, 'new CFDI')
+            && str_contains($n->body, 'deadline')
+            && ! str_contains($n->body, 'XXXX010101AAA'),
+    );
+});
+
+it('lists the released payments when an unissued request is rejected', function (): void {
+    Notification::fake();
+    [, $request] = invoicedPayment(InvoiceRequestStatus::Requested);
+    $other = attachOtherPayment($request);
+
+    invoiceReversalSend('evt_ir_m2', 'charge.refunded', invoiceReversalCharge(49900));
+
+    Notification::assertSentOnDemand(
+        BillingAlertNotification::class,
+        fn (BillingAlertNotification $n): bool => str_contains($n->body, 'rejected')
+            && str_contains($n->body, "Payment {$other->id}")
+            && str_contains($n->body, '250.00')
+            && str_contains($n->body, '2026-02-28 23:30')
+            && str_contains($n->body, 'released'),
+    );
+});
+
+it('adds no payment list when the request has a single payment', function (): void {
+    Notification::fake();
+    invoicedPayment(InvoiceRequestStatus::Issued);
+
+    invoiceReversalSend('evt_ir_m3', 'charge.refunded', invoiceReversalCharge(49900));
+
+    Notification::assertSentOnDemand(
+        BillingAlertNotification::class,
+        fn (BillingAlertNotification $n): bool => str_contains($n->body, REVERSAL_UUID) && ! str_contains($n->body, 'Other payments'),
+    );
 });
