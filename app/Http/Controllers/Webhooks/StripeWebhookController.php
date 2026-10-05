@@ -82,13 +82,24 @@ class StripeWebhookController extends Controller
             return $this->alreadyProcessed();
         }
 
-        if ($event->type === 'checkout.session.completed') {
+        if ($this->activatesPayment($event)) {
             /** @var CheckoutSession $session */
             $session = $event->data->object;
             $this->memberships->enrichFromStripe((string) $session->id);
         }
 
         return $this->success(message: 'Event processed.', data: ['type' => $event->type]);
+    }
+
+    /** Completed-and-paid, or a delayed method that has now been paid. */
+    private function activatesPayment(Event $event): bool
+    {
+        if ($event->type === 'checkout.session.async_payment_succeeded') {
+            return true;
+        }
+
+        return $event->type === 'checkout.session.completed'
+            && ($event->data->object->payment_status ?? null) === 'paid';
     }
 
     private function createdOf(Event $event): ?int
@@ -105,6 +116,7 @@ class StripeWebhookController extends Controller
     {
         switch ($event->type) {
             case 'checkout.session.completed':
+            case 'checkout.session.async_payment_succeeded':
                 /** @var CheckoutSession $session */
                 $session = $event->data->object;
                 $this->memberships->activateFromCheckoutSession($session);

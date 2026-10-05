@@ -352,6 +352,7 @@ it('retries a refund that arrives before the completion and converges afterwards
     sendStripeEvent('evt_ooo_done', 'checkout.session.completed', CheckoutSession::constructFrom([
         'id' => 'cs_ooo',
         'customer' => 'cus_ooo',
+        'payment_status' => 'paid',
         'payment_intent' => 'pi_ooo',
     ]));
 

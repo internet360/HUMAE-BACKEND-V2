@@ -45,7 +45,7 @@ function fakeWebhookClient(Event $event, ?Closure $retrieveSession = null, bool 
         public function __construct(
             ?string $secretKey,
             ?string $webhookSecret,
-            private readonly Event $event,
+            public Event $event,
             private readonly ?Closure $retrieveSession,
             private readonly bool $badSignature,
         ) {
@@ -97,6 +97,7 @@ function completedEvent(string $eventId, string $sessionId, string $paymentInten
         'data' => ['object' => CheckoutSession::constructFrom([
             'id' => $sessionId,
             'customer' => 'cus_'.$sessionId,
+            'payment_status' => 'paid',
             'payment_intent' => $paymentIntent,
         ])],
     ]);
@@ -125,6 +126,7 @@ it('activates the membership on checkout.session.completed', function (): void {
         'id' => 'cs_test_abc123',
         'customer' => 'cus_test_123',
         'payment_intent' => 'pi_test_123',
+        'payment_status' => 'paid',
     ]);
 
     $event = Event::constructFrom([
@@ -187,6 +189,7 @@ it('is idempotent when the same session completes twice', function (): void {
         'id' => 'cs_test_idem',
         'customer' => 'cus_test_idem',
         'payment_intent' => 'pi_test_idem',
+        'payment_status' => 'paid',
     ]);
 
     $event = Event::constructFrom([
@@ -316,6 +319,7 @@ it('never re-activates a payment that is no longer pending', function (string $s
         'id' => 'cs_test_guard_'.$status,
         'customer' => 'cus_guard',
         'payment_intent' => 'pi_guard_'.$status,
+        'payment_status' => 'paid',
     ]);
 
     $returned = app(MembershipService::class)->activateFromCheckoutSession($session);
@@ -334,6 +338,7 @@ function expandedSession(string $sessionId, string $paymentIntent, string $charg
     return CheckoutSession::constructFrom([
         'id' => $sessionId,
         'customer' => 'cus_'.$sessionId,
+        'payment_status' => 'paid',
         'payment_intent' => [
             'id' => $paymentIntent,
             'latest_charge' => ['id' => $chargeId, 'receipt_url' => $receiptUrl],
@@ -450,3 +455,70 @@ it('fills only the missing column when the charge has no receipt url', function 
     expect($payment->stripe_charge_id)->toBe('ch_partial')
         ->and($payment->receipt_url)->toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// Delayed payment methods (OXXO / SPEI)
+// ---------------------------------------------------------------------------
+
+function sessionEvent(string $eventId, string $type, string $sessionId, string $paymentStatus): Event
+{
+    return Event::constructFrom([
+        'id' => $eventId,
+        'type' => $type,
+        'livemode' => false,
+        'data' => ['object' => CheckoutSession::constructFrom([
+            'id' => $sessionId,
+            'customer' => 'cus_'.$sessionId,
+            'payment_status' => $paymentStatus,
+            'payment_intent' => 'pi_'.$sessionId,
+        ])],
+    ]);
+}
+
+it('leaves the payment pending when checkout completes with an unpaid delayed method', function (): void {
+    $payment = pendingPayment('cs_delayed');
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        sessionEvent('evt_delayed_done', 'checkout.session.completed', 'cs_delayed', 'unpaid')
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    expect($payment->fresh()->status)->toBe(PaymentStatus::Pending)
+        ->and($payment->fresh()->membership_id)->toBeNull()
+        ->and(Membership::count())->toBe(0);
+});
+
+it('activates a delayed-method payment once async_payment_succeeded arrives, idempotently', function (): void {
+    $payment = pendingPayment('cs_delayed2');
+
+    // The controller is cached on the route within a test: keep one fake, swap its event.
+    $client = fakeWebhookClient(sessionEvent('evt_delayed2_done', 'checkout.session.completed', 'cs_delayed2', 'unpaid'));
+    $this->app->instance(StripeClient::class, $client);
+    postStripeWebhook()->assertOk();
+    expect(Membership::count())->toBe(0);
+
+    $client->event = sessionEvent('evt_delayed2_ok', 'checkout.session.async_payment_succeeded', 'cs_delayed2', 'paid');
+    postStripeWebhook()->assertOk();
+
+    expect($payment->fresh()->status)->toBe(PaymentStatus::Succeeded)
+        ->and($payment->fresh()->stripe_payment_intent_id)->toBe('pi_cs_delayed2')
+        ->and(Membership::count())->toBe(1);
+
+    $client->event = sessionEvent('evt_delayed2_ok_again', 'checkout.session.async_payment_succeeded', 'cs_delayed2', 'paid');
+    postStripeWebhook()->assertOk();
+
+    expect(Membership::count())->toBe(1);
+});
+
+it('does not activate when the session payment status is not paid', function (string $status): void {
+    $payment = pendingPayment('cs_np_'.$status);
+
+    $returned = app(MembershipService::class)->activateFromCheckoutSession(CheckoutSession::constructFrom([
+        'id' => 'cs_np_'.$status,
+        'payment_status' => $status,
+        'payment_intent' => 'pi_np',
+    ]));
+
+    expect($returned->status)->toBe(PaymentStatus::Pending)
+        ->and(Membership::count())->toBe(0);
+})->with(['unpaid', 'no_payment_required']);

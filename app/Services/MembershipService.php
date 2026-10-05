@@ -134,6 +134,10 @@ class MembershipService
     /**
      * Marca el pago como `succeeded` y crea la membresía asociada,
      * calculando `expires_at` con base en `duration_days` del plan.
+     *
+     * Solo activa cuando Stripe confirma `payment_status === 'paid'`: con métodos
+     * diferidos (OXXO/SPEI) `checkout.session.completed` llega con `unpaid` y el
+     * pago queda Pending hasta `checkout.session.async_payment_succeeded`.
      */
     public function activateFromCheckoutSession(CheckoutSession $session): Payment
     {
@@ -151,6 +155,11 @@ class MembershipService
             // Only a pending payment may activate: a succeeded one is a replay, and a
             // refunded/failed one must never grant access again.
             if ($payment->status !== PaymentStatus::Pending) {
+                return $payment;
+            }
+
+            // Delayed methods: completed but not yet paid. Wait for the async event.
+            if (($session->payment_status ?? null) !== 'paid') {
                 return $payment;
             }
 
