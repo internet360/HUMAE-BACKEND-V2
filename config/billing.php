@@ -24,4 +24,25 @@ return [
     */
     'reversal_retry_window_hours' => (int) env('BILLING_REVERSAL_RETRY_WINDOW_HOURS', 24),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Billing timezone
+    |--------------------------------------------------------------------------
+    | The app runs in UTC; fiscal calendar boundaries (CFDI deadline) are
+    | computed in this timezone instead.
+    */
+    'timezone' => 'America/Mexico_City',
+
+    /*
+    |--------------------------------------------------------------------------
+    | CFDI request window
+    |--------------------------------------------------------------------------
+    | deadline: `same_month` (payment month in the billing timezone, default)
+    | or `days` (rolling window of deadline_days days).
+    */
+    'cfdi' => [
+        'deadline' => env('CFDI_DEADLINE', 'same_month'),
+        'deadline_days' => (int) env('CFDI_DEADLINE_DAYS', 30),
+    ],
+
 ];
