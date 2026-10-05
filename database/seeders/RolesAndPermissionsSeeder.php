@@ -78,6 +78,10 @@ class RolesAndPermissionsSeeder extends Seeder
         // Pruebas psicométricas (admin)
         'psychometric.manage',
 
+        // Facturación (CFDI): procesar solicitudes de factura. También lo crea la
+        // migración add_invoices_manage_permission (los deploys no corren db:seed).
+        'invoices.manage',
+
         // Reportes
         'reports.view-own',
         'reports.view-any',
