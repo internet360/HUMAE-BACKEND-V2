@@ -54,8 +54,9 @@ class PaymentReversalService
             }
 
             // Partial: remember the amount and ask billing to review; no revoke.
-            // A replay with the same amount changes nothing and stays silent.
-            if ((float) $payment->refund_amount === $refunded) {
+            // A replay or stale event (amount not above the stored one) changes nothing and stays silent.
+            // A stale (out-of-order) event carries a lower or equal total: ignore it.
+            if ($refunded <= (float) $payment->refund_amount) {
                 return;
             }
 
@@ -102,17 +103,28 @@ class PaymentReversalService
                 return;
             }
 
-            if ($dispute->status === 'lost') {
-                $this->revokeAccess($payment, 'dispute_lost');
+            // Every closed outcome (won, lost, warning_closed, charge_refunded) is
+            // terminal: the flag moves off `open` so billing never sees a stale one.
+            $metadata = [
+                ...($payment->metadata ?? []),
+                'dispute_status' => (string) $dispute->status,
+                'dispute_amount' => number_format(((int) ($dispute->amount ?? 0)) / 100, 2, '.', ''),
+            ];
+            $payment->forceFill(['metadata' => $metadata])->save();
+
+            if ($dispute->status !== 'lost') {
+                return;
+            }
+
+            if ($payment->status === PaymentStatus::Refunded) {
+                // Already refunded and now the dispute is lost too: the money may
+                // have left twice. A human must check; nothing else to revoke.
+                $this->alertBilling($payment, 'Dispute lost on a refunded payment', "Payment {$payment->id} was already refunded and its dispute was lost: possible double loss.");
 
                 return;
             }
 
-            if ($dispute->status === 'won') {
-                $metadata = $payment->metadata ?? [];
-                unset($metadata['dispute_status']);
-                $payment->forceFill(['metadata' => $metadata])->save();
-            }
+            $this->revokeAccess($payment, 'dispute_lost');
         });
     }
 
@@ -125,9 +137,12 @@ class PaymentReversalService
     }
 
     /**
-     * Idempotent: an already refunded payment is a no-op. Runs in one locked
-     * transaction; the membership goes Refunded and the candidate profile only
-     * leaves `activo` (advanced pipeline states are never demoted).
+     * Idempotent: an already refunded payment is a no-op. Runs in one transaction
+     * that locks only the payment row; the membership goes Refunded and the
+     * candidate profile only leaves `activo` (advanced pipeline states are never
+     * demoted). The audit amount never goes down: with a figure it is the max of
+     * the stored and the new one; without one (dispute lost) a stored partial
+     * refund is kept, otherwise the full price is recorded.
      */
     public function revokeAccess(Payment $payment, string $reason, ?string $refundAmount = null): void
     {
@@ -141,7 +156,7 @@ class PaymentReversalService
             $payment->forceFill([
                 'status' => PaymentStatus::Refunded->value,
                 'refunded_at' => now(),
-                'refund_amount' => $refundAmount ?? $payment->amount,
+                'refund_amount' => $this->auditRefundAmount($payment, $refundAmount),
                 'refund_reason' => $reason,
             ])->save();
 
@@ -161,6 +176,17 @@ class PaymentReversalService
 
             event(new PaymentReversed($payment, $reason));
         });
+    }
+
+    private function auditRefundAmount(Payment $payment, ?string $refundAmount): string
+    {
+        $stored = (float) $payment->refund_amount;
+
+        if ($refundAmount === null) {
+            return number_format($stored > 0 ? $stored : (float) $payment->amount, 2, '.', '');
+        }
+
+        return number_format(max($stored, (float) $refundAmount), 2, '.', '');
     }
 
     private function demoteProfile(int $userId, int $revokedMembershipId): void

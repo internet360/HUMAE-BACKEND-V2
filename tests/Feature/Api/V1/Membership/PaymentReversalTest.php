@@ -18,6 +18,7 @@ use App\Models\StripeWebhookEvent;
 use App\Models\User;
 use App\Notifications\BillingAlertNotification;
 use App\Services\MembershipService;
+use App\Services\PaymentReversalService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Event as EventFacade;
@@ -99,6 +100,7 @@ function disputeFor(string $status, string $pi = 'pi_rev', string $charge = 'ch_
         'charge' => $charge,
         'payment_intent' => $pi,
         'status' => $status,
+        'amount' => 49900,
         'metadata' => $metadata,
     ]);
 }
@@ -232,8 +234,67 @@ it('leaves access untouched and clears the flag when a dispute is won', function
 
     $payment->refresh();
     expect($payment->status)->toBe(PaymentStatus::Succeeded)
-        ->and($payment->metadata)->not->toHaveKey('dispute_status')
+        ->and($payment->metadata['dispute_status'] ?? null)->toBe('won')
         ->and($payment->membership->status)->toBe(MembershipStatus::Active);
+});
+
+it('records the terminal status for every closed dispute that does not revoke', function (string $closed): void {
+    Notification::fake();
+    $payment = paidCandidate();
+
+    sendStripeEvent('evt_dp_open_'.$closed, 'charge.dispute.created', disputeFor('needs_response'));
+    sendStripeEvent('evt_dp_closed_'.$closed, 'charge.dispute.closed', disputeFor($closed));
+
+    $payment->refresh();
+    expect($payment->metadata['dispute_status'])->toBe($closed)
+        ->and($payment->status)->toBe(PaymentStatus::Succeeded);
+})->with(['warning_closed', 'charge_refunded']);
+
+it('alerts billing when a dispute is lost on an already refunded payment', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+
+    sendStripeEvent('evt_dl_refund', 'charge.refunded', refundCharge(49900));
+    sendStripeEvent('evt_dl_lost', 'charge.dispute.closed', disputeFor('lost'));
+
+    expect($payment->fresh()->metadata['dispute_status'])->toBe('lost')
+        ->and($payment->fresh()->refund_reason)->toBe('refunded');
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 2);
+});
+
+it('ignores a stale partial refund event that carries a lower amount', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+
+    sendStripeEvent('evt_stale_a', 'charge.refunded', refundCharge(20000));
+    sendStripeEvent('evt_stale_b', 'charge.refunded', refundCharge(10000));
+
+    expect((float) $payment->fresh()->refund_amount)->toBe(200.0);
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
+
+it('keeps the stored partial refund when a dispute is later lost and records the dispute amount apart', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+
+    sendStripeEvent('evt_pd_refund', 'charge.refunded', refundCharge(10000));
+    sendStripeEvent('evt_pd_lost', 'charge.dispute.closed', disputeFor('lost'));
+
+    $payment->refresh();
+    expect($payment->status)->toBe(PaymentStatus::Refunded)
+        ->and((float) $payment->refund_amount)->toBe(100.0)
+        ->and($payment->refund_reason)->toBe('dispute_lost')
+        ->and((float) $payment->metadata['dispute_amount'])->toBe(499.0);
+});
+
+it('never lowers the stored refund amount when revoking', function (): void {
+    Notification::fake();
+    $payment = paidCandidate();
+    $payment->update(['refund_amount' => 600]);
+
+    app(PaymentReversalService::class)->revokeAccess($payment, 'refunded', '499.00');
+
+    expect((float) $payment->fresh()->refund_amount)->toBe(600.0);
 });
 
 it('keeps an advanced pipeline state when revoking', function (): void {
