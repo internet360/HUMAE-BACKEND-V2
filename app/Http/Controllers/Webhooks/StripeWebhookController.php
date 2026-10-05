@@ -8,12 +8,15 @@ use App\Helpers\StripeClient;
 use App\Http\Controllers\Controller;
 use App\Models\StripeWebhookEvent;
 use App\Services\MembershipService;
+use App\Services\PaymentReversalService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Stripe\Charge;
 use Stripe\Checkout\Session as CheckoutSession;
+use Stripe\Dispute;
 use Stripe\Event;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
 use Throwable;
@@ -24,6 +27,7 @@ class StripeWebhookController extends Controller
     public function __construct(
         private readonly StripeClient $stripe,
         private readonly MembershipService $memberships,
+        private readonly PaymentReversalService $reversals,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -99,6 +103,31 @@ class StripeWebhookController extends Controller
                 /** @var CheckoutSession $session */
                 $session = $event->data->object;
                 $this->memberships->activateFromCheckoutSession($session);
+                break;
+
+            case 'checkout.session.async_payment_failed':
+            case 'checkout.session.expired':
+                /** @var CheckoutSession $session */
+                $session = $event->data->object;
+                $this->reversals->failPendingCheckout($session);
+                break;
+
+            case 'charge.refunded':
+                /** @var Charge $charge */
+                $charge = $event->data->object;
+                $this->reversals->handleRefund($charge);
+                break;
+
+            case 'charge.dispute.created':
+                /** @var Dispute $dispute */
+                $dispute = $event->data->object;
+                $this->reversals->handleDisputeCreated($dispute);
+                break;
+
+            case 'charge.dispute.closed':
+                /** @var Dispute $dispute */
+                $dispute = $event->data->object;
+                $this->reversals->handleDisputeClosed($dispute);
                 break;
 
             default:
