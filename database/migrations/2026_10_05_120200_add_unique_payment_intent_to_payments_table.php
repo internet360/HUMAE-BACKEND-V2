@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const PLAIN = 'payments_stripe_payment_intent_id_index';
+
+    private const UNIQUE = 'payments_stripe_payment_intent_id_unique';
+
     public function up(): void
     {
         $duplicates = DB::table('payments')
@@ -27,17 +31,34 @@ return new class extends Migration
             );
         }
 
-        Schema::table('payments', function (Blueprint $t): void {
-            $t->dropIndex(['stripe_payment_intent_id']);
-            $t->unique('stripe_payment_intent_id');
-        });
+        // Add the unique index BEFORE dropping the plain one: DDL implicitly commits in MySQL, so if the
+        // unique ALTER fails the column must keep its old index. Each step is tolerant so a re-run is safe.
+        if (! Schema::hasIndex('payments', self::UNIQUE)) {
+            Schema::table('payments', function (Blueprint $t): void {
+                $t->unique('stripe_payment_intent_id');
+            });
+        }
+
+        if (Schema::hasIndex('payments', self::PLAIN)) {
+            Schema::table('payments', function (Blueprint $t): void {
+                $t->dropIndex(self::PLAIN);
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('payments', function (Blueprint $t): void {
-            $t->dropUnique(['stripe_payment_intent_id']);
-            $t->index('stripe_payment_intent_id');
-        });
+        // Mirror of up(): restore the plain index first so the column is never left unindexed.
+        if (! Schema::hasIndex('payments', self::PLAIN)) {
+            Schema::table('payments', function (Blueprint $t): void {
+                $t->index('stripe_payment_intent_id', self::PLAIN);
+            });
+        }
+
+        if (Schema::hasIndex('payments', self::UNIQUE)) {
+            Schema::table('payments', function (Blueprint $t): void {
+                $t->dropUnique(self::UNIQUE);
+            });
+        }
     }
 };
