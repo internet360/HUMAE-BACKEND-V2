@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\CfdiDeadlinePolicy;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 
 it('opens the same-month window at the start of the month in Mexico City, in UTC', function (): void {
@@ -39,3 +40,15 @@ it('falls back to same month for an unknown mode', function (): void {
 
     expect($start->toDateTimeString())->toBe('2026-10-01 06:00:00');
 });
+
+it('accepts an immutable clock for both window computations', function (string $mode, string $expected): void {
+    config(['billing.cfdi.deadline' => $mode, 'billing.cfdi.deadline_days' => 10]);
+    $policy = new CfdiDeadlinePolicy;
+    $now = CarbonImmutable::parse('2026-10-14 18:00:00', 'UTC');
+
+    expect($policy->windowStart($now)->toDateTimeString())->toBe($expected)
+        ->and($policy->allows(CarbonImmutable::parse($expected, 'UTC'), $now))->toBeTrue();
+})->with([
+    'same month' => ['same_month', '2026-10-01 06:00:00'],
+    'rolling days' => ['days', '2026-10-04 18:00:00'],
+]);

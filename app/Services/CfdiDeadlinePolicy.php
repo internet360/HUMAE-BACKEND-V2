@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
 /**
@@ -15,7 +16,7 @@ use Illuminate\Support\Carbon;
  */
 class CfdiDeadlinePolicy
 {
-    public function windowStart(?Carbon $now = null): CarbonImmutable
+    public function windowStart(?CarbonInterface $now = null): CarbonImmutable
     {
         $now = CarbonImmutable::instance($now ?? Carbon::now());
 
@@ -26,7 +27,7 @@ class CfdiDeadlinePolicy
         return $now->setTimezone((string) config('billing.timezone'))->startOfMonth()->utc();
     }
 
-    public function allows(Carbon $paidAt, ?Carbon $now = null): bool
+    public function allows(CarbonInterface $paidAt, ?CarbonInterface $now = null): bool
     {
         return $paidAt->greaterThanOrEqualTo($this->windowStart($now));
     }
