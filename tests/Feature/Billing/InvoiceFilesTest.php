@@ -148,6 +148,31 @@ describe('upload validation', function (): void {
         'nul byte' => [fn () => str_replace('Ana Fiscal', "Ana\0Fiscal", cfdiXml())],
     ]);
 
+    it('anchors the checks to the sat 4.0 structure', function (string $xml): void {
+        uploadFiles($this->request, cfdiFiles($xml))->assertUnprocessable()->assertJsonValidationErrors(['xml']);
+
+        expect(Storage::disk('local')->allFiles())->toBeEmpty()
+            ->and($this->request->fresh()->status)->toBe(InvoiceRequestStatus::Requested);
+    })->with([
+        'receptor outside the comprobante children' => fn () => str_replace(
+            '<cfdi:Receptor Rfc="'.FILES_RFC.'" Nombre="Ana Fiscal" UsoCFDI="G03"/>',
+            '<cfdi:Receptor Rfc="OTRO010101AAA" Nombre="X" UsoCFDI="G03"/><cfdi:Conceptos><cfdi:Concepto><cfdi:Receptor Rfc="'.FILES_RFC.'"/></cfdi:Concepto></cfdi:Conceptos>',
+            cfdiXml(),
+        ),
+        'decoy stamp outside complemento' => fn () => str_replace(
+            '<cfdi:Complemento>'.'<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="1.1" UUID="'.FILES_UUID.'"/></cfdi:Complemento>',
+            '<cfdi:Addenda><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'.FILES_UUID.'"/></cfdi:Addenda><cfdi:Complemento/>',
+            cfdiXml(),
+        ),
+        'wrong comprobante namespace' => fn () => str_replace('http://www.sat.gob.mx/cfd/4', 'http://example.com/cfd/4', cfdiXml()),
+        'cfdi 3.3 namespace' => fn () => str_replace('http://www.sat.gob.mx/cfd/4', 'http://www.sat.gob.mx/cfd/3', cfdiXml()),
+        'wrong stamp namespace' => fn () => str_replace('http://www.sat.gob.mx/TimbreFiscalDigital', 'http://example.com/tfd', cfdiXml()),
+        'two receptores' => fn () => str_replace('<cfdi:Complemento>', '<cfdi:Receptor Rfc="'.FILES_RFC.'" Nombre="Dos" UsoCFDI="G03"/><cfdi:Complemento>', cfdiXml()),
+        'two stamps' => fn () => str_replace('</cfdi:Complemento>', '<tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="11111111-2222-4333-8444-555555555555"/></cfdi:Complemento>', cfdiXml()),
+        'missing version' => fn () => str_replace(' Version="4.0"', '', cfdiXml()),
+        'version 3.3' => fn () => str_replace('Version="4.0"', 'Version="3.3"', cfdiXml()),
+    ]);
+
     it('rejects an xml without the stamp uuid', function (): void {
         uploadFiles($this->request, cfdiFiles(cfdiXml(uuid: null)))->assertUnprocessable()->assertJsonValidationErrors(['xml']);
     });

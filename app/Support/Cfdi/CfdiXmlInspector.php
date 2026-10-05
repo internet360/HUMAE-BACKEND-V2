@@ -19,6 +19,10 @@ use DOMXPath;
  */
 class CfdiXmlInspector
 {
+    private const CFDI_NS = 'http://www.sat.gob.mx/cfd/4';
+
+    private const TFD_NS = 'http://www.sat.gob.mx/TimbreFiscalDigital';
+
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     /**
@@ -52,13 +56,21 @@ class CfdiXmlInspector
             libxml_use_internal_errors($previous);
         }
 
-        if ($dom->doctype !== null || $dom->documentElement?->localName !== 'Comprobante') {
-            throw new InvalidCfdiXmlException('El archivo no es un CFDI (se esperaba el nodo Comprobante).');
+        $root = $dom->documentElement;
+
+        if ($dom->doctype !== null
+            || $root?->localName !== 'Comprobante'
+            || $root->namespaceURI !== self::CFDI_NS
+            || $root->getAttribute('Version') !== '4.0') {
+            throw new InvalidCfdiXmlException('El archivo no es un CFDI 4.0 (se esperaba el nodo cfdi:Comprobante, versión 4.0).');
         }
 
         $xpath = new DOMXPath($dom);
-        $rfc = $this->attribute($xpath, '//*[local-name()="Receptor"]/@Rfc');
-        $uuid = $this->attribute($xpath, '//*[local-name()="TimbreFiscalDigital"]/@UUID');
+        $xpath->registerNamespace('cfdi', self::CFDI_NS);
+        $xpath->registerNamespace('tfd', self::TFD_NS);
+
+        $rfc = $this->attribute($xpath, '/cfdi:Comprobante/cfdi:Receptor/@Rfc');
+        $uuid = $this->attribute($xpath, '/cfdi:Comprobante/cfdi:Complemento/tfd:TimbreFiscalDigital/@UUID');
 
         if ($rfc === null) {
             throw new InvalidCfdiXmlException('El XML no trae el RFC del receptor.');
@@ -68,13 +80,19 @@ class CfdiXmlInspector
             throw new InvalidCfdiXmlException('El XML no trae un UUID de timbre fiscal válido (¿está timbrado?).');
         }
 
-        return ['rfc' => strtoupper(trim($rfc)), 'uuid' => strtolower($uuid)];
+        return ['rfc' => mb_strtoupper(trim($rfc)), 'uuid' => strtolower($uuid)];
     }
 
+    /** Null unless the query matches exactly one attribute (an ambiguous document is not trusted). */
     private function attribute(DOMXPath $xpath, string $query): ?string
     {
         $nodes = $xpath->query($query);
-        $node = $nodes === false ? null : $nodes->item(0);
+
+        if ($nodes === false || $nodes->length !== 1) {
+            return null;
+        }
+
+        $node = $nodes->item(0);
 
         return $node instanceof DOMAttr ? trim($node->value) : null;
     }
