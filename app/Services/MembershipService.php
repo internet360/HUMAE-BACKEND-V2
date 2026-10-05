@@ -121,8 +121,13 @@ class MembershipService
         }
 
         return DB::transaction(function () use ($payment, $session): Payment {
-            if ($payment->status === PaymentStatus::Succeeded) {
-                return $payment; // idempotente: webhook puede dispararse múltiples veces
+            // Re-read under lock so a concurrent delivery cannot act on stale state.
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            // Only a pending payment may activate: a succeeded one is a replay, and a
+            // refunded/failed one must never grant access again.
+            if ($payment->status !== PaymentStatus::Pending) {
+                return $payment;
             }
 
             $plan = $payment->plan;

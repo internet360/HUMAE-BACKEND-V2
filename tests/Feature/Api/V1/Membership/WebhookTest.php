@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\SalaryCurrency;
 use App\Models\StripeWebhookEvent;
 use App\Models\User;
+use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -301,3 +302,24 @@ it('records unknown event types and still answers 200 without side effects', fun
     expect(StripeWebhookEvent::where('event_id', 'evt_unknown')->count())->toBe(1)
         ->and(Membership::count())->toBe(0);
 });
+
+// ---------------------------------------------------------------------------
+// Re-activation guard (membership-checkout: replayed completion)
+// ---------------------------------------------------------------------------
+
+it('never re-activates a payment that is no longer pending', function (string $status): void {
+    $payment = pendingPayment('cs_test_guard_'.$status);
+    Payment::whereKey($payment->id)->update(['status' => $status]);
+
+    $session = CheckoutSession::constructFrom([
+        'id' => 'cs_test_guard_'.$status,
+        'customer' => 'cus_guard',
+        'payment_intent' => 'pi_guard_'.$status,
+    ]);
+
+    $returned = app(MembershipService::class)->activateFromCheckoutSession($session);
+
+    expect($returned->status->value)->toBe($status)
+        ->and(Membership::count())->toBe(0)
+        ->and($payment->refresh()->stripe_payment_intent_id)->toBeNull();
+})->with(['refunded', 'failed', 'succeeded']);
