@@ -20,8 +20,10 @@ use App\Notifications\MembershipExpiringNotification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
+use Throwable;
 
 class MembershipService
 {
@@ -37,6 +39,7 @@ class MembershipService
     public function __construct(
         private readonly StripeClient $stripe,
         private readonly ProfileService $profiles,
+        private readonly StripeCustomerService $customers,
     ) {}
 
     /**
@@ -58,12 +61,14 @@ class MembershipService
                 : (string) config('services.stripe.currency', 'mxn')
         );
 
+        $customerId = $this->customers->ensureFor($user);
+
         // price_data inline — Stripe genera un product/price efímero por sesión
         $session = $this->stripe->createCheckoutSession([
             'mode' => 'payment',
             'success_url' => $successUrl,
             'cancel_url' => $cancelUrl,
-            'customer_email' => $user->email,
+            'customer' => $customerId,
             'client_reference_id' => (string) $user->id,
             'line_items' => [[
                 'quantity' => 1,

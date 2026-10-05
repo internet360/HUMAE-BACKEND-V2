@@ -6,6 +6,7 @@ namespace App\Helpers;
 
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
+use Stripe\Customer;
 use Stripe\Event;
 use Stripe\StripeClient as StripeSdkClient;
 use Stripe\Webhook;
@@ -31,6 +32,16 @@ class StripeClient
     public function createCheckoutSession(array $params): CheckoutSession
     {
         return $this->sdk()->checkout->sessions->create($params);
+    }
+
+    /**
+     * The idempotency key makes a retried call return the original customer.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    public function createCustomer(array $params, string $idempotencyKey): Customer
+    {
+        return $this->sdk()->customers->create($params, ['idempotency_key' => $idempotencyKey]);
     }
 
     /**
