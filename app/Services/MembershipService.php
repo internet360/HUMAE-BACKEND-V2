@@ -217,10 +217,22 @@ class MembershipService
                 return;
             }
 
-            Payment::where('stripe_session_id', $sessionId)->update([
-                'stripe_charge_id' => is_string($charge->id ?? null) ? $charge->id : null,
-                'receipt_url' => is_string($charge->receipt_url ?? null) ? $charge->receipt_url : null,
-            ]);
+            // Fill-only: a column is written only when Stripe sent a value AND
+            // it is still NULL, so a replay can never erase or rewrite data.
+            $values = [
+                'stripe_charge_id' => is_string($charge->id ?? null) && $charge->id !== '' ? $charge->id : null,
+                'receipt_url' => is_string($charge->receipt_url ?? null) && $charge->receipt_url !== '' ? $charge->receipt_url : null,
+            ];
+
+            foreach ($values as $column => $value) {
+                if ($value === null) {
+                    continue;
+                }
+
+                Payment::where('stripe_session_id', $sessionId)
+                    ->whereNull($column)
+                    ->update([$column => $value]);
+            }
         } catch (Throwable $e) {
             Log::warning('Stripe charge enrichment failed.', [
                 'session_id' => $sessionId,

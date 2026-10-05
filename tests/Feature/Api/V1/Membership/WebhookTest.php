@@ -408,3 +408,45 @@ it('does not call Stripe again for a replayed event', function (): void {
 
     expect($calls)->toBe(1);
 });
+
+it('never overwrites stored charge data with nulls or new values during enrichment', function (): void {
+    $payment = pendingPayment('cs_test_enrich_keep');
+    $payment->forceFill([
+        'stripe_charge_id' => 'ch_original',
+        'receipt_url' => 'https://pay.stripe.com/receipts/original',
+    ])->save();
+    $event = completedEvent('evt_enrich_keep', 'cs_test_enrich_keep', 'pi_enrich_keep');
+
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        $event,
+        fn (string $id): CheckoutSession => CheckoutSession::constructFrom([
+            'id' => $id,
+            'payment_intent' => ['id' => 'pi_enrich_keep', 'latest_charge' => ['id' => 'ch_other', 'receipt_url' => null]],
+        ]),
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    $payment->refresh();
+    expect($payment->stripe_charge_id)->toBe('ch_original')
+        ->and($payment->receipt_url)->toBe('https://pay.stripe.com/receipts/original');
+});
+
+it('fills only the missing column when the charge has no receipt url', function (): void {
+    $payment = pendingPayment('cs_test_enrich_partial');
+    $event = completedEvent('evt_enrich_partial', 'cs_test_enrich_partial', 'pi_enrich_partial');
+
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        $event,
+        fn (string $id): CheckoutSession => CheckoutSession::constructFrom([
+            'id' => $id,
+            'payment_intent' => ['id' => 'pi_enrich_partial', 'latest_charge' => ['id' => 'ch_partial']],
+        ]),
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    $payment->refresh();
+    expect($payment->stripe_charge_id)->toBe('ch_partial')
+        ->and($payment->receipt_url)->toBeNull();
+});
