@@ -97,6 +97,20 @@ it('creates a Stripe Checkout Session and a pending Payment', function (): void 
     expect($payment->stripe_session_id)->toBe('cs_test_abc123');
 });
 
+it('tags the payment intent so reversal webhooks can tell our charges apart', function (): void {
+    $user = User::factory()->create();
+    $user->assignRole(UserRole::Candidate->value);
+    Sanctum::actingAs($user);
+
+    $stripe = fakeStripeClient();
+    $this->app->instance(StripeClient::class, $stripe);
+
+    $this->postJson('/api/v1/me/membership/checkout')->assertCreated();
+
+    expect($stripe->sessionParams['payment_intent_data']['metadata']['app'])->toBe('humae')
+        ->and($stripe->sessionParams['metadata']['user_id'])->toBe((string) $user->id);
+});
+
 it('creates one Stripe customer per user and attaches it to the session', function (): void {
     $user = User::factory()->create();
     $user->assignRole(UserRole::Candidate->value);

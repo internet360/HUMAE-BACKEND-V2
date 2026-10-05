@@ -66,35 +66,40 @@ function reversalClient(Event $event): StripeClient
     return $fake;
 }
 
-function sendStripeEvent(string $id, string $type, object $object): void
+function sendStripeEvent(string $id, string $type, object $object, ?int $created = null): void
 {
     reversalClient(Event::constructFrom([
         'id' => $id,
         'type' => $type,
         'livemode' => false,
+        'created' => $created ?? time(),
         'data' => ['object' => $object],
     ]));
 
     test()->postJson('/api/v1/webhooks/stripe', [], ['Stripe-Signature' => 't=0,v1=fake'])->assertOk();
 }
 
-function refundCharge(int $refundedCents, string $pi = 'pi_rev', string $charge = 'ch_rev'): Charge
+/** @param  array<string, string>  $metadata */
+function refundCharge(int $refundedCents, string $pi = 'pi_rev', string $charge = 'ch_rev', array $metadata = ['app' => 'humae']): Charge
 {
     return Charge::constructFrom([
         'id' => $charge,
         'payment_intent' => $pi,
         'amount' => 49900,
         'amount_refunded' => $refundedCents,
+        'metadata' => $metadata,
     ]);
 }
 
-function disputeFor(string $status, string $pi = 'pi_rev', string $charge = 'ch_rev'): Dispute
+/** @param  array<string, string>  $metadata */
+function disputeFor(string $status, string $pi = 'pi_rev', string $charge = 'ch_rev', array $metadata = ['app' => 'humae']): Dispute
 {
     return Dispute::constructFrom([
         'id' => 'dp_rev',
         'charge' => $charge,
         'payment_intent' => $pi,
         'status' => $status,
+        'metadata' => $metadata,
     ]);
 }
 
@@ -276,7 +281,8 @@ it('matches by charge id when the payment intent is unknown and backfills the in
 
     sendStripeEvent('evt_bycharge', 'charge.refunded', refundCharge(49900, pi: 'pi_other'));
 
-    expect($payment->fresh()->status)->toBe(PaymentStatus::Refunded);
+    expect($payment->fresh()->status)->toBe(PaymentStatus::Refunded)
+        ->and($payment->fresh()->stripe_payment_intent_id)->toBe('pi_other');
 });
 
 it('backfills the charge id when matching by payment intent', function (): void {
@@ -373,4 +379,52 @@ it('does not fail the webhook when no billing address is configured', function (
 
     expect($payment->fresh()->status)->toBe(PaymentStatus::Refunded);
     Notification::assertNothingSent();
+});
+
+it('acks reversal events for charges this app never created without retrying', function (string $type): void {
+    Notification::fake();
+    $foreign = $type === 'charge.refunded'
+        ? refundCharge(49900, 'pi_foreign', 'ch_foreign', [])
+        : disputeFor('lost', 'pi_foreign', 'ch_foreign', ['app' => 'other']);
+
+    sendStripeEvent('evt_foreign_'.$type, $type, $foreign);
+
+    expect(StripeWebhookEvent::where('event_id', 'evt_foreign_'.$type)->exists())->toBeTrue();
+    Notification::assertNothingSent();
+})->with(['charge.refunded', 'charge.dispute.closed', 'charge.dispute.created']);
+
+it('keeps retrying our own unmatched charge while the event is inside the retry window', function (): void {
+    Notification::fake();
+    config(['billing.reversal_retry_window_hours' => 24]);
+
+    reversalClient(Event::constructFrom([
+        'id' => 'evt_young',
+        'type' => 'charge.refunded',
+        'livemode' => false,
+        'created' => time() - 3600,
+        'data' => ['object' => refundCharge(49900, 'pi_young', 'ch_young')],
+    ]));
+
+    test()->postJson('/api/v1/webhooks/stripe', [], ['Stripe-Signature' => 't=0,v1=fake'])->assertStatus(500);
+    expect(StripeWebhookEvent::where('event_id', 'evt_young')->exists())->toBeFalse();
+    Notification::assertNothingSent();
+});
+
+it('gives up on our own unmatched charge after the retry window, alerting billing', function (): void {
+    Notification::fake();
+    config(['billing.reversal_retry_window_hours' => 24]);
+
+    sendStripeEvent('evt_old', 'charge.refunded', refundCharge(49900, 'pi_old', 'ch_old'), time() - 25 * 3600);
+
+    expect(StripeWebhookEvent::where('event_id', 'evt_old')->exists())->toBeTrue();
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
+
+it('honours a configured retry window', function (): void {
+    Notification::fake();
+    config(['billing.reversal_retry_window_hours' => 1]);
+
+    sendStripeEvent('evt_short', 'charge.refunded', refundCharge(49900, 'pi_short', 'ch_short'), time() - 2 * 3600);
+
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
 });

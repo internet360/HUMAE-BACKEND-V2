@@ -19,6 +19,7 @@ use RuntimeException;
 use Stripe\Charge;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Dispute;
+use Stripe\StripeObject;
 
 /**
  * Refunds, disputes and failed checkouts.
@@ -29,10 +30,16 @@ use Stripe\Dispute;
  */
 class PaymentReversalService
 {
-    public function handleRefund(Charge $charge): void
+    public function handleRefund(Charge $charge, ?int $eventCreated = null): void
     {
-        DB::transaction(function () use ($charge): void {
+        DB::transaction(function () use ($charge, $eventCreated): void {
             $payment = $this->lockPayment($this->idOf($charge->payment_intent ?? null), $this->idOf($charge->id ?? null));
+
+            if ($payment === null) {
+                $this->handleUnmatched($charge, 'charge.refunded', $eventCreated);
+
+                return;
+            }
 
             if ($payment->status === PaymentStatus::Refunded) {
                 return;
@@ -61,10 +68,16 @@ class PaymentReversalService
         });
     }
 
-    public function handleDisputeCreated(Dispute $dispute): void
+    public function handleDisputeCreated(Dispute $dispute, ?int $eventCreated = null): void
     {
-        DB::transaction(function () use ($dispute): void {
+        DB::transaction(function () use ($dispute, $eventCreated): void {
             $payment = $this->lockPayment($this->idOf($dispute->payment_intent ?? null), $this->idOf($dispute->charge ?? null));
+
+            if ($payment === null) {
+                $this->handleUnmatched($dispute, 'charge.dispute.created', $eventCreated);
+
+                return;
+            }
 
             if (($payment->metadata['dispute_status'] ?? null) === 'open') {
                 return;
@@ -78,10 +91,16 @@ class PaymentReversalService
         });
     }
 
-    public function handleDisputeClosed(Dispute $dispute): void
+    public function handleDisputeClosed(Dispute $dispute, ?int $eventCreated = null): void
     {
-        DB::transaction(function () use ($dispute): void {
+        DB::transaction(function () use ($dispute, $eventCreated): void {
             $payment = $this->lockPayment($this->idOf($dispute->payment_intent ?? null), $this->idOf($dispute->charge ?? null));
+
+            if ($payment === null) {
+                $this->handleUnmatched($dispute, 'charge.dispute.closed', $eventCreated);
+
+                return;
+            }
 
             if ($dispute->status === 'lost') {
                 $this->revokeAccess($payment, 'dispute_lost');
@@ -164,11 +183,12 @@ class PaymentReversalService
     }
 
     /**
-     * Matches by payment intent first, then charge, and backfills the charge id.
-     * Not found (e.g. refund delivered before the completion) throws so the webhook
-     * answers 500, drops the dedup row, and Stripe redelivers after completion.
+     * Matches by payment intent first, then charge. Backfills the charge id and,
+     * when the payment has none yet, the intent id (unless another payment already
+     * owns that intent: the column is unique, so we only log). Returns null when
+     * nothing matches; the caller decides between retrying and acking.
      */
-    private function lockPayment(?string $paymentIntentId, ?string $chargeId): Payment
+    private function lockPayment(?string $paymentIntentId, ?string $chargeId): ?Payment
     {
         $payment = null;
 
@@ -181,14 +201,74 @@ class PaymentReversalService
         }
 
         if ($payment === null) {
-            throw new RuntimeException("No payment found for payment intent {$paymentIntentId} / charge {$chargeId}");
+            return null;
         }
 
+        $backfill = [];
+
         if ($payment->stripe_charge_id === null && $chargeId !== null) {
-            $payment->forceFill(['stripe_charge_id' => $chargeId])->save();
+            $backfill['stripe_charge_id'] = $chargeId;
+        }
+
+        if ($payment->stripe_payment_intent_id === null && $paymentIntentId !== null) {
+            if (Payment::where('stripe_payment_intent_id', $paymentIntentId)->whereKeyNot($payment->id)->exists()) {
+                Log::warning('Payment intent already linked to another payment; skipping backfill.', [
+                    'payment_id' => $payment->id,
+                    'payment_intent' => $paymentIntentId,
+                ]);
+            } else {
+                $backfill['stripe_payment_intent_id'] = $paymentIntentId;
+            }
+        }
+
+        if ($backfill !== []) {
+            $payment->forceFill($backfill)->save();
         }
 
         return $payment;
+    }
+
+    /**
+     * No payment matched. Objects not tagged `app=humae` belong to someone else
+     * (another integration on the same Stripe account): ack, never retry. Ours
+     * may simply have arrived before the completion, so keep failing (Stripe
+     * retries) only while the event is younger than the configured window; past
+     * it, escalate to billing and ack so the endpoint is not disabled by an
+     * endless 500 loop.
+     */
+    private function handleUnmatched(object $object, string $eventType, ?int $eventCreated): void
+    {
+        $context = ['event_type' => $eventType, 'object_id' => $this->idOf($object->id ?? null)];
+
+        if ($this->metadataApp($object) !== 'humae') {
+            Log::info('Stripe reversal event ignored: not a charge created by this app.', $context);
+
+            return;
+        }
+
+        $windowHours = (int) config('billing.reversal_retry_window_hours', 24);
+        $ageSeconds = $eventCreated === null ? 0 : max(0, now()->getTimestamp() - $eventCreated);
+
+        if ($ageSeconds <= $windowHours * 3600) {
+            throw new RuntimeException("No payment found for {$eventType} object {$context['object_id']}");
+        }
+
+        Log::error('Stripe reversal event for our charge never matched a payment; giving up.', $context + ['age_hours' => intdiv($ageSeconds, 3600)]);
+
+        $this->alertBilling(null, 'Unmatched payment reversal', "Stripe {$eventType} for {$context['object_id']} (tagged as ours) matched no payment after {$windowHours}h of retries. Review it manually.");
+    }
+
+    private function metadataApp(object $object): ?string
+    {
+        $metadata = $object->metadata ?? null;
+
+        if (! $metadata instanceof StripeObject) {
+            return null;
+        }
+
+        $app = $metadata['app'] ?? null;
+
+        return is_string($app) ? $app : null;
     }
 
     private function idOf(mixed $value): ?string
@@ -196,13 +276,13 @@ class PaymentReversalService
         return is_object($value) ? (string) ($value->id ?? '') : (is_string($value) ? $value : null);
     }
 
-    private function alertBilling(Payment $payment, string $subject, string $body): void
+    private function alertBilling(?Payment $payment, string $subject, string $body): void
     {
         $address = config('billing.email');
 
         if (! is_string($address) || $address === '') {
             Log::warning('Billing alert skipped: BILLING_EMAIL is not configured.', [
-                'payment_id' => $payment->id,
+                'payment_id' => $payment?->id,
                 'subject' => $subject,
             ]);
 

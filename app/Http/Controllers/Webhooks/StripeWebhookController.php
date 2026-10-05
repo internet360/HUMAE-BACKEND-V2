@@ -91,6 +91,11 @@ class StripeWebhookController extends Controller
         return $this->success(message: 'Event processed.', data: ['type' => $event->type]);
     }
 
+    private function createdOf(Event $event): ?int
+    {
+        return isset($event->created) ? (int) $event->created : null;
+    }
+
     private function alreadyProcessed(): JsonResponse
     {
         return $this->success(message: 'Event already processed.');
@@ -115,19 +120,19 @@ class StripeWebhookController extends Controller
             case 'charge.refunded':
                 /** @var Charge $charge */
                 $charge = $event->data->object;
-                $this->reversals->handleRefund($charge);
+                $this->reversals->handleRefund($charge, $this->createdOf($event));
                 break;
 
             case 'charge.dispute.created':
                 /** @var Dispute $dispute */
                 $dispute = $event->data->object;
-                $this->reversals->handleDisputeCreated($dispute);
+                $this->reversals->handleDisputeCreated($dispute, $this->createdOf($event));
                 break;
 
             case 'charge.dispute.closed':
                 /** @var Dispute $dispute */
                 $dispute = $event->data->object;
-                $this->reversals->handleDisputeClosed($dispute);
+                $this->reversals->handleDisputeClosed($dispute, $this->createdOf($event));
                 break;
 
             default:

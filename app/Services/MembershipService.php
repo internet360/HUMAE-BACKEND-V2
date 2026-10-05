@@ -86,6 +86,11 @@ class MembershipService
                 'membership_plan_id' => (string) $plan->id,
                 'plan_code' => (string) $plan->code,
             ],
+            // Copied onto the charge by Stripe: lets refund/dispute webhooks tell
+            // our payments apart from other integrations on the same account.
+            'payment_intent_data' => [
+                'metadata' => ['app' => 'humae'],
+            ],
         ];
 
         // price_data inline — Stripe genera un product/price efímero por sesión
