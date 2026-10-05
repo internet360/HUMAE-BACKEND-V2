@@ -28,6 +28,13 @@ class CfdiXmlInspector
      */
     public function inspect(string $xml): array
     {
+        // The DTD pre-filter below works on raw bytes, so anything that is not
+        // plain ASCII-compatible text (UTF-16/32 with a BOM, NUL bytes) would
+        // slip past it and still be decoded by libxml.
+        if (str_contains($xml, "\0") || preg_match('/^(\xFE\xFF|\xFF\xFE|\x00\x00\xFE\xFF)/', $xml) === 1) {
+            throw new InvalidCfdiXmlException('El XML debe estar codificado en UTF-8.');
+        }
+
         if (preg_match('/<!\s*(DOCTYPE|ENTITY)/i', $xml) === 1) {
             throw new InvalidCfdiXmlException('El XML no puede contener definiciones DTD ni entidades.');
         }

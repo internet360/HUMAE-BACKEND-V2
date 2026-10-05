@@ -133,6 +133,21 @@ describe('upload validation', function (): void {
             ->and($this->request->fresh()->status)->toBe(InvoiceRequestStatus::Requested);
     });
 
+    it('rejects non-utf8 or binary xml before parsing', function (string $payload): void {
+        $response = uploadFiles($this->request, cfdiFiles($payload))->assertUnprocessable()->assertJsonValidationErrors(['xml']);
+
+        expect($response->getContent())->not->toContain('root:')
+            ->and(Storage::disk('local')->allFiles())->toBeEmpty()
+            ->and($this->request->fresh()->status)->toBe(InvoiceRequestStatus::Requested);
+    })->with([
+        'utf-16 le bom doctype' => [fn () => "\xFF\xFE".mb_convert_encoding(str_replace('UTF-8', 'UTF-16', cfdiXml(prolog: '<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>')), 'UTF-16LE', 'UTF-8')],
+        'utf-16 le bom valid cfdi' => [fn () => "\xFF\xFE".mb_convert_encoding(str_replace('UTF-8', 'UTF-16', cfdiXml()), 'UTF-16LE', 'UTF-8')],
+        'utf-16 be bom' => [fn () => "\xFE\xFF".mb_convert_encoding('<a/>', 'UTF-16BE', 'UTF-8')],
+        'utf-32 le bom' => [fn () => "\xFF\xFE\x00\x00".mb_convert_encoding('<a/>', 'UTF-32LE', 'UTF-8')],
+        'utf-32 be bom' => [fn () => "\x00\x00\xFE\xFF".mb_convert_encoding('<a/>', 'UTF-32BE', 'UTF-8')],
+        'nul byte' => [fn () => str_replace('Ana Fiscal', "Ana\0Fiscal", cfdiXml())],
+    ]);
+
     it('rejects an xml without the stamp uuid', function (): void {
         uploadFiles($this->request, cfdiFiles(cfdiXml(uuid: null)))->assertUnprocessable()->assertJsonValidationErrors(['xml']);
     });
