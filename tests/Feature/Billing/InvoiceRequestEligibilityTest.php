@@ -89,6 +89,32 @@ it('excludes payments with an active or lost dispute but keeps closed favourable
     expect(eligibleIds())->toEqualCanonicalizing([$won->id, $noFlag->id]);
 });
 
+it('excludes every unresolved dispute status', function (string $status): void {
+    paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => $status]]);
+
+    expect(eligibleIds())->toBe([]);
+})->with([
+    'open',
+    'lost',
+    'needs_response',
+    'under_review',
+    'warning_needs_response',
+    'warning_under_review',
+]);
+
+it('keeps payments with every favourable dispute outcome', function (string $status): void {
+    $payment = paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => $status]]);
+
+    expect(eligibleIds())->toBe([$payment->id]);
+})->with(['won', 'warning_closed', 'charge_refunded']);
+
+it('treats a payment with null or missing metadata as eligible', function (): void {
+    $nullMetadata = paidAt($this->user, '2026-10-02 09:00', ['metadata' => null]);
+    $nullStatus = paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => null]]);
+
+    expect(eligibleIds())->toEqualCanonicalizing([$nullMetadata->id, $nullStatus->id]);
+});
+
 it('claims eligible payments with a snapshot and hides them from the list', function (): void {
     $payment = paidAt($this->user, '2026-10-02 09:00', ['amount' => '499.00']);
 
