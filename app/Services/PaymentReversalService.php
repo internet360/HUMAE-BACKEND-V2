@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\CandidateState;
+use App\Enums\InvoiceRequestStatus;
 use App\Enums\MembershipStatus;
 use App\Enums\PaymentStatus;
 use App\Events\PaymentReversed;
 use App\Models\CandidateProfile;
+use App\Models\InvoiceRequest;
 use App\Models\Membership;
 use App\Models\Payment;
 use App\Notifications\BillingAlertNotification;
@@ -65,7 +67,7 @@ class PaymentReversalService
                 'metadata' => [...($payment->metadata ?? []), 'refund_review' => true],
             ])->save();
 
-            $this->alertBilling($payment, 'Partial refund needs review', "Payment {$payment->id} was partially refunded ({$refunded}).");
+            $this->alertBilling($payment, 'Partial refund needs review', "Payment {$payment->id} was partially refunded ({$refunded}).".$this->issuedInvoiceNote($payment));
         });
     }
 
@@ -176,6 +178,21 @@ class PaymentReversalService
 
             event(new PaymentReversed($payment, $reason));
         });
+    }
+
+    /** Points billing at the issued CFDI a partial refund may require a credit note for. No RFC. */
+    private function issuedInvoiceNote(Payment $payment): string
+    {
+        $request = InvoiceRequest::query()
+            ->whereIn('status', [InvoiceRequestStatus::Issued->value, InvoiceRequestStatus::CancellationPending->value])
+            ->whereHas('payments', fn ($q) => $q->where('claimed_payment_id', $payment->id))
+            ->first();
+
+        if ($request === null) {
+            return '';
+        }
+
+        return " Invoice request #{$request->id} (CFDI {$request->cfdi_uuid}) is already issued and stays unchanged: review whether a credit note is needed.";
     }
 
     private function auditRefundAmount(Payment $payment, ?string $refundAmount): string
@@ -302,7 +319,7 @@ class PaymentReversalService
         return is_object($value) ? (string) ($value->id ?? '') : (is_string($value) ? $value : null);
     }
 
-    private function alertBilling(?Payment $payment, string $subject, string $body): void
+    public function alertBilling(?Payment $payment, string $subject, string $body): void
     {
         $address = config('billing.email');
 
