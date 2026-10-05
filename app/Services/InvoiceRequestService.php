@@ -12,10 +12,12 @@ use App\Models\InvoiceRequest;
 use App\Models\InvoiceRequestPayment;
 use App\Models\Payment;
 use App\Models\User;
+use App\Notifications\InvoiceRequestRejectedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use InvalidArgumentException;
 
 class InvoiceRequestService
@@ -164,8 +166,27 @@ class InvoiceRequestService
 
             $request->setRawAttributes($locked->getAttributes(), true);
 
+            if ($to === InvoiceRequestStatus::Rejected) {
+                $this->notifyRejection($locked);
+            }
+
             return $from;
         });
+    }
+
+    /**
+     * Queued after commit. Only reached by a real transition into rejected (a
+     * replay throws before getting here), so it cannot be sent twice.
+     */
+    private function notifyRejection(InvoiceRequest $request): void
+    {
+        $paymentIds = InvoiceRequestPayment::query()->where('invoice_request_id', $request->id)->pluck('payment_id')->all();
+        $user = $request->user;
+
+        $requestable = $user === null ? 0 : $this->eligibleQuery($user)->whereIn('id', $paymentIds)->count();
+
+        Notification::route('mail', $request->email)
+            ->notify(new InvoiceRequestRejectedNotification($request, $requestable, count($paymentIds)));
     }
 
     /**
