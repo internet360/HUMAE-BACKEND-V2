@@ -29,7 +29,7 @@ beforeEach(function (): void {
 });
 
 /** One fake per test: the webhook controller is cached on the route, so only the event is swapped. */
-function invoiceReversalSend(string $id, string $type, object $object): void
+function invoiceReversalSend(string $id, string $type, object $object, int $status = 200): void
 {
     if (! app()->bound('invoice.reversal.fake')) {
         app()->instance('invoice.reversal.fake', new class('sk_test_dummy', 'whsec_dummy') extends StripeClient
@@ -53,7 +53,7 @@ function invoiceReversalSend(string $id, string $type, object $object): void
     ]);
     app()->instance(StripeClient::class, $fake);
 
-    test()->postJson('/api/v1/webhooks/stripe', [], ['Stripe-Signature' => 't=0,v1=fake'])->assertOk();
+    test()->postJson('/api/v1/webhooks/stripe', [], ['Stripe-Signature' => 't=0,v1=fake'])->assertStatus($status);
 }
 
 function invoiceReversalCharge(int $refundedCents): Charge
@@ -377,4 +377,45 @@ it('adds no payment list when the request has a single payment', function (): vo
         BillingAlertNotification::class,
         fn (BillingAlertNotification $n): bool => str_contains($n->body, REVERSAL_UUID) && ! str_contains($n->body, 'Other payments'),
     );
+});
+
+it('calls the listener twice for the same payment without a second transition, audit entry or alert', function (): void {
+    Notification::fake();
+    [$payment, $request] = invoicedPayment(InvoiceRequestStatus::Issued);
+    $event = new PaymentReversed($payment, 'refunded', 'evt_ir_twice');
+
+    app(FlagInvoiceForCancellation::class)->handle($event);
+    app(FlagInvoiceForCancellation::class)->handle($event);
+
+    expect($request->fresh()->status)->toBe(InvoiceRequestStatus::CancellationPending)
+        ->and(Activity::where('log_name', 'invoice-requests')->count())->toBe(1);
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
+
+it('rolls back the transition, the audit entry and the queued alert when a later step fails', function (): void {
+    // A real database queue (no fake): afterCommit alerts only land in `jobs` if the transaction commits.
+    config(['queue.default' => 'database']);
+    EventFacade::listen(PaymentReversed::class, function (): void {
+        throw new RuntimeException('a later listener failed');
+    });
+    [$payment, $request] = invoicedPayment(InvoiceRequestStatus::Issued);
+
+    invoiceReversalSend('evt_ir_boom', 'charge.refunded', invoiceReversalCharge(49900), 500);
+
+    expect($request->fresh()->status)->toBe(InvoiceRequestStatus::Issued)
+        ->and($payment->fresh()->status)->toBe(PaymentStatus::Succeeded)
+        ->and(Activity::where('log_name', 'invoice-requests')->count())->toBe(0)
+        ->and(DB::table('jobs')->count())->toBe(0)
+        ->and(DB::table('stripe_webhook_events')->where('event_id', 'evt_ir_boom')->exists())->toBeFalse();
+});
+
+it('queues the alerts on the database queue when the webhook commits (control for the rollback test)', function (): void {
+    config(['queue.default' => 'database']);
+    [, $request] = invoicedPayment(InvoiceRequestStatus::Issued);
+
+    invoiceReversalSend('evt_ir_ok', 'charge.refunded', invoiceReversalCharge(49900));
+
+    expect($request->fresh()->status)->toBe(InvoiceRequestStatus::CancellationPending)
+        ->and(Activity::where('log_name', 'invoice-requests')->count())->toBe(1)
+        ->and(DB::table('jobs')->count())->toBe(2);
 });
