@@ -78,6 +78,12 @@ class StripeWebhookController extends Controller
             return $this->alreadyProcessed();
         }
 
+        if ($event->type === 'checkout.session.completed') {
+            /** @var CheckoutSession $session */
+            $session = $event->data->object;
+            $this->memberships->enrichFromStripe((string) $session->id);
+        }
+
         return $this->success(message: 'Event processed.', data: ['type' => $event->type]);
     }
 

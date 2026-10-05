@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
@@ -323,3 +324,87 @@ it('never re-activates a payment that is no longer pending', function (string $s
         ->and(Membership::count())->toBe(0)
         ->and($payment->refresh()->stripe_payment_intent_id)->toBeNull();
 })->with(['refunded', 'failed', 'succeeded']);
+
+// ---------------------------------------------------------------------------
+// Charge / receipt enrichment (best effort, after commit)
+// ---------------------------------------------------------------------------
+
+function expandedSession(string $sessionId, string $paymentIntent, string $chargeId, string $receiptUrl): CheckoutSession
+{
+    return CheckoutSession::constructFrom([
+        'id' => $sessionId,
+        'customer' => 'cus_'.$sessionId,
+        'payment_intent' => [
+            'id' => $paymentIntent,
+            'latest_charge' => ['id' => $chargeId, 'receipt_url' => $receiptUrl],
+        ],
+    ]);
+}
+
+it('stores the charge id and receipt url after the dedup transaction commits', function (): void {
+    $payment = pendingPayment('cs_test_enrich');
+    $event = completedEvent('evt_enrich', 'cs_test_enrich', 'pi_enrich');
+
+    $baseLevel = DB::transactionLevel();
+    $levelAtFetch = null;
+    $fetchedParams = null;
+
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        $event,
+        function (string $id, array $params) use (&$levelAtFetch, &$fetchedParams): CheckoutSession {
+            $levelAtFetch = DB::transactionLevel();
+            $fetchedParams = $params;
+
+            return expandedSession($id, 'pi_enrich', 'ch_enrich', 'https://pay.stripe.com/receipts/enrich');
+        },
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    $payment->refresh();
+    expect($payment->status)->toBe(PaymentStatus::Succeeded)
+        ->and($payment->stripe_charge_id)->toBe('ch_enrich')
+        ->and($payment->receipt_url)->toBe('https://pay.stripe.com/receipts/enrich')
+        ->and($levelAtFetch)->toBe($baseLevel)
+        ->and($fetchedParams)->toBe(['expand' => ['payment_intent.latest_charge']]);
+});
+
+it('keeps the activation and answers 200 when the enrichment fails', function (): void {
+    $payment = pendingPayment('cs_test_enrich_fail');
+    $event = completedEvent('evt_enrich_fail', 'cs_test_enrich_fail', 'pi_enrich_fail');
+
+    Log::spy();
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        $event,
+        fn (): CheckoutSession => throw new RuntimeException('Stripe is down.'),
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    Log::shouldHaveReceived('warning')->once();
+
+    $payment->refresh();
+    expect($payment->status)->toBe(PaymentStatus::Succeeded)
+        ->and($payment->stripe_charge_id)->toBeNull()
+        ->and(Membership::count())->toBe(1);
+});
+
+it('does not call Stripe again for a replayed event', function (): void {
+    pendingPayment('cs_test_enrich_replay');
+    $event = completedEvent('evt_enrich_replay', 'cs_test_enrich_replay', 'pi_enrich_replay');
+
+    $calls = 0;
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        $event,
+        function (string $id) use (&$calls): CheckoutSession {
+            $calls++;
+
+            return expandedSession($id, 'pi_enrich_replay', 'ch_r', 'https://pay.stripe.com/receipts/r');
+        },
+    ));
+
+    postStripeWebhook()->assertOk();
+    postStripeWebhook()->assertOk();
+
+    expect($calls)->toBe(1);
+});

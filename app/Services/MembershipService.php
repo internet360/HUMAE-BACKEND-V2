@@ -182,6 +182,40 @@ class MembershipService
     }
 
     /**
+     * Best-effort: copies the charge id and receipt url onto the payment.
+     *
+     * Runs AFTER the webhook transaction commits so a slow or failing Stripe
+     * call can never roll back (or hold locks on) the activation. Any failure
+     * is only logged; reversals match by payment intent, so the charge id is
+     * not critical.
+     */
+    public function enrichFromStripe(string $sessionId): void
+    {
+        try {
+            $session = $this->stripe->retrieveCheckoutSession($sessionId, [
+                'expand' => ['payment_intent.latest_charge'],
+            ]);
+
+            $intent = $session->payment_intent;
+            $charge = is_object($intent) ? ($intent->latest_charge ?? null) : null;
+
+            if (! is_object($charge)) {
+                return;
+            }
+
+            Payment::where('stripe_session_id', $sessionId)->update([
+                'stripe_charge_id' => is_string($charge->id ?? null) ? $charge->id : null,
+                'receipt_url' => is_string($charge->receipt_url ?? null) ? $charge->receipt_url : null,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Stripe charge enrichment failed.', [
+                'session_id' => $sessionId,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Cuando un candidato paga su membresía, su CandidateProfile.state pasa
      * de `registro_incompleto` / `pendiente_pago` / `membresia_vencida` → `activo`.
      * Si el candidato todavía no tiene un perfil (ej. pagó antes de abrir /me/profile),
