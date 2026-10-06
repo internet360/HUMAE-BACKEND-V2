@@ -15,9 +15,10 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Reversal retry window
+    | Unmatched-event retry window
     |--------------------------------------------------------------------------
-    | A refund/dispute for one of our charges that matches no payment is
+    | Applies to refunds/disputes AND checkout.session.* events. An event for
+    | one of our objects that matches no payment is
     | answered with 500 (Stripe retries) while the Stripe event is younger than
     | this many hours, to cover events that arrive before the checkout
     | completion. Past it, billing is alerted and the event is acknowledged.
