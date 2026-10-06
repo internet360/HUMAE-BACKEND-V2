@@ -12,9 +12,11 @@ use App\Models\SalaryCurrency;
 use App\Models\StripeWebhookEvent;
 use App\Models\User;
 use App\Notifications\BillingAlertNotification;
+use App\Notifications\MembershipActivatedNotification;
 use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -445,7 +447,14 @@ it('still answers 200 when queueing the enrichment itself fails', function (): v
     $payment = pendingPayment('cs_test_enrich_queue_down');
     $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_enrich_queue_down', 'cs_test_enrich_queue_down', 'pi_q')));
     $this->mock(Dispatcher::class, function ($mock): void {
-        $mock->shouldReceive('dispatch')->andThrow(new RuntimeException('queue down'));
+        // Only the enrichment push fails; the queued notification keeps working.
+        $mock->shouldReceive('dispatch')->andReturnUsing(function (object $command) {
+            if ($command instanceof EnrichPaymentFromStripeJob) {
+                throw new RuntimeException('queue down');
+            }
+
+            return null;
+        });
     });
     Log::spy();
 
@@ -453,6 +462,24 @@ it('still answers 200 when queueing the enrichment itself fails', function (): v
 
     Log::shouldHaveReceived('warning')->once();
     expect($payment->fresh()->status)->toBe(PaymentStatus::Succeeded);
+});
+
+it('notifies the user of the activation through a queued after-commit notification on mail and database', function (): void {
+    Notification::fake();
+    $payment = pendingPayment('cs_test_notify');
+    $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_notify', 'cs_test_notify', 'pi_notify')));
+
+    postStripeWebhook()->assertOk();
+
+    Notification::assertSentTo(
+        $payment->user,
+        MembershipActivatedNotification::class,
+        fn (MembershipActivatedNotification $n, array $channels): bool => $channels === ['mail', 'database'],
+    );
+
+    $notification = new MembershipActivatedNotification(Membership::first());
+    expect($notification)->toBeInstanceOf(ShouldQueue::class)
+        ->and($notification->afterCommit)->toBeTrue();
 });
 
 it('has a retrying, after-commit enrichment job that lets failures bubble up', function (): void {
