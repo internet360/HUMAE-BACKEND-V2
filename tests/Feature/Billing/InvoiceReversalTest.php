@@ -251,6 +251,41 @@ it('answers 200, logs and alerts billing when the request cannot be transitioned
     );
 });
 
+it('never fails the webhook when the listener throws: the refund persists and billing is alerted', function (): void {
+    Notification::fake();
+    $logged = [];
+    EventFacade::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged): void {
+        $logged[] = $e;
+    });
+    [$payment, $request] = invoicedPayment(InvoiceRequestStatus::Issued);
+
+    // A half-done write followed by a failure: only the listener's work may roll back.
+    $this->mock(InvoiceRequestService::class, function ($mock) use ($request): void {
+        $mock->shouldReceive('transition')->andReturnUsing(function () use ($request): never {
+            InvoiceRequest::whereKey($request->id)->update(['status' => InvoiceRequestStatus::CancellationPending->value]);
+
+            throw new RuntimeException('boom XXXX010101AAA');
+        });
+    });
+
+    invoiceReversalSend('evt_ir_listener_boom', 'charge.refunded', invoiceReversalCharge(49900));
+
+    expect($payment->fresh()->status)->toBe(PaymentStatus::Refunded)
+        ->and($payment->fresh()->membership?->status?->value)->not->toBe('active')
+        ->and($request->fresh()->status)->toBe(InvoiceRequestStatus::Issued)
+        ->and(DB::table('stripe_webhook_events')->where('event_id', 'evt_ir_listener_boom')->exists())->toBeTrue();
+
+    $errors = array_values(array_filter($logged, fn (MessageLogged $e): bool => $e->level === 'error' && str_contains($e->message, 'listener')));
+    expect($errors)->toHaveCount(1)
+        ->and($errors[0]->context['exception'])->toBe(RuntimeException::class)
+        ->and(json_encode($errors[0]->context))->not->toContain('XXXX010101AAA');
+
+    Notification::assertSentOnDemand(
+        BillingAlertNotification::class,
+        fn (BillingAlertNotification $n): bool => str_contains($n->body, "Payment {$payment->id}") && str_contains($n->body, 'manual'),
+    );
+});
+
 it('ignores a request that is already cancellation pending', function (): void {
     Notification::fake();
     [, $request] = invoicedPayment(InvoiceRequestStatus::CancellationPending);

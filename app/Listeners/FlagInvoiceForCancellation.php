@@ -15,6 +15,7 @@ use App\Services\InvoiceRequestService;
 use App\Services\PaymentReversalService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Keeps CFDI requests coherent with a reversed payment (full refund or lost dispute).
@@ -43,7 +44,40 @@ final class FlagInvoiceForCancellation
         private readonly CfdiDeadlinePolicy $deadline,
     ) {}
 
+    /**
+     * Never lets a failure escape: the refund/revoke must persist even when the
+     * CFDI bookkeeping breaks, and a webhook that 500s would only be retried
+     * against a state this listener cannot fix. The work runs in its own
+     * savepoint (nested transaction), so a failure rolls back only what the
+     * listener wrote and leaves the webhook transaction usable.
+     */
     public function handle(PaymentReversed $event): void
+    {
+        try {
+            DB::transaction(fn () => $this->flag($event));
+        } catch (Throwable $e) {
+            $class = $e::class;
+
+            // Ids and the exception class only: the message may carry bindings (RFC, legal name).
+            Log::error('Invoice request listener failed after a reversed payment.', [
+                'payment_id' => $event->payment->id,
+                'stripe_event_id' => $event->stripeEventId,
+                'exception' => $class,
+            ]);
+
+            try {
+                $this->alerts->alertBilling(
+                    $event->payment,
+                    'Invoice request needs manual review',
+                    "Payment {$event->payment->id} was reversed ({$event->reason}) but updating its invoice request failed ({$class}). The refund/revoke was applied; review any invoice request tied to this payment manually.",
+                );
+            } catch (Throwable) {
+                // The alert is best effort too: the webhook still has to succeed.
+            }
+        }
+    }
+
+    private function flag(PaymentReversed $event): void
     {
         $payment = $event->payment;
 
