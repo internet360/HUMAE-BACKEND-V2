@@ -62,6 +62,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // constancia); esto los sella cuando el proveedor vuelve.
         // `withoutOverlapping` porque cada constancia reintenta hasta 5 veces
         // con espera, y dos corridas simultáneas pelearían por los mismos.
+        // La tabla de dedup de webhooks solo protege contra reentregas (Stripe
+        // reintenta hasta 3 días): se poda para que no crezca sin tope.
+        $schedule->command('billing:prune-webhook-events')
+            ->dailyAt('03:30')
+            ->withoutOverlapping()
+            ->name('billing:prune-webhook-events');
+
         $schedule->command('contracts:retry-timestamps')
             ->hourly()
             ->withoutOverlapping()
