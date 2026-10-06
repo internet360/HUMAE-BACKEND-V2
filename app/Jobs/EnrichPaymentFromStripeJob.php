@@ -79,7 +79,8 @@ class EnrichPaymentFromStripeJob implements ShouldQueueAfterCommit
 
     public function failed(Throwable $e): void
     {
-        Log::warning('Stripe charge enrichment failed after all retries.', [
+        // Session id and exception class only: the message may carry Stripe response details.
+        Log::error('Stripe charge enrichment failed after all retries.', [
             'session_id' => $this->sessionId,
             'exception' => $e::class,
         ]);

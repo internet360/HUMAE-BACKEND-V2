@@ -501,7 +501,10 @@ it('has a retrying, after-commit enrichment job that lets failures bubble up', f
 
     Log::spy();
     (new EnrichPaymentFromStripeJob('cs_job_throw'))->failed(new RuntimeException('Stripe is down.'));
-    Log::shouldHaveReceived('warning')->once();
+    Log::shouldHaveReceived('error')->withArgs(
+        fn (string $message, array $context): bool => $context === ['session_id' => 'cs_job_throw', 'exception' => RuntimeException::class]
+    )->once();
+    Log::shouldNotHaveReceived('warning');
 });
 
 it('fills only NULL columns in the enrichment job, so running it twice changes nothing', function (): void {
