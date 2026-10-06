@@ -101,6 +101,16 @@ describe('GET /admin/invoice-requests', function (): void {
             ->and($ids('?q=nadie'))->toBe([]);
     });
 
+    it('filters by billing notification state', function (): void {
+        $sent = InvoiceRequest::factory()->create(['billing_notified_at' => now()]);
+
+        $ids = fn (string $qs) => collect($this->getJson(ADMIN_BASE.$qs)->assertOk()->json('data'))->pluck('id')->all();
+
+        expect($ids('?billing_notification=pending'))->toBe([$this->request->id])
+            ->and($ids('?billing_notification=sent'))->toBe([$sent->id])
+            ->and($ids(''))->toEqualCanonicalizing([$this->request->id, $sent->id]);
+    });
+
     it('interprets from/to as whole days in the billing timezone, not UTC', function (): void {
         $at = fn (string $local) => Carbon::parse($local, 'America/Mexico_City')->utc();
         $make = fn (string $local) => InvoiceRequest::factory()->create(['created_at' => $at($local)])->id;
@@ -122,6 +132,7 @@ describe('GET /admin/invoice-requests', function (): void {
         $this->getJson(ADMIN_BASE.'?status=bogus')->assertUnprocessable();
         $this->getJson(ADMIN_BASE.'?from=not-a-date')->assertUnprocessable();
         $this->getJson(ADMIN_BASE.'?from=2026-10-10&to=2026-10-01')->assertUnprocessable();
+        $this->getJson(ADMIN_BASE.'?billing_notification=maybe')->assertUnprocessable();
     });
 });
 

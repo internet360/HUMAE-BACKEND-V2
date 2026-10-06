@@ -20,6 +20,7 @@ class ListInvoiceRequestsRequest extends FormRequest
     {
         return [
             'status' => ['nullable', Rule::enum(InvoiceRequestStatus::class)],
+            'billing_notification' => ['nullable', Rule::in(['pending', 'sent'])],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
             'q' => ['nullable', 'string', 'max:100'],

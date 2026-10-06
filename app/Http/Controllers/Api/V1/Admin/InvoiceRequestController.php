@@ -50,6 +50,8 @@ class InvoiceRequestController extends Controller
             ->with('user')
             ->withCount('payments')
             ->when($request->filled('status'), fn (Builder $q) => $q->where('status', $request->string('status')->toString()))
+            ->when($request->string('billing_notification')->toString() === 'pending', fn (Builder $q) => $q->whereNull('billing_notified_at'))
+            ->when($request->string('billing_notification')->toString() === 'sent', fn (Builder $q) => $q->whereNotNull('billing_notified_at'))
             ->when($request->filled('from'), fn (Builder $q) => $q->where('created_at', '>=', $this->billingDayBoundary($request->string('from')->toString(), endOfDay: false)))
             ->when($request->filled('to'), fn (Builder $q) => $q->where('created_at', '<=', $this->billingDayBoundary($request->string('to')->toString(), endOfDay: true)))
             ->when($search !== '', function (Builder $q) use ($search): void {
