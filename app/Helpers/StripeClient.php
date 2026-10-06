@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Helpers;
 
+use App\Exceptions\StripeWebhookNotConfiguredException;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Customer;
@@ -55,7 +56,7 @@ class StripeClient
     public function constructWebhookEvent(string $payload, string $signature): Event
     {
         if ($this->webhookSecret === null || $this->webhookSecret === '') {
-            throw new RuntimeException('Stripe webhook secret is not configured.');
+            throw new StripeWebhookNotConfiguredException;
         }
 
         return Webhook::constructEvent($payload, $signature, $this->webhookSecret);

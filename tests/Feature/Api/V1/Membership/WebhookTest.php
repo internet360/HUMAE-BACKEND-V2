@@ -227,6 +227,32 @@ it('rejects a bad signature with 400 and changes nothing', function (): void {
         ->and(StripeWebhookEvent::count())->toBe(0);
 });
 
+it('logs a bad signature at warning with the request ip and never the payload', function (): void {
+    Log::spy();
+    $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_ip', 'cs_ip', 'pi_ip'), badSignature: true));
+
+    $this->postJson('/api/v1/webhooks/stripe', ['secret_payload_marker' => 'XYZ'], ['Stripe-Signature' => 't=0,v1=fake'])
+        ->assertStatus(400);
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message, array $context): bool => ($context['ip'] ?? null) !== null
+            && ! str_contains(json_encode($context), 'XYZ')
+    )->once();
+    Log::shouldNotHaveReceived('critical');
+});
+
+it('logs critical, with a distinct message, when the webhook secret is not configured', function (): void {
+    Log::spy();
+    $this->app->instance(StripeClient::class, new StripeClient('sk_test_dummy', ''));
+
+    postStripeWebhook()->assertStatus(400);
+
+    Log::shouldHaveReceived('critical')->withArgs(
+        fn (string $message): bool => str_contains($message, 'secret is not configured')
+    )->once();
+    Log::shouldNotHaveReceived('warning');
+});
+
 it('records the event id once and ignores a replay even if the payment is pending again', function (): void {
     $payment = pendingPayment('cs_test_replay');
     $event = completedEvent('evt_replay', 'cs_test_replay', 'pi_replay');

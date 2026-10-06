@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Webhooks;
 
+use App\Exceptions\StripeWebhookNotConfiguredException;
 use App\Helpers\StripeClient;
 use App\Http\Controllers\Controller;
 use App\Models\StripeWebhookEvent;
@@ -37,9 +38,22 @@ class StripeWebhookController extends Controller
 
         try {
             $event = $this->stripe->constructWebhookEvent($payload, $signature);
-        } catch (UnexpectedValueException $e) {
+        } catch (StripeWebhookNotConfiguredException) {
+            // Every delivery will fail until this is fixed: make it loud.
+            Log::critical('Stripe webhook secret is not configured: rejecting every delivery.');
+
+            return $this->error('Invalid signature.', status: HttpStatus::HTTP_BAD_REQUEST);
+        } catch (UnexpectedValueException) {
+            Log::warning('Stripe webhook rejected: invalid payload.', ['ip' => $request->ip()]);
+
             return $this->error('Invalid payload.', status: HttpStatus::HTTP_BAD_REQUEST);
         } catch (Throwable $e) {
+            // Never the payload or the signature header: only who sent it and why it failed.
+            Log::warning('Stripe webhook rejected: signature verification failed.', [
+                'ip' => $request->ip(),
+                'exception' => $e::class,
+            ]);
+
             return $this->error('Invalid signature.', status: HttpStatus::HTTP_BAD_REQUEST);
         }
 
