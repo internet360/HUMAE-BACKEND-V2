@@ -7,12 +7,14 @@ namespace App\Http\Controllers\Webhooks;
 use App\Exceptions\StripeWebhookNotConfiguredException;
 use App\Helpers\StripeClient;
 use App\Http\Controllers\Controller;
+use App\Jobs\EnrichPaymentFromStripeJob;
 use App\Models\StripeWebhookEvent;
 use App\Services\MembershipService;
 use App\Services\PaymentReversalService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Stripe\Charge;
@@ -99,7 +101,17 @@ class StripeWebhookController extends Controller
         if ($this->activatesPayment($event)) {
             /** @var CheckoutSession $session */
             $session = $event->data->object;
-            $this->memberships->enrichFromStripe((string) $session->id);
+
+            // Best effort and after the commit: the activation is already durable,
+            // so a queue outage must not turn this delivery into a 500.
+            try {
+                Bus::dispatch(new EnrichPaymentFromStripeJob((string) $session->id));
+            } catch (Throwable $e) {
+                Log::warning('Could not queue the Stripe charge enrichment.', [
+                    'session_id' => (string) $session->id,
+                    'exception' => $e::class,
+                ]);
+            }
         }
 
         return $this->success(message: 'Event processed.', data: ['type' => $event->type]);

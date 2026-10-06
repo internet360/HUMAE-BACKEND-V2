@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Exception\InvalidRequestException;
-use Throwable;
 
 class MembershipService
 {
@@ -223,52 +222,6 @@ class MembershipService
 
             return $refreshed ?? $payment;
         });
-    }
-
-    /**
-     * Best-effort: copies the charge id and receipt url onto the payment.
-     *
-     * Runs AFTER the webhook transaction commits so a slow or failing Stripe
-     * call can never roll back (or hold locks on) the activation. Any failure
-     * is only logged; reversals match by payment intent, so the charge id is
-     * not critical.
-     */
-    public function enrichFromStripe(string $sessionId): void
-    {
-        try {
-            $session = $this->stripe->retrieveCheckoutSession($sessionId, [
-                'expand' => ['payment_intent.latest_charge'],
-            ]);
-
-            $intent = $session->payment_intent;
-            $charge = is_object($intent) ? ($intent->latest_charge ?? null) : null;
-
-            if (! is_object($charge)) {
-                return;
-            }
-
-            // Fill-only: a column is written only when Stripe sent a value AND
-            // it is still NULL, so a replay can never erase or rewrite data.
-            $values = [
-                'stripe_charge_id' => is_string($charge->id ?? null) && $charge->id !== '' ? $charge->id : null,
-                'receipt_url' => is_string($charge->receipt_url ?? null) && $charge->receipt_url !== '' ? $charge->receipt_url : null,
-            ];
-
-            foreach ($values as $column => $value) {
-                if ($value === null) {
-                    continue;
-                }
-
-                Payment::where('stripe_session_id', $sessionId)
-                    ->whereNull($column)
-                    ->update([$column => $value]);
-            }
-        } catch (Throwable $e) {
-            Log::warning('Stripe charge enrichment failed.', [
-                'session_id' => $sessionId,
-                'exception' => $e->getMessage(),
-            ]);
-        }
     }
 
     /**

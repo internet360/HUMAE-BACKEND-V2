@@ -9,6 +9,7 @@ use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Customer;
 use Stripe\Event;
+use Stripe\HttpClient\CurlClient;
 use Stripe\StripeClient as StripeSdkClient;
 use Stripe\Webhook;
 
@@ -25,6 +26,9 @@ class StripeClient
     public function __construct(
         private readonly ?string $secretKey,
         private readonly ?string $webhookSecret,
+        private readonly int $connectTimeout = 5,
+        private readonly int $timeout = 15,
+        private readonly int $maxNetworkRetries = 2,
     ) {}
 
     /**
@@ -68,6 +72,21 @@ class StripeClient
             throw new RuntimeException('Stripe secret key is not configured.');
         }
 
-        return $this->client ??= new StripeSdkClient($this->secretKey);
+        if ($this->client === null) {
+            // The SDK defaults (30s connect, 80s total, no retries) can hold a
+            // PHP worker for minutes on a Stripe brownout. Timeouts live on the
+            // shared curl client; retries are per client. Retried POSTs are safe
+            // because the SDK reuses one idempotency key across attempts.
+            CurlClient::instance()
+                ->setConnectTimeout($this->connectTimeout)
+                ->setTimeout($this->timeout);
+
+            $this->client = new StripeSdkClient([
+                'api_key' => $this->secretKey,
+                'max_network_retries' => $this->maxNetworkRetries,
+            ]);
+        }
+
+        return $this->client;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\PaymentStatus;
 use App\Helpers\StripeClient;
+use App\Jobs\EnrichPaymentFromStripeJob;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
 use App\Models\Payment;
@@ -13,13 +14,17 @@ use App\Models\User;
 use App\Notifications\BillingAlertNotification;
 use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
 use Stripe\Exception\SignatureVerificationException;
+use Stripe\HttpClient\CurlClient;
 
 beforeEach(function (): void {
     $this->seed(RolesAndPermissionsSeeder::class);
@@ -404,11 +409,10 @@ it('stores the charge id and receipt url after the dedup transaction commits', f
         ->and($fetchedParams)->toBe(['expand' => ['payment_intent.latest_charge']]);
 });
 
-it('keeps the activation and answers 200 when the enrichment fails', function (): void {
+it('keeps the activation, answers 200 and queues the enrichment for a retry when Stripe is down', function (): void {
+    Queue::fake();
     $payment = pendingPayment('cs_test_enrich_fail');
     $event = completedEvent('evt_enrich_fail', 'cs_test_enrich_fail', 'pi_enrich_fail');
-
-    Log::spy();
     $this->app->instance(StripeClient::class, fakeWebhookClient(
         $event,
         fn (): CheckoutSession => throw new RuntimeException('Stripe is down.'),
@@ -416,12 +420,94 @@ it('keeps the activation and answers 200 when the enrichment fails', function ()
 
     postStripeWebhook()->assertOk();
 
-    Log::shouldHaveReceived('warning')->once();
+    // The webhook itself never calls Stripe for the enrichment: it only queues it.
+    Queue::assertPushed(EnrichPaymentFromStripeJob::class, fn (EnrichPaymentFromStripeJob $job): bool => $job->sessionId === 'cs_test_enrich_fail');
 
     $payment->refresh();
     expect($payment->status)->toBe(PaymentStatus::Succeeded)
         ->and($payment->stripe_charge_id)->toBeNull()
         ->and(Membership::count())->toBe(1);
+});
+
+it('does not queue the enrichment for an unpaid or non activating event', function (): void {
+    Queue::fake();
+    pendingPayment('cs_test_enrich_unpaid');
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        sessionEvent('evt_enrich_unpaid', 'checkout.session.completed', 'cs_test_enrich_unpaid', 'unpaid')
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    Queue::assertNothingPushed();
+});
+
+it('still answers 200 when queueing the enrichment itself fails', function (): void {
+    $payment = pendingPayment('cs_test_enrich_queue_down');
+    $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_enrich_queue_down', 'cs_test_enrich_queue_down', 'pi_q')));
+    $this->mock(Dispatcher::class, function ($mock): void {
+        $mock->shouldReceive('dispatch')->andThrow(new RuntimeException('queue down'));
+    });
+    Log::spy();
+
+    postStripeWebhook()->assertOk();
+
+    Log::shouldHaveReceived('warning')->once();
+    expect($payment->fresh()->status)->toBe(PaymentStatus::Succeeded);
+});
+
+it('has a retrying, after-commit enrichment job that lets failures bubble up', function (): void {
+    $job = new EnrichPaymentFromStripeJob('cs_x');
+
+    expect($job)->toBeInstanceOf(ShouldQueueAfterCommit::class)
+        ->and($job->tries)->toBe(3)
+        ->and($job->backoff())->toBe([30, 120]);
+
+    $payment = pendingPayment('cs_job_throw');
+    $failing = fakeWebhookClient(
+        completedEvent('evt_unused', 'cs_job_throw', 'pi'),
+        fn (): CheckoutSession => throw new RuntimeException('Stripe is down.'),
+    );
+
+    expect(fn () => (new EnrichPaymentFromStripeJob('cs_job_throw'))->handle($failing))
+        ->toThrow(RuntimeException::class);
+    expect($payment->fresh()->stripe_charge_id)->toBeNull();
+
+    Log::spy();
+    (new EnrichPaymentFromStripeJob('cs_job_throw'))->failed(new RuntimeException('Stripe is down.'));
+    Log::shouldHaveReceived('warning')->once();
+});
+
+it('fills only NULL columns in the enrichment job, so running it twice changes nothing', function (): void {
+    $payment = pendingPayment('cs_job_idem');
+    $calls = 0;
+    $client = fakeWebhookClient(
+        completedEvent('evt_unused2', 'cs_job_idem', 'pi'),
+        function (string $id) use (&$calls): CheckoutSession {
+            $calls++;
+
+            return expandedSession($id, 'pi', 'ch_job', 'https://pay.stripe.com/receipts/job');
+        },
+    );
+
+    (new EnrichPaymentFromStripeJob('cs_job_idem'))->handle($client);
+    (new EnrichPaymentFromStripeJob('cs_job_idem'))->handle($client);
+
+    expect($payment->fresh()->stripe_charge_id)->toBe('ch_job')
+        ->and($payment->fresh()->receipt_url)->toBe('https://pay.stripe.com/receipts/job')
+        ->and($calls)->toBe(1); // second run sees both columns filled and skips Stripe
+});
+
+it('configures the Stripe SDK with explicit timeouts and network retries', function (): void {
+    $client = new StripeClient('sk_test_dummy', 'whsec', connectTimeout: 5, timeout: 15, maxNetworkRetries: 2);
+
+    $sdk = (new ReflectionMethod($client, 'sdk'))->invoke($client);
+
+    expect($sdk->getMaxNetworkRetries())->toBe(2)
+        ->and(CurlClient::instance()->getConnectTimeout())->toBe(5)
+        ->and(CurlClient::instance()->getTimeout())->toBe(15)
+        ->and(config('services.stripe.timeout'))->toBe(15)
+        ->and(config('services.stripe.connect_timeout'))->toBe(5)
+        ->and(config('services.stripe.max_network_retries'))->toBe(2);
 });
 
 it('does not call Stripe again for a replayed event', function (): void {
