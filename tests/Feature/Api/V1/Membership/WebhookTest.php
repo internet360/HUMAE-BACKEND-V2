@@ -730,6 +730,31 @@ it('alerts billing and acks our tagged checkout event once the retry window has 
     Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
 })->with(['checkout.session.completed', 'checkout.session.async_payment_failed']);
 
+it('acks our app tag from another environment without retrying or alerting', function (string $type): void {
+    Notification::fake();
+    config(['app.env' => 'production', 'billing.email' => 'billing@example.test']);
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        unmatchedSessionEvent('evt_other_env_'.$type, $type, ['app' => 'humae', 'env' => 'staging'], time() - 3600)
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    expect(StripeWebhookEvent::where('event_id', 'evt_other_env_'.$type)->exists())->toBeTrue();
+    Notification::assertNothingSent();
+})->with(['checkout.session.completed', 'checkout.session.expired']);
+
+it('keeps retrying our tagged checkout event from the same environment', function (): void {
+    Notification::fake();
+    config(['app.env' => 'production']);
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        unmatchedSessionEvent('evt_same_env', 'checkout.session.completed', ['app' => 'humae', 'env' => 'production'], time() - 3600)
+    ));
+
+    postStripeWebhook()->assertStatus(500);
+
+    expect(StripeWebhookEvent::count())->toBe(0);
+});
+
 it('activates a legacy untagged session that matches a payment', function (): void {
     pendingPayment('cs_legacy');
     $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_legacy', 'cs_legacy', 'pi_legacy')));

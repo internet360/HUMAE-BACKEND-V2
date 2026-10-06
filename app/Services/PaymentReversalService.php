@@ -299,8 +299,19 @@ class PaymentReversalService
     {
         $context = ['event_type' => $eventType, 'object_id' => $this->idOf($object->id ?? null), 'stripe_event_id' => $eventId];
 
-        if ($this->metadataApp($object) !== 'humae') {
+        if ($this->metadataValue($object, 'app') !== 'humae') {
             Log::log($untaggedLevel, 'Stripe event ignored: its object is not tagged as created by this app.', $context);
+
+            return;
+        }
+
+        // Tagged by this app but by another environment sharing the Stripe account:
+        // not ours to retry or escalate. A missing env is a legacy object (created
+        // before the env tag existed) and stays ours.
+        $env = $this->metadataValue($object, 'env');
+
+        if ($env !== null && $env !== (string) config('app.env')) {
+            Log::info('Stripe event ignored: its object was created by another environment.', $context + ['object_env' => $env]);
 
             return;
         }
@@ -317,7 +328,7 @@ class PaymentReversalService
         $this->alertBilling(null, 'Unmatched Stripe event', "Stripe {$eventType} for {$context['object_id']} (tagged as ours) matched no payment after {$windowHours}h of retries. Review it manually.");
     }
 
-    private function metadataApp(object $object): ?string
+    private function metadataValue(object $object, string $key): ?string
     {
         $metadata = $object->metadata ?? null;
 
@@ -325,9 +336,9 @@ class PaymentReversalService
             return null;
         }
 
-        $app = $metadata['app'] ?? null;
+        $value = $metadata[$key] ?? null;
 
-        return is_string($app) ? $app : null;
+        return is_string($value) ? $value : null;
     }
 
     private function idOf(mixed $value): ?string

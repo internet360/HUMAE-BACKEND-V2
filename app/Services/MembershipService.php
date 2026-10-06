@@ -87,11 +87,14 @@ class MembershipService
                 // Lets the webhook tell our sessions from another integration's
                 // when no payment matches (see PaymentReversalService).
                 'app' => 'humae',
+                // Staging and production may share a Stripe account or endpoint:
+                // the env keeps one from treating the other's events as its own.
+                'env' => (string) config('app.env'),
             ],
             // Copied onto the charge by Stripe: lets refund/dispute webhooks tell
             // our payments apart from other integrations on the same account.
             'payment_intent_data' => [
-                'metadata' => ['app' => 'humae'],
+                'metadata' => ['app' => 'humae', 'env' => (string) config('app.env')],
             ],
         ];
 

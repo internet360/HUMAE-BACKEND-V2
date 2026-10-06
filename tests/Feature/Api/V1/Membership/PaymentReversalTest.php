@@ -522,6 +522,26 @@ it('keeps retrying our own unmatched charge while the event is inside the retry 
     Notification::assertNothingSent();
 });
 
+it('treats a charge as ours only when its env tag matches this environment or is missing (legacy)', function (array $metadata, int $status): void {
+    Notification::fake();
+    config(['app.env' => 'production', 'billing.reversal_retry_window_hours' => 24]);
+
+    reversalClient(Event::constructFrom([
+        'id' => 'evt_env_rule',
+        'type' => 'charge.refunded',
+        'livemode' => false,
+        'created' => time() - 3600,
+        'data' => ['object' => refundCharge(49900, 'pi_env_rule', 'ch_env_rule', $metadata)],
+    ]));
+
+    test()->postJson('/api/v1/webhooks/stripe', [], ['Stripe-Signature' => 't=0,v1=fake'])->assertStatus($status);
+    expect(StripeWebhookEvent::where('event_id', 'evt_env_rule')->exists())->toBe($status === 200);
+})->with([
+    'same env retries' => [['app' => 'humae', 'env' => 'production'], 500],
+    'missing env is legacy and retries' => [['app' => 'humae'], 500],
+    'other env is acked' => [['app' => 'humae', 'env' => 'staging'], 200],
+]);
+
 it('gives up on our own unmatched charge after the retry window, alerting billing', function (): void {
     Notification::fake();
     config(['billing.reversal_retry_window_hours' => 24]);
