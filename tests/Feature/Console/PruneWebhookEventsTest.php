@@ -40,6 +40,26 @@ it('honours a custom retention and removes more rows than one batch', function (
     expect(StripeWebhookEvent::pluck('event_id')->all())->toBe(['evt_fresh']);
 });
 
+it('clamps the batch size into 1..10000', function (string $batch, int $expectedLimit): void {
+    webhookEventRow('evt_clamp', 10);
+    $limits = [];
+    DB::listen(function ($query) use (&$limits): void {
+        if (str_contains($query->sql, 'stripe_webhook_events') && preg_match('/limit (\d+)/i', $query->sql, $m) === 1) {
+            $limits[] = (int) $m[1];
+        }
+    });
+
+    $this->artisan('billing:prune-webhook-events', ['--days' => 7, '--batch' => $batch])->assertSuccessful();
+
+    expect(StripeWebhookEvent::count())->toBe(0)
+        ->and($limits)->not->toBeEmpty()
+        ->and(array_values(array_unique($limits)))->toBe([$expectedLimit]);
+})->with([
+    'zero' => ['0', 1],
+    'negative' => ['-5', 1],
+    'above the cap' => ['99999999', 10000],
+]);
+
 it('rejects a retention shorter than a week', function (): void {
     webhookEventRow('evt_guard', 10);
 

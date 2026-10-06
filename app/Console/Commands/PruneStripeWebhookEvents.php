@@ -21,6 +21,9 @@ class PruneStripeWebhookEvents extends Command
     /** Stripe retries a failed delivery for up to 3 days. */
     private const MIN_DAYS = 7;
 
+    /** Upper bound per delete so a typo cannot build a huge IN list or hold a long lock. */
+    private const MAX_BATCH = 10000;
+
     protected $signature = 'billing:prune-webhook-events
         {--days=90 : Keep rows newer than this many days}
         {--batch=1000 : Rows deleted per query}';
@@ -30,7 +33,7 @@ class PruneStripeWebhookEvents extends Command
     public function handle(): int
     {
         $days = (int) $this->option('days');
-        $batch = max(1, (int) $this->option('batch'));
+        $batch = min(self::MAX_BATCH, max(1, (int) $this->option('batch')));
 
         if ($days < self::MIN_DAYS) {
             $this->error('Retention must be at least '.self::MIN_DAYS.' days: a shorter window could let a redelivered event be processed twice.');
