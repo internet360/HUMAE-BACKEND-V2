@@ -82,7 +82,10 @@ class PaymentReversalService
                 return;
             }
 
-            if (($payment->metadata['dispute_status'] ?? null) === 'open') {
+            // Only a payment with no dispute state moves to open. Events can arrive
+            // out of order: a `created` that shows up after the dispute closed
+            // (won, lost, warning_closed, charge_refunded) must not reopen it.
+            if (($payment->metadata['dispute_status'] ?? null) !== null) {
                 return;
             }
 

@@ -24,6 +24,7 @@ use App\Services\PaymentReversalService;
 use App\Services\PipelineService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Event as EventFacade;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -254,6 +255,18 @@ it('records the terminal status for every closed dispute that does not revoke', 
     expect($payment->metadata['dispute_status'])->toBe($closed)
         ->and($payment->status)->toBe(PaymentStatus::Succeeded);
 })->with(['warning_closed', 'charge_refunded']);
+
+it('ignores a late dispute.created after the dispute already closed', function (string $closed): void {
+    Notification::fake();
+    $payment = paidCandidate();
+
+    sendStripeEvent('evt_late_close_'.$closed, 'charge.dispute.closed', disputeFor($closed));
+    $alertsBefore = count(Notification::sent(new AnonymousNotifiable, BillingAlertNotification::class));
+    sendStripeEvent('evt_late_open_'.$closed, 'charge.dispute.created', disputeFor('needs_response'));
+
+    expect($payment->fresh()->metadata['dispute_status'])->toBe($closed)
+        ->and(count(Notification::sent(new AnonymousNotifiable, BillingAlertNotification::class)))->toBe($alertsBefore);
+})->with(['won', 'lost', 'warning_closed', 'charge_refunded']);
 
 it('alerts billing when a dispute is lost on an already refunded payment', function (): void {
     Notification::fake();
