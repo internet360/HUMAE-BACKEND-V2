@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\InvoiceRequestStatus;
 use App\Enums\PaymentStatus;
 use App\Exceptions\InvalidInvoiceRequestTransitionException;
+use App\Exceptions\InvoiceRequestPersistenceException;
 use App\Exceptions\PaymentNotEligibleException;
 use App\Models\InvoiceRequest;
 use App\Models\InvoiceRequestPayment;
@@ -15,6 +16,7 @@ use App\Models\User;
 use App\Notifications\InvoiceRequestRejectedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -103,6 +105,12 @@ class InvoiceRequestService
         } catch (UniqueConstraintViolationException) {
             // A concurrent request won the claim between our check and insert.
             throw new PaymentNotEligibleException('claimed');
+        } catch (QueryException $e) {
+            // Its message embeds the SQL with the bindings (RFC, legal name, email) and
+            // would end up in laravel.log: rethrow without them, keeping only the SQLSTATE.
+            throw new InvoiceRequestPersistenceException(
+                'The invoice request could not be saved (SQLSTATE '.($e->errorInfo[0] ?? $e->getCode()).').'
+            );
         }
     }
 
