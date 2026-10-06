@@ -50,6 +50,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 
@@ -693,9 +694,17 @@ function authzBuildFixtures(): array
         ]);
     }
 
+    // Real files on a faked private disk: the `files/{kind}` rows can then tell the
+    // owner (200) from anyone else (404), instead of excusing a 404 for everybody.
+    Storage::fake('local');
+    Storage::disk('local')->put('invoices/authz/cfdi.pdf', '%PDF-1.4 authz');
+    Storage::disk('local')->put('invoices/authz/cfdi.xml', '<cfdi/>');
+
     $invoiceRequest = InvoiceRequest::factory()->create([
         'user_id' => $candidateOwner->id,
         'rfc' => AUTHZ_S_INVOICE_RFC,
+        'pdf_path' => 'invoices/authz/cfdi.pdf',
+        'xml_path' => 'invoices/authz/cfdi.xml',
     ]);
 
     $test = PsychometricTest::factory()->create(['is_active' => true]);
@@ -1096,10 +1105,8 @@ function authzMatrixRows(): array
     $add('GET /me/invoice-requests/{invoice_request}/files/{kind}', [
         'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
         'spec' => 'UNSPECIFIED: role candidate (propio); un ajeno recibe 404',
-        // The fixture request has no files on disk: the owner gets 404 from the
-        // controller. That a 200 is served to the owner and only to the owner is
-        // covered by InvoiceFilesTest; this row probes that nobody ELSE reaches it.
-        'allow_not_found' => true,
+        // The fixture request has real files: the owner must get 200 (a 404 fails
+        // the row) and every other actor a refusal.
         ...authzCandidateSelfService(ownerOnly: true),
     ]);
     $add('DELETE /me/profile/documents/{document}', [
@@ -1843,8 +1850,7 @@ function authzMatrixRows(): array
     $add('GET /admin/invoice-requests/{invoice_request}/files/{kind}', [
         'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
         'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
-        // The fixture request has no files: 404 for the admin (see the /me row).
-        'allow_not_found' => true,
+        // The fixture request has real files: the admin must get 200, not 404.
         ...authzAccess(['admin']),
     ]);
 

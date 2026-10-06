@@ -141,8 +141,8 @@ a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efe
 Solicitud de factura (CFDI): §5/§6 no la especifican (**UNSPECIFIED**). Inferencia: sólo el candidato paga la
 membresía, así que sólo él factura; `role:candidate` fronta las cuatro rutas y todo se acota al usuario
 autenticado. `GET /{invoiceRequest}` autoriza con `InvoiceRequestPolicy::view` (dueño; el admin pasa por
-`before` pero no llega: el módulo admin vive en `/admin/invoice-requests`, otra slice) y responde `403` a otro
-candidato. El RFC sólo se devuelve al dueño y nunca se escribe en logs.
+`before` pero no llega: el módulo admin vive en `/admin/invoice-requests`, otra slice) y responde `404` a otro
+candidato (igual que a un id inexistente, para no revelar qué solicitudes existen). El RFC sólo se devuelve al dueño y nunca se escribe en logs.
 
 §5.3 titula la sección «Membership (auth)» sin acotar rol, y ambos `GET` se autoacotan al usuario
 autenticado (devuelven vacío para quien no tiene membresías ni pagos). `POST /checkout` sí está acotado por
@@ -382,8 +382,8 @@ directa (`UserController::ensureAdmin()`).
 | POST | `/admin/invoice-requests/{invoiceRequest}/files` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
 | GET | `/admin/invoice-requests/{invoiceRequest}/files/{pdf\|xml}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
 
-Se cierran con el permiso Spatie `invoices.manage` (FormRequest `can()` o `authorize()` en `show`), que una
-migración de datos idempotente y el seeder dan al rol `admin`; un futuro rol de facturación sólo necesita ese
+Se cierran con el permiso Spatie `invoices.manage`: middleware de ruta `permission:invoices.manage`, que corre ANTES del route-model binding (un no-admin recibe `403` tanto con un id existente como con uno inexistente, nunca `404`), reforzado por el `can()` del FormRequest y el `authorize()` de `show`. El permiso lo dan, al rol `admin`, una
+migración de datos idempotente y el seeder; un futuro rol de facturación sólo necesita ese
 permiso. No hay habilidades nuevas de Policy: `InvoiceRequestPolicy::before` ahora concede por el permiso (ya
 no por el nombre del rol), y `view` sigue siendo la del dueño. El listado no incluye el RFC; el detalle sí
 (sólo para quien tiene el permiso). `issued` no se alcanza con `PATCH .../status` (422): sólo al subir los
