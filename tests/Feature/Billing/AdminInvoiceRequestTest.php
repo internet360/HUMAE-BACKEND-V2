@@ -51,6 +51,24 @@ describe('authorization', function (): void {
             ->and($this->request->fresh()->admin_notes)->toBeNull();
     })->with([UserRole::Candidate, UserRole::Recruiter, UserRole::CompanyUser]);
 
+    it('answers 403, never 404, to a non-admin probing ids that do not exist', function (UserRole $role): void {
+        Sanctum::actingAs(User::factory()->create()->assignRole($role->value));
+        $missing = $this->request->id + 9999;
+
+        // The permission gate runs BEFORE route-model binding: a 404 here would
+        // let any authenticated user enumerate which request ids exist.
+        $this->getJson(ADMIN_BASE.'/'.$missing)->assertForbidden();
+        $this->patchJson(ADMIN_BASE.'/'.$missing.'/status', ['status' => 'in_progress'])->assertForbidden();
+        $this->patchJson(ADMIN_BASE.'/'.$missing.'/notes', ['admin_notes' => 'x'])->assertForbidden();
+        $this->postJson(ADMIN_BASE.'/'.$missing.'/files')->assertForbidden();
+        $this->getJson(ADMIN_BASE.'/'.$missing.'/files/pdf')->assertForbidden();
+        $this->getJson(ADMIN_BASE.'/'.$this->request->id.'/files/pdf')->assertForbidden();
+    })->with([UserRole::Candidate, UserRole::Recruiter, UserRole::CompanyUser]);
+
+    it('still answers 404 to an authorised admin for an id that does not exist', function (): void {
+        $this->getJson(ADMIN_BASE.'/'.($this->request->id + 9999))->assertNotFound();
+    });
+
     it('denies an admin role without the permission', function (): void {
         $this->admin->roles->first()->revokePermissionTo('invoices.manage');
         app(PermissionRegistrar::class)->forgetCachedPermissions();

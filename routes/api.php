@@ -667,7 +667,9 @@ Route::middleware($authenticated)->prefix('admin/contract-settings')->name('admi
 | datos y el seeder; hoy sólo el rol admin lo tiene). `issued` NO se alcanza
 | con el cambio de estado: sólo al subir los archivos de la factura.
 */
-Route::middleware($authenticated)->prefix('admin/invoice-requests')->name('admin.invoice-requests.')->group(function (): void {
+// `permission:` (not a Policy/FormRequest check) so the gate runs before route-model
+// binding: a non-admin gets 403 for existing and missing ids alike.
+Route::middleware([...$authenticated, 'permission:invoices.manage'])->prefix('admin/invoice-requests')->name('admin.invoice-requests.')->group(function (): void {
     Route::get('/', [AdminInvoiceRequestController::class, 'index'])->name('index');
     Route::get('/{invoiceRequest}', [AdminInvoiceRequestController::class, 'show'])->name('show');
     Route::patch('/{invoiceRequest}/status', [AdminInvoiceRequestController::class, 'updateStatus'])->name('status');
