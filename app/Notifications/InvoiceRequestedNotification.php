@@ -64,9 +64,15 @@ class InvoiceRequestedNotification extends Notification
     /**
      * Mail lines are rendered as Markdown, so user-supplied text must not be
      * able to open links, images, emphasis, code or raw HTML.
+     *
+     * Only Markdown-significant characters are backslash-escaped. `&`, `<` and
+     * `>` are deliberately left alone: the mail template already HTML-escapes
+     * every line (`{{ $line }}`), so a backslash in front of the resulting
+     * entity would render it as literal text (`&amp;amp;`), and raw HTML can
+     * never reach the Markdown parser anyway.
      */
     private static function escape(?string $value): string
     {
-        return (string) preg_replace('/([\\\\`*_\[\]()<>#!|~&])/u', '\\\\$1', (string) $value);
+        return (string) preg_replace('/([\\\\`*_\[\]()#!|~])/u', '\\\\$1', (string) $value);
     }
 }

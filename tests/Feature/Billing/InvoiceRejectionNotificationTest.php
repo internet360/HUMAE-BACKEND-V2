@@ -74,7 +74,21 @@ it('escapes Markdown in the reason', function (): void {
     $mail = (new InvoiceRequestRejectedNotification($this->request, 1, 1))->toMail(new AnonymousNotifiable);
     $text = implode("\n", $mail->introLines);
 
-    expect($text)->toContain('\\[Haz clic\\]\\(https://evil.test\\)')->and($text)->not->toContain('<b>');
+    // The template HTML-escapes the line, so the raw tag is inert in the rendered mail.
+    expect($text)->toContain('\\[Haz clic\\]\\(https://evil.test\\)')
+        ->and((string) $mail->render())->not->toContain('<b>x</b>')->not->toContain('href="https://evil.test');
+});
+
+it('renders ampersands and angle brackets in the reason encoded exactly once, without live links', function (): void {
+    $this->request->forceFill(['rejection_reason' => 'LOPEZ & MARTINEZ SA <a href="https://evil.test">x</a> [y](https://evil.test)'])->save();
+
+    $html = (string) (new InvoiceRequestRejectedNotification($this->request, 1, 1))->toMail(new AnonymousNotifiable)->render();
+
+    expect($html)->toContain('LOPEZ &amp; MARTINEZ SA')
+        ->and($html)->toContain('&lt;a href="https://evil.test"&gt;x&lt;/a&gt;')
+        ->and($html)->not->toContain('&amp;amp;')
+        ->and($html)->not->toContain('&amp;lt;')
+        ->and($html)->not->toContain('<a href="https://evil');
 });
 
 it('does not send a second mail when the rejection is replayed', function (): void {

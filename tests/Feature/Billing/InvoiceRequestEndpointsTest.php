@@ -269,6 +269,17 @@ describe('billing notification job', function (): void {
             ->and($html)->toContain('Acme');
     });
 
+    it('renders ampersands and angle brackets once-encoded in the billing email', function (): void {
+        $request = makeRequest($this->user, $this->payment, ['legal_name' => 'LOPEZ & MARTINEZ SA <DE> CV']);
+
+        $html = (string) (new InvoiceRequestedNotification($request))->toMail((object) [])->render();
+
+        expect($html)->toContain('LOPEZ &amp; MARTINEZ SA &lt;DE&gt; CV')
+            ->and($html)->not->toContain('&amp;amp;')
+            ->and($html)->not->toContain('&amp;lt;')
+            ->and($html)->not->toContain('<DE>');
+    });
+
     it('keeps the request and leaves the stamp empty when the mail fails, without the RFC in logs', function (): void {
         $logged = [];
         Event::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged): void {
