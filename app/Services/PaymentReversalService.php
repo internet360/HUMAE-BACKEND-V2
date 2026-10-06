@@ -38,7 +38,7 @@ class PaymentReversalService
             $payment = $this->lockPayment($this->idOf($charge->payment_intent ?? null), $this->idOf($charge->id ?? null));
 
             if ($payment === null) {
-                $this->handleUnmatched($charge, 'charge.refunded', $eventCreated);
+                $this->handleUnmatched($charge, 'charge.refunded', $eventCreated, $eventId);
 
                 return;
             }
@@ -71,13 +71,13 @@ class PaymentReversalService
         });
     }
 
-    public function handleDisputeCreated(Dispute $dispute, ?int $eventCreated = null): void
+    public function handleDisputeCreated(Dispute $dispute, ?int $eventCreated = null, ?string $eventId = null): void
     {
-        DB::transaction(function () use ($dispute, $eventCreated): void {
+        DB::transaction(function () use ($dispute, $eventCreated, $eventId): void {
             $payment = $this->lockPayment($this->idOf($dispute->payment_intent ?? null), $this->idOf($dispute->charge ?? null));
 
             if ($payment === null) {
-                $this->handleUnmatched($dispute, 'charge.dispute.created', $eventCreated);
+                $this->handleUnmatched($dispute, 'charge.dispute.created', $eventCreated, $eventId);
 
                 return;
             }
@@ -100,7 +100,7 @@ class PaymentReversalService
             $payment = $this->lockPayment($this->idOf($dispute->payment_intent ?? null), $this->idOf($dispute->charge ?? null));
 
             if ($payment === null) {
-                $this->handleUnmatched($dispute, 'charge.dispute.closed', $eventCreated);
+                $this->handleUnmatched($dispute, 'charge.dispute.closed', $eventCreated, $eventId);
 
                 return;
             }
@@ -130,12 +130,21 @@ class PaymentReversalService
         });
     }
 
-    /** A checkout that failed or expired never granted access; only a pending payment may fail. */
-    public function failPendingCheckout(CheckoutSession $session): void
+    /**
+     * A checkout that failed or expired never granted access; only a pending
+     * payment may fail. Returns false when no payment has that session at all.
+     */
+    public function failPendingCheckout(CheckoutSession $session): bool
     {
+        if (! Payment::where('stripe_session_id', $session->id)->exists()) {
+            return false;
+        }
+
         Payment::where('stripe_session_id', $session->id)
             ->where('status', PaymentStatus::Pending->value)
             ->update(['status' => PaymentStatus::Failed->value, 'updated_at' => now()]);
+
+        return true;
     }
 
     /**
@@ -273,18 +282,22 @@ class PaymentReversalService
 
     /**
      * No payment matched. Objects not tagged `app=humae` belong to someone else
-     * (another integration on the same Stripe account): ack, never retry. Ours
-     * may simply have arrived before the completion, so keep failing (Stripe
-     * retries) only while the event is younger than the configured window; past
-     * it, escalate to billing and ack so the endpoint is not disabled by an
-     * endless 500 loop.
+     * (another integration on the same Stripe account), or predate the tagging:
+     * ack, never retry. Ours may simply have arrived before the payment row, so
+     * keep failing (Stripe retries) only while the event is younger than the
+     * configured window; past it, escalate to billing and ack so the endpoint is
+     * not disabled by an endless 500 loop.
+     *
+     * `$untaggedLevel` is `warning` for reversals (an untagged charge could be a
+     * legacy one of ours, so a human should be able to find it by event id) and
+     * `info` for checkout sessions (other integrations create them constantly).
      */
-    private function handleUnmatched(object $object, string $eventType, ?int $eventCreated): void
+    public function handleUnmatched(object $object, string $eventType, ?int $eventCreated, ?string $eventId = null, string $untaggedLevel = 'warning'): void
     {
-        $context = ['event_type' => $eventType, 'object_id' => $this->idOf($object->id ?? null)];
+        $context = ['event_type' => $eventType, 'object_id' => $this->idOf($object->id ?? null), 'stripe_event_id' => $eventId];
 
         if ($this->metadataApp($object) !== 'humae') {
-            Log::info('Stripe reversal event ignored: not a charge created by this app.', $context);
+            Log::log($untaggedLevel, 'Stripe event ignored: its object is not tagged as created by this app.', $context);
 
             return;
         }
@@ -296,9 +309,9 @@ class PaymentReversalService
             throw new RuntimeException("No payment found for {$eventType} object {$context['object_id']}");
         }
 
-        Log::error('Stripe reversal event for our charge never matched a payment; giving up.', $context + ['age_hours' => intdiv($ageSeconds, 3600)]);
+        Log::error('Stripe event for our object never matched a payment; giving up.', $context + ['age_hours' => intdiv($ageSeconds, 3600)]);
 
-        $this->alertBilling(null, 'Unmatched payment reversal', "Stripe {$eventType} for {$context['object_id']} (tagged as ours) matched no payment after {$windowHours}h of retries. Review it manually.");
+        $this->alertBilling(null, 'Unmatched Stripe event', "Stripe {$eventType} for {$context['object_id']} (tagged as ours) matched no payment after {$windowHours}h of retries. Review it manually.");
     }
 
     private function metadataApp(object $object): ?string

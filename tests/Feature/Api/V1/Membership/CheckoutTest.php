@@ -108,6 +108,7 @@ it('tags the payment intent so reversal webhooks can tell our charges apart', fu
     $this->postJson('/api/v1/me/membership/checkout')->assertCreated();
 
     expect($stripe->sessionParams['payment_intent_data']['metadata']['app'])->toBe('humae')
+        ->and($stripe->sessionParams['metadata']['app'])->toBe('humae')
         ->and($stripe->sessionParams['metadata']['user_id'])->toBe((string) $user->id);
 });
 

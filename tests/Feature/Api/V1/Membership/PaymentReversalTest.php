@@ -25,6 +25,7 @@ use App\Services\PipelineService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Event as EventFacade;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Sanctum\Sanctum;
 use Stripe\Charge;
@@ -458,6 +459,18 @@ it('acks reversal events for charges this app never created without retrying', f
     expect(StripeWebhookEvent::where('event_id', 'evt_foreign_'.$type)->exists())->toBeTrue();
     Notification::assertNothingSent();
 })->with(['charge.refunded', 'charge.dispute.closed', 'charge.dispute.created']);
+
+it('logs an unmatched untagged reversal at warning with the stripe event id', function (): void {
+    Notification::fake();
+    Log::spy();
+
+    sendStripeEvent('evt_legacy_untagged', 'charge.refunded', refundCharge(49900, 'pi_legacy', 'ch_legacy', []));
+
+    Log::shouldHaveReceived('log')->withArgs(
+        fn (string $level, string $message, array $context): bool => $level === 'warning'
+            && ($context['stripe_event_id'] ?? null) === 'evt_legacy_untagged'
+    )->once();
+});
 
 it('keeps retrying our own unmatched charge while the event is inside the retry window', function (): void {
     Notification::fake();

@@ -21,7 +21,6 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Exception\InvalidRequestException;
 use Throwable;
@@ -41,6 +40,7 @@ class MembershipService
         private readonly StripeClient $stripe,
         private readonly ProfileService $profiles,
         private readonly StripeCustomerService $customers,
+        private readonly PaymentReversalService $alerts,
     ) {}
 
     /**
@@ -85,6 +85,9 @@ class MembershipService
                 'user_id' => (string) $user->id,
                 'membership_plan_id' => (string) $plan->id,
                 'plan_code' => (string) $plan->code,
+                // Lets the webhook tell our sessions from another integration's
+                // when no payment matches (see PaymentReversalService).
+                'app' => 'humae',
             ],
             // Copied onto the charge by Stripe: lets refund/dispute webhooks tell
             // our payments apart from other integrations on the same account.
@@ -138,14 +141,18 @@ class MembershipService
      * Solo activa cuando Stripe confirma `payment_status === 'paid'`: con métodos
      * diferidos (OXXO/SPEI) `checkout.session.completed` llega con `unpaid` y el
      * pago queda Pending hasta `checkout.session.async_payment_succeeded`.
+     *
+     * Devuelve null cuando ningún pago corresponde a la sesión: el llamador decide
+     * entre reintentar y confirmar (`PaymentReversalService::handleUnmatched`).
+     * Un pago sin plan no se puede activar nunca: se avisa a billing y se confirma.
      */
-    public function activateFromCheckoutSession(CheckoutSession $session): Payment
+    public function activateFromCheckoutSession(CheckoutSession $session): ?Payment
     {
         /** @var Payment|null $payment */
         $payment = Payment::where('stripe_session_id', $session->id)->first();
 
         if ($payment === null) {
-            throw new RuntimeException("Payment not found for Stripe session {$session->id}");
+            return null;
         }
 
         return DB::transaction(function () use ($payment, $session): Payment {
@@ -166,7 +173,16 @@ class MembershipService
             $plan = $payment->plan;
 
             if ($plan === null) {
-                throw new RuntimeException("MembershipPlan not found for payment {$payment->id}");
+                // Retrying cannot create the plan: escalate instead of a silent 500 loop.
+                Log::error('Paid checkout matched a payment without a plan.', ['payment_id' => $payment->id]);
+
+                $this->alerts->alertBilling(
+                    $payment,
+                    'Paid checkout without a plan',
+                    "Payment {$payment->id} was paid on Stripe but has no membership plan: access was NOT granted. Review it manually.",
+                );
+
+                return $payment;
             }
 
             $now = now();

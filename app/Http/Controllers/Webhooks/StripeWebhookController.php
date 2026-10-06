@@ -119,14 +119,18 @@ class StripeWebhookController extends Controller
             case 'checkout.session.async_payment_succeeded':
                 /** @var CheckoutSession $session */
                 $session = $event->data->object;
-                $this->memberships->activateFromCheckoutSession($session);
+                if ($this->memberships->activateFromCheckoutSession($session) === null) {
+                    $this->reversals->handleUnmatched($session, $event->type, $this->createdOf($event), $event->id, 'info');
+                }
                 break;
 
             case 'checkout.session.async_payment_failed':
             case 'checkout.session.expired':
                 /** @var CheckoutSession $session */
                 $session = $event->data->object;
-                $this->reversals->failPendingCheckout($session);
+                if (! $this->reversals->failPendingCheckout($session)) {
+                    $this->reversals->handleUnmatched($session, $event->type, $this->createdOf($event), $event->id, 'info');
+                }
                 break;
 
             case 'charge.refunded':
@@ -138,7 +142,7 @@ class StripeWebhookController extends Controller
             case 'charge.dispute.created':
                 /** @var Dispute $dispute */
                 $dispute = $event->data->object;
-                $this->reversals->handleDisputeCreated($dispute, $this->createdOf($event));
+                $this->reversals->handleDisputeCreated($dispute, $this->createdOf($event), $event->id);
                 break;
 
             case 'charge.dispute.closed':

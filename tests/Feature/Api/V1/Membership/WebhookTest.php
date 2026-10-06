@@ -10,10 +10,12 @@ use App\Models\Payment;
 use App\Models\SalaryCurrency;
 use App\Models\StripeWebhookEvent;
 use App\Models\User;
+use App\Notifications\BillingAlertNotification;
 use App\Services\MembershipService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Testing\TestResponse;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
@@ -88,7 +90,8 @@ function pendingPayment(string $sessionId): Payment
     ]);
 }
 
-function completedEvent(string $eventId, string $sessionId, string $paymentIntent): Event
+/** @param  array<string, string>  $metadata */
+function completedEvent(string $eventId, string $sessionId, string $paymentIntent, array $metadata = []): Event
 {
     return Event::constructFrom([
         'id' => $eventId,
@@ -99,6 +102,7 @@ function completedEvent(string $eventId, string $sessionId, string $paymentInten
             'customer' => 'cus_'.$sessionId,
             'payment_status' => 'paid',
             'payment_intent' => $paymentIntent,
+            'metadata' => $metadata,
         ])],
     ]);
 }
@@ -250,10 +254,10 @@ it('records the event id once and ignores a replay even if the payment is pendin
 });
 
 it('answers 500 and stores no event row when the handler throws, then processes the retry', function (): void {
-    $event = completedEvent('evt_retry', 'cs_test_retry', 'pi_retry');
+    $event = completedEvent('evt_retry', 'cs_test_retry', 'pi_retry', ['app' => 'humae']);
     $this->app->instance(StripeClient::class, fakeWebhookClient($event));
 
-    // No payment for the session yet: the handler throws.
+    // No payment for the session yet (our own session, so Stripe must retry).
     postStripeWebhook()->assertStatus(500);
 
     expect(StripeWebhookEvent::count())->toBe(0)
@@ -522,3 +526,90 @@ it('does not activate when the session payment status is not paid', function (st
     expect($returned->status)->toBe(PaymentStatus::Pending)
         ->and(Membership::count())->toBe(0);
 })->with(['unpaid', 'no_payment_required']);
+
+// ---------------------------------------------------------------------------
+// Unmatched checkout events: never a 3-day silent 500 loop
+// ---------------------------------------------------------------------------
+
+/** @param  array<string, string>  $metadata */
+function unmatchedSessionEvent(string $eventId, string $type, array $metadata, ?int $created = null): Event
+{
+    return Event::constructFrom([
+        'id' => $eventId,
+        'type' => $type,
+        'livemode' => false,
+        'created' => $created ?? time(),
+        'data' => ['object' => CheckoutSession::constructFrom([
+            'id' => 'cs_'.$eventId,
+            'customer' => 'cus_x',
+            'payment_status' => 'paid',
+            'payment_intent' => 'pi_x',
+            'metadata' => $metadata,
+        ])],
+    ]);
+}
+
+it('acks a checkout event from another integration that matches no payment', function (string $type): void {
+    Notification::fake();
+    $this->app->instance(StripeClient::class, fakeWebhookClient(unmatchedSessionEvent('evt_foreign_'.$type, $type, [])));
+
+    postStripeWebhook()->assertOk();
+
+    expect(StripeWebhookEvent::where('event_id', 'evt_foreign_'.$type)->exists())->toBeTrue()
+        ->and(Membership::count())->toBe(0);
+    Notification::assertNothingSent();
+})->with([
+    'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+    'checkout.session.async_payment_failed',
+    'checkout.session.expired',
+]);
+
+it('keeps retrying our tagged checkout event that matches no payment while it is young', function (string $type): void {
+    Notification::fake();
+    config(['billing.reversal_retry_window_hours' => 24]);
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        unmatchedSessionEvent('evt_ours_young_'.$type, $type, ['app' => 'humae'], time() - 3600)
+    ));
+
+    postStripeWebhook()->assertStatus(500);
+
+    expect(StripeWebhookEvent::count())->toBe(0);
+    Notification::assertNothingSent();
+})->with(['checkout.session.completed', 'checkout.session.expired']);
+
+it('alerts billing and acks our tagged checkout event once the retry window has passed', function (string $type): void {
+    Notification::fake();
+    config(['billing.reversal_retry_window_hours' => 24, 'billing.email' => 'billing@example.test']);
+    $this->app->instance(StripeClient::class, fakeWebhookClient(
+        unmatchedSessionEvent('evt_ours_old_'.$type, $type, ['app' => 'humae'], time() - 25 * 3600)
+    ));
+
+    postStripeWebhook()->assertOk();
+
+    expect(StripeWebhookEvent::where('event_id', 'evt_ours_old_'.$type)->exists())->toBeTrue();
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+})->with(['checkout.session.completed', 'checkout.session.async_payment_failed']);
+
+it('activates a legacy untagged session that matches a payment', function (): void {
+    pendingPayment('cs_legacy');
+    $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_legacy', 'cs_legacy', 'pi_legacy')));
+
+    postStripeWebhook()->assertOk();
+
+    expect(Membership::count())->toBe(1);
+});
+
+it('alerts billing and acks when the matched payment has no plan', function (): void {
+    Notification::fake();
+    config(['billing.email' => 'billing@example.test']);
+    $payment = pendingPayment('cs_noplan');
+    Payment::whereKey($payment->id)->update(['membership_plan_id' => null]);
+    $this->app->instance(StripeClient::class, fakeWebhookClient(completedEvent('evt_noplan', 'cs_noplan', 'pi_noplan')));
+
+    postStripeWebhook()->assertOk();
+
+    expect(Membership::count())->toBe(0)
+        ->and($payment->fresh()->status)->toBe(PaymentStatus::Pending);
+    Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
+});
