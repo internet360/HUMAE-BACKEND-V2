@@ -13,6 +13,8 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Notifications\BillingAlertNotification;
 use App\Services\InvoiceRequestService;
+use Illuminate\Database\DeadlockException;
+use Illuminate\Database\QueryException;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event as EventFacade;
@@ -285,6 +287,35 @@ it('never fails the webhook when the listener throws: the refund persists and bi
         fn (BillingAlertNotification $n): bool => str_contains($n->body, "Payment {$payment->id}") && str_contains($n->body, 'manual'),
     );
 });
+
+it('lets a concurrency or connection failure escape so the webhook 500s and Stripe retries', function (Throwable $failure): void {
+    // A real database queue (no fake): the alert only lands in `jobs` if the transaction commits.
+    config(['queue.default' => 'database']);
+    invoicedPayment(InvoiceRequestStatus::Issued);
+
+    // On MySQL a deadlock inside the savepoint rolls back the whole webhook transaction:
+    // swallowing it would leave the webhook running outside any transaction.
+    $this->mock(InvoiceRequestService::class, function ($mock) use ($failure): void {
+        $mock->shouldReceive('transition')->andThrow($failure);
+    });
+
+    $logged = [];
+    EventFacade::listen(MessageLogged::class, function (MessageLogged $e) use (&$logged): void {
+        $logged[] = $e;
+    });
+
+    invoiceReversalSend('evt_ir_deadlock', 'charge.refunded', invoiceReversalCharge(49900), 500);
+
+    // Not contained: no "listener failed" log and no alert queued about work that is gone.
+    // (State rollback is not asserted: on MySQL the server has already discarded the whole
+    // transaction, and the test database's savepoints do not reproduce that.)
+    expect(array_filter($logged, fn (MessageLogged $e): bool => str_contains($e->message, 'listener failed')))->toBeEmpty()
+        ->and(DB::table('jobs')->count())->toBe(0);
+})->with([
+    'deadlock exception' => [fn () => new DeadlockException('Deadlock found when trying to get lock')],
+    'concurrency error' => [fn () => new QueryException('mysql', 'update x', [], new RuntimeException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock'))],
+    'lost connection' => [fn () => new QueryException('mysql', 'update x', [], new RuntimeException('SQLSTATE[HY000]: General error: 2006 MySQL server has gone away'))],
+]);
 
 it('ignores a request that is already cancellation pending', function (): void {
     Notification::fake();

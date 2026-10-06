@@ -13,6 +13,9 @@ use App\Models\Payment;
 use App\Services\CfdiDeadlinePolicy;
 use App\Services\InvoiceRequestService;
 use App\Services\PaymentReversalService;
+use Illuminate\Database\DeadlockException;
+use Illuminate\Database\DetectsConcurrencyErrors;
+use Illuminate\Database\DetectsLostConnections;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -38,6 +41,9 @@ use Throwable;
  */
 final class FlagInvoiceForCancellation
 {
+    use DetectsConcurrencyErrors;
+    use DetectsLostConnections;
+
     public function __construct(
         private readonly InvoiceRequestService $requests,
         private readonly PaymentReversalService $alerts,
@@ -45,17 +51,27 @@ final class FlagInvoiceForCancellation
     ) {}
 
     /**
-     * Never lets a failure escape: the refund/revoke must persist even when the
+     * Contains logic failures: the refund/revoke must persist even when the
      * CFDI bookkeeping breaks, and a webhook that 500s would only be retried
      * against a state this listener cannot fix. The work runs in its own
      * savepoint (nested transaction), so a failure rolls back only what the
      * listener wrote and leaves the webhook transaction usable.
+     *
+     * Deadlocks and lost connections are the exception and are rethrown: on
+     * MySQL they roll back (or kill) the WHOLE outer transaction, not just the
+     * savepoint, so continuing would run the rest of the webhook with no real
+     * transaction and queue an alert about work that is already gone. The 500
+     * makes Stripe retry the whole event.
      */
     public function handle(PaymentReversed $event): void
     {
         try {
             DB::transaction(fn () => $this->flag($event));
         } catch (Throwable $e) {
+            if ($e instanceof DeadlockException || $this->causedByConcurrencyError($e) || $this->causedByLostConnection($e)) {
+                throw $e;
+            }
+
             $class = $e::class;
 
             // Ids and the exception class only: the message may carry bindings (RFC, legal name).
