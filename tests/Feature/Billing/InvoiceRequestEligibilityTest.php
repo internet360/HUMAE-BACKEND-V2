@@ -84,9 +84,18 @@ it('excludes payments with an active or lost dispute but keeps closed favourable
     paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => 'open']]);
     paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => 'lost']]);
     $won = paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['dispute_status' => 'won']]);
-    $noFlag = paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['refund_review' => true]]);
+    $noFlag = paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['other' => true]]);
 
     expect(eligibleIds())->toEqualCanonicalizing([$won->id, $noFlag->id]);
+});
+
+it('excludes partially refunded payments so billing handles them manually at the net amount', function (): void {
+    paidAt($this->user, '2026-10-02 09:00', ['refund_amount' => 100]);
+    paidAt($this->user, '2026-10-02 09:00', ['metadata' => ['refund_review' => true]]);
+    $zero = paidAt($this->user, '2026-10-02 09:00', ['refund_amount' => 0]);
+    $clean = paidAt($this->user, '2026-10-02 09:00');
+
+    expect(eligibleIds())->toEqualCanonicalizing([$zero->id, $clean->id]);
 });
 
 it('excludes every unresolved dispute status', function (string $status): void {

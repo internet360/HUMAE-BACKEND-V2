@@ -28,8 +28,9 @@ class InvoiceRequestService
     public function __construct(private readonly CfdiDeadlinePolicy $deadline) {}
 
     /**
-     * Succeeded, not refunded, no open/lost dispute, not claimed by an active
-     * request, inside the deadline window.
+     * Succeeded, not refunded (a partial refund also excludes it: billing issues
+     * those by hand at the net amount), no open/lost dispute, not claimed by an
+     * active request, inside the deadline window.
      *
      * @return Builder<Payment>
      */
@@ -39,6 +40,10 @@ class InvoiceRequestService
             ->where('user_id', $user->id)
             ->where('status', PaymentStatus::Succeeded)
             ->whereNull('refunded_at')
+            ->where(function (Builder $q): void {
+                $q->whereNull('refund_amount')->orWhere('refund_amount', '<=', 0);
+            })
+            ->whereNull('metadata->refund_review')
             ->whereNotNull('paid_at')
             ->where('paid_at', '>=', $this->deadline->windowStart())
             ->where(function (Builder $q): void {
