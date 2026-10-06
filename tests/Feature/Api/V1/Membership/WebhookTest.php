@@ -777,3 +777,9 @@ it('alerts billing and acks when the matched payment has no plan', function (): 
         ->and($payment->fresh()->status)->toBe(PaymentStatus::Pending);
     Notification::assertSentOnDemandTimes(BillingAlertNotification::class, 1);
 });
+
+it('puts a generous per-IP throttle on the public webhook route', function (): void {
+    $route = app('router')->getRoutes()->getByName('webhooks.stripe');
+
+    expect($route->gatherMiddleware())->toContain('throttle:120,1');
+});

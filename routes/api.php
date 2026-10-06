@@ -806,5 +806,10 @@ Route::middleware($authenticated)
 | Webhooks (públicos, firmados por el proveedor)
 |--------------------------------------------------------------------------
 */
+// Throttled per IP as a backstop against floods of unsigned requests (the signature
+// check is cheap but not free). 120/min is far above Stripe's real volume for this
+// app (a few events per payment, retries with backoff), and a throttled delivery
+// gets a 429, which Stripe retries, so a burst is delayed, never lost.
 Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1')
     ->name('webhooks.stripe');
