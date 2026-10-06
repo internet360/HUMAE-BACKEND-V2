@@ -287,15 +287,17 @@ describe('billing notification job', function (): void {
             ->and(implode("\n", $logged))->not->toContain('Persona de Prueba');
     });
 
-    it('logs without failing when no billing address is configured', function (): void {
+    it('throws without a billing address so the job retries and lands in failed_jobs, keeping the request', function (): void {
         Notification::fake();
         config(['billing.email' => null]);
         $request = makeRequest($this->user, $this->payment);
 
-        (new NotifyBillingOfInvoiceRequestJob($request->id))->handle();
+        expect(fn () => (new NotifyBillingOfInvoiceRequestJob($request->id))->handle())
+            ->toThrow(RuntimeException::class, 'Billing mailbox is not configured');
 
         Notification::assertNothingSent();
-        expect($request->fresh()->billing_notified_at)->toBeNull();
+        expect($request->fresh())->not->toBeNull()
+            ->and($request->fresh()->billing_notified_at)->toBeNull();
     });
 
     it('logs the final failure without the RFC', function (): void {

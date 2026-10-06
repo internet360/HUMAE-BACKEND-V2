@@ -340,7 +340,7 @@ class PaymentReversalService
         $address = config('billing.email');
 
         if (! is_string($address) || $address === '') {
-            Log::warning('Billing alert skipped: BILLING_EMAIL is not configured.', [
+            Log::critical('Billing alert NOT sent: BILLING_EMAIL is not configured.', [
                 'payment_id' => $payment?->id,
                 'subject' => $subject,
             ]);

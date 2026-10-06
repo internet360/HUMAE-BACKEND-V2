@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -51,11 +52,10 @@ class NotifyBillingOfInvoiceRequestJob implements ShouldQueue
         $address = (string) config('billing.email', '');
 
         if ($address === '') {
-            Log::error('Billing mailbox not configured; invoice request not notified.', [
-                'invoice_request_id' => $request->id,
-            ]);
-
-            return;
+            // Throw (not return) so the job is retried and, once exhausted, lands
+            // in failed_jobs where it can be replayed after BILLING_EMAIL is set.
+            // The request stays saved and billing_notified_at stays null.
+            throw new RuntimeException('Billing mailbox is not configured (BILLING_EMAIL).');
         }
 
         Notification::route('mail', $address)->notifyNow(new InvoiceRequestedNotification($request));

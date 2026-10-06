@@ -450,15 +450,35 @@ it('queues the billing alert after commit', function (): void {
         ->and($notification->afterCommit)->toBeTrue();
 });
 
-it('does not fail the webhook when no billing address is configured', function (): void {
+it('does not fail the webhook when no billing address is configured, but logs critical', function (): void {
     config(['billing.email' => null]);
     Notification::fake();
+    Log::spy();
     $payment = paidCandidate();
 
     sendStripeEvent('evt_nomail', 'charge.refunded', refundCharge(49900));
 
     expect($payment->fresh()->status)->toBe(PaymentStatus::Refunded);
     Notification::assertNothingSent();
+    Log::shouldHaveReceived('critical')->withArgs(
+        fn (string $message, array $context): bool => str_contains($message, 'BILLING_EMAIL') && ($context['payment_id'] ?? null) === $payment->id
+    )->once();
+});
+
+it('retries a billing alert with backoff and logs the final failure at critical without the body', function (): void {
+    $notification = new BillingAlertNotification('Payment reversed', 'Payment 1 was reversed; contact jane@example.test');
+
+    expect($notification->tries)->toBe(5)
+        ->and($notification->backoff())->toBe([60, 300, 900]);
+
+    Log::spy();
+    $notification->failed(new RuntimeException('smtp down'));
+
+    Log::shouldHaveReceived('critical')->withArgs(
+        fn (string $message, array $context): bool => ($context['subject'] ?? null) === 'Payment reversed'
+            && ($context['exception'] ?? null) === RuntimeException::class
+            && ! str_contains(json_encode($context), 'jane@example.test')
+    )->once();
 });
 
 it('acks reversal events for charges this app never created without retrying', function (string $type): void {
