@@ -24,6 +24,9 @@ class AppServiceProvider extends ServiceProvider
             return new StripeClient(
                 secretKey: (string) config('services.stripe.secret'),
                 webhookSecret: (string) config('services.stripe.webhook_secret'),
+                connectTimeout: (int) config('services.stripe.connect_timeout', 5),
+                timeout: (int) config('services.stripe.timeout', 15),
+                maxNetworkRetries: (int) config('services.stripe.max_network_retries', 2),
             );
         });
 

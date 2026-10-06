@@ -38,6 +38,10 @@ return [
         'secret' => env('STRIPE_SECRET'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
         'currency' => env('STRIPE_CURRENCY', 'mxn'),
+        // Explicit HTTP limits so a Stripe brownout cannot pin PHP workers.
+        'connect_timeout' => (int) env('STRIPE_CONNECT_TIMEOUT', 5),
+        'timeout' => (int) env('STRIPE_TIMEOUT', 15),
+        'max_network_retries' => (int) env('STRIPE_MAX_NETWORK_RETRIES', 2),
     ],
 
     /*

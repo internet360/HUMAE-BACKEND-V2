@@ -132,6 +132,17 @@ a cualquiera que no sea el dueño. Lo que faltaba era el filtro de rol, y el efe
 | GET | `/me/membership` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
 | POST | `/me/membership/checkout` | ❌ | ✅ | — | — | — | §6 «Pagar membresía» | ✔ |
 | GET | `/me/payments` | ❌ | 🔒 | 🔒 | 🔒 | 🔒 | §5.3 «auth» | ✔ |
+| GET | `/me/invoice-requests` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/eligible-payments` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| POST | `/me/invoice-requests` (`throttle:10,1`) | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/{invoiceRequest}` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+| GET | `/me/invoice-requests/{invoiceRequest}/files/{pdf\|xml}` | ❌ | 🔒 | ❌ | ❌ | ❌ | UNSPECIFIED | ✔ |
+
+Solicitud de factura (CFDI): §5/§6 no la especifican (**UNSPECIFIED**). Inferencia: sólo el candidato paga la
+membresía, así que sólo él factura; `role:candidate` fronta las cuatro rutas y todo se acota al usuario
+autenticado. `GET /{invoiceRequest}` autoriza con `InvoiceRequestPolicy::view` (dueño; el admin pasa por
+`before` pero no llega: el módulo admin vive en `/admin/invoice-requests`, otra slice) y responde `404` a otro
+candidato (igual que a un id inexistente, para no revelar qué solicitudes existen). El RFC sólo se devuelve al dueño y nunca se escribe en logs.
 
 §5.3 titula la sección «Membership (auth)» sin acotar rol, y ambos `GET` se autoacotan al usuario
 autenticado (devuelven vacío para quien no tiene membresías ni pagos). `POST /checkout` sí está acotado por
@@ -359,6 +370,29 @@ product owner las confirme.
 Los 16 endpoints de catálogos se cierran con el permiso Spatie `catalogs.manage`, que sólo el rol `admin`
 posee — coherente con §6 «CRUD catálogos: Reclutador ❌». Los 6 de usuarios usan una comprobación de rol
 directa (`UserController::ensureAdmin()`).
+
+#### Solicitudes de factura — módulo admin (`invoices.manage`)
+
+| Método | Ruta | anón | cand | recr | emp | admin | Fuente | Estado |
+|---|---|:-:|:-:|:-:|:-:|:-:|---|---|
+| GET | `/admin/invoice-requests` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| GET | `/admin/invoice-requests/{invoiceRequest}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| PATCH | `/admin/invoice-requests/{invoiceRequest}/status` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| PATCH | `/admin/invoice-requests/{invoiceRequest}/notes` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| POST | `/admin/invoice-requests/{invoiceRequest}/files` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+| GET | `/admin/invoice-requests/{invoiceRequest}/files/{pdf\|xml}` | ❌ | ❌ | ❌ | ❌ | ✅ | UNSPECIFIED | ✔ |
+
+Se cierran con el permiso Spatie `invoices.manage`: middleware de ruta `permission:invoices.manage`, que corre ANTES del route-model binding (un no-admin recibe `403` tanto con un id existente como con uno inexistente, nunca `404`), reforzado por el `can()` del FormRequest y el `authorize()` de `show`. El permiso lo dan, al rol `admin`, una
+migración de datos idempotente y el seeder; un futuro rol de facturación sólo necesita ese
+permiso. No hay habilidades nuevas de Policy: `InvoiceRequestPolicy::before` ahora concede por el permiso (ya
+no por el nombre del rol), y `view` sigue siendo la del dueño. El listado no incluye el RFC; el detalle sí
+(sólo para quien tiene el permiso). `issued` no se alcanza con `PATCH .../status` (422): sólo al subir los
+archivos (`POST .../files`: PDF + XML obligatorios, el XML se parsea sin DTD/entidades y su RFC receptor debe
+coincidir con el de la solicitud; un `issued` no admite reemplazo). Los archivos viven en el disco privado,
+sólo salen por las descargas autenticadas (`Cache-Control: private, no-store`; el dueño recibe 404 si la
+solicitud es ajena, igual que si no existe) y nunca se borran (ni al cancelar ni al eliminar al usuario).
+Rechazar exige motivo y libera los pagos reclamados. La bitácora
+`activity('invoice-requests')` registra id, estado anterior/nuevo, actor e IP, nunca el RFC ni las notas.
 
 ### 2.15 Salud y webhooks
 

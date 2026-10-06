@@ -12,6 +12,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -34,6 +35,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'verified_email' => EnsureVerifiedEmail::class,
             'active_membership' => EnsureActiveMembership::class,
         ]);
+
+        // Laravel runs SubstituteBindings ahead of unlisted middleware, so a
+        // `permission:` gate would see a 404 for a missing model id before it could
+        // answer 403, letting any authenticated user enumerate ids. The gate goes
+        // right before binding, after authentication (already listed earlier).
+        $middleware->prependToPriorityList(before: SubstituteBindings::class, prepend: PermissionMiddleware::class);
     })
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->job(new ExpireMembershipsJob)->daily()->name('memberships:expire');
@@ -55,6 +62,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // constancia); esto los sella cuando el proveedor vuelve.
         // `withoutOverlapping` porque cada constancia reintenta hasta 5 veces
         // con espera, y dos corridas simultáneas pelearían por los mismos.
+        // La tabla de dedup de webhooks solo protege contra reentregas (Stripe
+        // reintenta hasta 3 días): se poda para que no crezca sin tope.
+        $schedule->command('billing:prune-webhook-events')
+            ->dailyAt('03:30')
+            ->withoutOverlapping()
+            ->name('billing:prune-webhook-events');
+
         $schedule->command('contracts:retry-timestamps')
             ->hourly()
             ->withoutOverlapping()

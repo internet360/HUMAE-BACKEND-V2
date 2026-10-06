@@ -20,8 +20,9 @@ use App\Notifications\MembershipExpiringNotification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
+use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session as CheckoutSession;
+use Stripe\Exception\InvalidRequestException;
 
 class MembershipService
 {
@@ -37,6 +38,8 @@ class MembershipService
     public function __construct(
         private readonly StripeClient $stripe,
         private readonly ProfileService $profiles,
+        private readonly StripeCustomerService $customers,
+        private readonly PaymentReversalService $alerts,
     ) {}
 
     /**
@@ -58,12 +61,13 @@ class MembershipService
                 : (string) config('services.stripe.currency', 'mxn')
         );
 
-        // price_data inline — Stripe genera un product/price efímero por sesión
-        $session = $this->stripe->createCheckoutSession([
+        $customerId = $this->customers->ensureFor($user);
+
+        $buildParams = fn (string $customer): array => [
             'mode' => 'payment',
             'success_url' => $successUrl,
             'cancel_url' => $cancelUrl,
-            'customer_email' => $user->email,
+            'customer' => $customer,
             'client_reference_id' => (string) $user->id,
             'line_items' => [[
                 'quantity' => 1,
@@ -80,8 +84,33 @@ class MembershipService
                 'user_id' => (string) $user->id,
                 'membership_plan_id' => (string) $plan->id,
                 'plan_code' => (string) $plan->code,
+                // Lets the webhook tell our sessions from another integration's
+                // when no payment matches (see PaymentReversalService).
+                'app' => 'humae',
+                // Staging and production may share a Stripe account or endpoint:
+                // the env keeps one from treating the other's events as its own.
+                'env' => (string) config('app.env'),
             ],
-        ]);
+            // Copied onto the charge by Stripe: lets refund/dispute webhooks tell
+            // our payments apart from other integrations on the same account.
+            'payment_intent_data' => [
+                'metadata' => ['app' => 'humae', 'env' => (string) config('app.env')],
+            ],
+        ];
+
+        // price_data inline — Stripe genera un product/price efímero por sesión
+        try {
+            $session = $this->stripe->createCheckoutSession($buildParams($customerId));
+        } catch (InvalidRequestException $e) {
+            // The stored customer is unknown to Stripe (deleted, test id in
+            // live, rotated account). Replace it and retry exactly once.
+            if ($e->getStripeCode() !== 'resource_missing' || $e->getStripeParam() !== 'customer') {
+                throw $e;
+            }
+
+            $customerId = $this->customers->replaceStale($user, $customerId);
+            $session = $this->stripe->createCheckoutSession($buildParams($customerId));
+        }
 
         $payment = Payment::create([
             'user_id' => $user->id,
@@ -110,25 +139,52 @@ class MembershipService
     /**
      * Marca el pago como `succeeded` y crea la membresía asociada,
      * calculando `expires_at` con base en `duration_days` del plan.
+     *
+     * Solo activa cuando Stripe confirma `payment_status === 'paid'`: con métodos
+     * diferidos (OXXO/SPEI) `checkout.session.completed` llega con `unpaid` y el
+     * pago queda Pending hasta `checkout.session.async_payment_succeeded`.
+     *
+     * Devuelve null cuando ningún pago corresponde a la sesión: el llamador decide
+     * entre reintentar y confirmar (`PaymentReversalService::handleUnmatched`).
+     * Un pago sin plan no se puede activar nunca: se avisa a billing y se confirma.
      */
-    public function activateFromCheckoutSession(CheckoutSession $session): Payment
+    public function activateFromCheckoutSession(CheckoutSession $session): ?Payment
     {
         /** @var Payment|null $payment */
         $payment = Payment::where('stripe_session_id', $session->id)->first();
 
         if ($payment === null) {
-            throw new RuntimeException("Payment not found for Stripe session {$session->id}");
+            return null;
         }
 
         return DB::transaction(function () use ($payment, $session): Payment {
-            if ($payment->status === PaymentStatus::Succeeded) {
-                return $payment; // idempotente: webhook puede dispararse múltiples veces
+            // Re-read under lock so a concurrent delivery cannot act on stale state.
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            // Only a pending payment may activate: a succeeded one is a replay, and a
+            // refunded/failed one must never grant access again.
+            if ($payment->status !== PaymentStatus::Pending) {
+                return $payment;
+            }
+
+            // Delayed methods: completed but not yet paid. Wait for the async event.
+            if (($session->payment_status ?? null) !== 'paid') {
+                return $payment;
             }
 
             $plan = $payment->plan;
 
             if ($plan === null) {
-                throw new RuntimeException("MembershipPlan not found for payment {$payment->id}");
+                // Retrying cannot create the plan: escalate instead of a silent 500 loop.
+                Log::error('Paid checkout matched a payment without a plan.', ['payment_id' => $payment->id]);
+
+                $this->alerts->alertBilling(
+                    $payment,
+                    'Paid checkout without a plan',
+                    "Payment {$payment->id} was paid on Stripe but has no membership plan: access was NOT granted. Review it manually.",
+                );
+
+                return $payment;
             }
 
             $now = now();

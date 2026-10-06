@@ -10,6 +10,7 @@ use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\Admin\AdminUserResource;
 use App\Models\Company;
+use App\Models\InvoiceRequest;
 use App\Models\User;
 use App\Notifications\AccountApprovedNotification;
 use App\Notifications\AccountRejectedNotification;
@@ -301,6 +302,13 @@ class UserController extends Controller
             return $this->error(
                 'No puedes eliminar tu propia cuenta.',
                 status: HttpStatus::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
+
+        if (InvoiceRequest::where('user_id', $user->id)->exists()) {
+            return $this->error(
+                'No se puede eliminar al usuario: tiene solicitudes de factura y los registros fiscales deben conservarse.',
+                status: HttpStatus::HTTP_CONFLICT,
             );
         }
 

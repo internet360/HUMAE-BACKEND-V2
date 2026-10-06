@@ -31,6 +31,7 @@ use App\Models\FunctionalArea;
 use App\Models\Interview;
 use App\Models\InterviewRequest;
 use App\Models\InterviewRequestCandidate;
+use App\Models\InvoiceRequest;
 use App\Models\Language;
 use App\Models\Membership;
 use App\Models\MembershipPlan;
@@ -49,6 +50,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 
@@ -93,6 +95,7 @@ const AUTHZ_S_CANDIDATE_B_ADDRESS = 'CALLE-SENTINEL-CANDIDATO-B-123';
 const AUTHZ_S_CANDIDATE_B_PHONE = '+52-555-SENTINEL-B';
 const AUTHZ_S_CANDIDATE_B_EMAIL = 'sentinel-candidato-b@humae.test';
 const AUTHZ_S_CANDIDATE_B_LASTNAME = 'ApellidoSentinelB';
+const AUTHZ_S_INVOICE_RFC = 'SENT010101AAA';
 const AUTHZ_S_CANDIDATE_A_CURP = 'CURPSENTINELA00001';
 const AUTHZ_S_CANDIDATE_A_ADDRESS = 'CALLE-SENTINEL-CANDIDATO-A-123';
 const AUTHZ_S_CANDIDATE_A_PHONE = '+52-555-SENTINEL-A';
@@ -141,6 +144,8 @@ const AUTHZ_GUARDED_TABLES = [
     'interviews',
     'candidate_profiles',
     'candidate_documents',
+    'invoice_requests',
+    'invoice_request_payments',
     'candidate_experiences',
     'candidate_educations',
     'candidate_courses',
@@ -183,6 +188,9 @@ const AUTHZ_POLICY_INVENTORY = [
         'downloadDocument' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'favorite' => 'Http/Controllers/Api/V1/Recruiter/DirectoryController.php',
         'viewAnonymousDirectory' => 'Http/Controllers/Api/V1/Company/AnonymousDirectoryController.php',
+    ],
+    'InvoiceRequestPolicy' => [
+        'view' => 'Http/Controllers/Api/V1/Candidate/InvoiceRequestController.php',
     ],
     'InterviewRequestPolicy' => [
         'viewAny' => 'Http/Controllers/Api/V1/Company/InterviewRequestController.php',
@@ -686,6 +694,19 @@ function authzBuildFixtures(): array
         ]);
     }
 
+    // Real files on a faked private disk: the `files/{kind}` rows can then tell the
+    // owner (200) from anyone else (404), instead of excusing a 404 for everybody.
+    Storage::fake('local');
+    Storage::disk('local')->put('invoices/authz/cfdi.pdf', '%PDF-1.4 authz');
+    Storage::disk('local')->put('invoices/authz/cfdi.xml', '<cfdi/>');
+
+    $invoiceRequest = InvoiceRequest::factory()->create([
+        'user_id' => $candidateOwner->id,
+        'rfc' => AUTHZ_S_INVOICE_RFC,
+        'pdf_path' => 'invoices/authz/cfdi.pdf',
+        'xml_path' => 'invoices/authz/cfdi.xml',
+    ]);
+
     $test = PsychometricTest::factory()->create(['is_active' => true]);
     $attempt = PsychometricAttempt::factory()->create([
         'candidate_profile_id' => $profileOwner->id,
@@ -797,6 +818,8 @@ function authzBuildFixtures(): array
             'interview' => $interview->id,
             'candidate' => $profileOther->id,
             'document' => $documentOwner->id,
+            'invoice_request' => $invoiceRequest->id,
+            'invoice_file_kind' => 'pdf',
             'document_other' => $documentOther->id,
             'experience' => $experience->id,
             'education' => $education->id,
@@ -1079,6 +1102,13 @@ function authzMatrixRows(): array
         'allow_not_found' => true,
         ...authzCandidateSelfService(ownerOnly: true),
     ]);
+    $add('GET /me/invoice-requests/{invoice_request}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
+        'spec' => 'UNSPECIFIED: role candidate (propio); un ajeno recibe 404',
+        // The fixture request has real files: the owner must get 200 (a 404 fails
+        // the row) and every other actor a refusal.
+        ...authzCandidateSelfService(ownerOnly: true),
+    ]);
     $add('DELETE /me/profile/documents/{document}', [
         'method' => 'DELETE', 'uri' => '/api/v1/me/profile/documents/{document}', 'spec' => '§5.2 role: candidate (propio)',
         ...authzCandidateSelfService(ownerOnly: true),
@@ -1099,6 +1129,27 @@ function authzMatrixRows(): array
     $add('GET /me/payments', [
         'method' => 'GET', 'uri' => '/api/v1/me/payments', 'spec' => '§5.3 auth',
         ...authzAccess($authenticated),
+    ]);
+
+    // ----------------------------------------- Invoice requests (CFDI, S4a2)
+    $add('GET /me/invoice-requests', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests', 'spec' => 'UNSPECIFIED: role candidate (propio); inferencia: sólo el candidato paga y factura',
+        'must_not_leak' => ['candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/invoice-requests/eligible-payments', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/eligible-payments', 'spec' => 'UNSPECIFIED: role candidate (propio)',
+        ...authzCandidateSelfService(),
+    ]);
+    $add('POST /me/invoice-requests', [
+        'method' => 'POST', 'uri' => '/api/v1/me/invoice-requests', 'spec' => 'UNSPECIFIED: role candidate; throttle 10/min',
+        // Empty payload: the role gate answers before validation (422 = reached the controller).
+        ...authzCandidateSelfService(),
+    ]);
+    $add('GET /me/invoice-requests/{invoice_request}', [
+        'method' => 'GET', 'uri' => '/api/v1/me/invoice-requests/{invoice_request}', 'spec' => 'UNSPECIFIED: role candidate (propio)',
+        'must_not_leak' => ['candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzCandidateSelfService(ownerOnly: true),
     ]);
 
     // ---------------------------------------------------- Psychometrics (§5.4)
@@ -1762,6 +1813,45 @@ function authzMatrixRows(): array
         'method' => 'GET', 'uri' => '/api/v1/admin/reports/recruiter-effectiveness',
         'spec' => '§6 Ver reportes — Reclutador ✅ (su propia fila), Admin ✅; la empresa no audita a su proveedor',
         ...authzAccess($staff),
+    ]);
+
+    // ------------------------- Admin: solicitudes de factura (invoices.manage, S4b)
+    $add('GET /admin/invoice-requests', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests',
+        'spec' => 'UNSPECIFIED — inferido: datos fiscales de terceros, permiso invoices.manage (solo admin)',
+        'must_not_leak' => ['candidate_owner' => [AUTHZ_S_INVOICE_RFC], 'candidate_other' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/invoice-requests/{invoice_request}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin); el dueño usa /me/invoice-requests',
+        'must_not_leak' => ['candidate_owner' => [AUTHZ_S_INVOICE_RFC], 'recruiter' => [AUTHZ_S_INVOICE_RFC]],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/invoice-requests/{invoice_request}/status', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/status',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        'payload' => ['status' => 'in_progress'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('PATCH /admin/invoice-requests/{invoice_request}/notes', [
+        'method' => 'PATCH', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/notes',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        'payload' => ['admin_notes' => 'Nota interna'],
+        ...authzAccess(['admin']),
+    ]);
+    $add('POST /admin/invoice-requests/{invoice_request}/files', [
+        'method' => 'POST', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/files',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin); única vía a `issued`',
+        // Without multipart the validation answers 422, which counts as access:
+        // what is probed is that nobody else reaches the endpoint (no mutation).
+        ...authzAccess(['admin']),
+    ]);
+    $add('GET /admin/invoice-requests/{invoice_request}/files/{kind}', [
+        'method' => 'GET', 'uri' => '/api/v1/admin/invoice-requests/{invoice_request}/files/{invoice_file_kind}',
+        'spec' => 'UNSPECIFIED — inferido: invoices.manage (solo admin)',
+        // The fixture request has real files: the admin must get 200, not 404.
+        ...authzAccess(['admin']),
     ]);
 
     // ------------------------------- Admin: condiciones del contrato (admin only)

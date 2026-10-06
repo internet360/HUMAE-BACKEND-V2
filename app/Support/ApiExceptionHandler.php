@@ -112,6 +112,12 @@ final class ApiExceptionHandler
                 ? $e->getStatusCode()
                 : HttpStatus::HTTP_INTERNAL_SERVER_ERROR;
 
+            // Gate::denyAsNotFound() surfaces as a plain 404 HttpException: it
+            // must read exactly like a missing route/model so ids cannot be probed.
+            if ($status === HttpStatus::HTTP_NOT_FOUND) {
+                return self::envelope(message: 'Ruta no encontrada.', status: $status);
+            }
+
             $message = config('app.debug')
                 ? $e->getMessage()
                 : 'Error interno del servidor.';

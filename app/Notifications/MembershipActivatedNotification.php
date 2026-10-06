@@ -6,16 +6,24 @@ namespace App\Notifications;
 
 use App\Models\Membership;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class MembershipActivatedNotification extends Notification
+/**
+ * Queued after commit: the activation runs inside the webhook transaction, and
+ * an SMTP hiccup must never roll it back or turn the delivery into a 500. Both
+ * channels (mail and in-app) go through the queue together.
+ */
+class MembershipActivatedNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
     public function __construct(
         public readonly Membership $membership,
-    ) {}
+    ) {
+        $this->afterCommit = true;
+    }
 
     /**
      * @return list<string>

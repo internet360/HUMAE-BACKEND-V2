@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Admin\Catalogs\LanguageController as AdminLangua
 use App\Http\Controllers\Api\V1\Admin\Catalogs\SkillController as AdminSkillController;
 use App\Http\Controllers\Api\V1\Admin\ContactSubmissionController as AdminContactSubmissionController;
 use App\Http\Controllers\Api\V1\Admin\ContractSettingController;
+use App\Http\Controllers\Api\V1\Admin\InvoiceRequestController as AdminInvoiceRequestController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\AttemptController as AdminPsychometricAttemptController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\CandidateResultsController as AdminPsychometricCandidateResultsController;
 use App\Http\Controllers\Api\V1\Admin\Psychometrics\OptionController as AdminPsychometricOptionController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\Api\V1\Candidate\CvController;
 use App\Http\Controllers\Api\V1\Candidate\DocumentController;
 use App\Http\Controllers\Api\V1\Candidate\EducationController;
 use App\Http\Controllers\Api\V1\Candidate\ExperienceController;
+use App\Http\Controllers\Api\V1\Candidate\InvoiceRequestController;
 use App\Http\Controllers\Api\V1\Candidate\LanguageController;
 use App\Http\Controllers\Api\V1\Candidate\MembershipController;
 use App\Http\Controllers\Api\V1\Candidate\NotificationController;
@@ -200,6 +202,17 @@ Route::middleware($authenticated)->prefix('me')->name('me.')->group(function ():
         ->name('membership.checkout');
 
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
+
+    // Solicitud de factura (CFDI). Sólo candidatos; `eligible-payments` va antes
+    // de `{invoiceRequest}` para que no lo capture el binding. El dueño se
+    // resuelve con `InvoiceRequestPolicy::view`.
+    Route::middleware(RoleMiddleware::using([UserRole::Candidate]))->prefix('invoice-requests')->name('invoice-requests.')->group(function (): void {
+        Route::get('/', [InvoiceRequestController::class, 'index'])->name('index');
+        Route::get('/eligible-payments', [InvoiceRequestController::class, 'eligiblePayments'])->name('eligible-payments');
+        Route::post('/', [InvoiceRequestController::class, 'store'])->middleware('throttle:10,1')->name('store');
+        Route::get('/{invoiceRequest}', [InvoiceRequestController::class, 'show'])->name('show');
+        Route::get('/{invoiceRequest}/files/{kind}', [InvoiceRequestController::class, 'downloadFile'])->where('kind', 'pdf|xml')->name('files');
+    });
 
     /*
     |----------------------------------------------------------------------
@@ -646,6 +659,25 @@ Route::middleware($authenticated)->prefix('admin/contract-settings')->name('admi
         ->name('signature.destroy');
 });
 
+/*
+|--------------------------------------------------------------------------
+| Admin: solicitudes de factura (CFDI)
+|--------------------------------------------------------------------------
+| Protegido por el permiso Spatie `invoices.manage` (lo crea una migración de
+| datos y el seeder; hoy sólo el rol admin lo tiene). `issued` NO se alcanza
+| con el cambio de estado: sólo al subir los archivos de la factura.
+*/
+// `permission:` (not a Policy/FormRequest check) so the gate runs before route-model
+// binding: a non-admin gets 403 for existing and missing ids alike.
+Route::middleware([...$authenticated, 'permission:invoices.manage'])->prefix('admin/invoice-requests')->name('admin.invoice-requests.')->group(function (): void {
+    Route::get('/', [AdminInvoiceRequestController::class, 'index'])->name('index');
+    Route::get('/{invoiceRequest}', [AdminInvoiceRequestController::class, 'show'])->name('show');
+    Route::patch('/{invoiceRequest}/status', [AdminInvoiceRequestController::class, 'updateStatus'])->name('status');
+    Route::patch('/{invoiceRequest}/notes', [AdminInvoiceRequestController::class, 'updateNotes'])->name('notes');
+    Route::post('/{invoiceRequest}/files', [AdminInvoiceRequestController::class, 'uploadFiles'])->name('files.upload');
+    Route::get('/{invoiceRequest}/files/{kind}', [AdminInvoiceRequestController::class, 'downloadFile'])->where('kind', 'pdf|xml')->name('files.download');
+});
+
 Route::middleware($authenticated)->prefix('admin/users')->name('admin.users.')->group(function (): void {
     Route::get('/', [AdminUserController::class, 'index'])->name('index');
     Route::post('/', [AdminUserController::class, 'store'])->name('store');
@@ -774,5 +806,10 @@ Route::middleware($authenticated)
 | Webhooks (públicos, firmados por el proveedor)
 |--------------------------------------------------------------------------
 */
+// Throttled per IP as a backstop against floods of unsigned requests (the signature
+// check is cheap but not free). 120/min is far above Stripe's real volume for this
+// app (a few events per payment, retries with backoff), and a throttled delivery
+// gets a 429, which Stripe retries, so a burst is delayed, never lost.
 Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1')
     ->name('webhooks.stripe');
